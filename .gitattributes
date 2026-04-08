@@ -1,0 +1,14 @@
+# 统一文本文件换行符为 LF（仓库与工作区都按 LF）
+* text=auto eol=lf
+
+# 常见二进制文件（不做换行转换）
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.pdf  binary
+*.zip  binary
+*.7z   binary
+*.exe  binary
+*.dll  binary
