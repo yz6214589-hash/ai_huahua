@@ -24,8 +24,7 @@ PB_MAX = 1.0           # PB 上限：低于此值为"破净"
 ROE_MIN = 5.0          # ROE 下限（%）：高于此值说明公司还在赚钱
 # ============================================================
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
-
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..\..\..\data')
 
 def load_data():
     """

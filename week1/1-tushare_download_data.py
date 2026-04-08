@@ -13,10 +13,10 @@ from datetime import datetime
 
 
 # 数据下载参数配置
-STOCK_CODE = '601318.SH'  # 广联达股票代码
+STOCK_CODE = '002410.SZ'  # 广联达股票代码
 STOCK_NAME = '广联达'
-DATA_START = '20250201'   # 数据开始日期
-DATA_END = '20260131'     # 数据结束日期
+DATA_START = '20250101'   # 数据开始日期
+DATA_END = '20251231'     # 数据结束日期
 
 
 def download_stock_data():

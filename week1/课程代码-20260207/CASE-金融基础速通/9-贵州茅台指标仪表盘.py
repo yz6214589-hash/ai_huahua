@@ -20,9 +20,9 @@ import matplotlib.dates as mdates
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'SimSun']
 plt.rcParams['axes.unicode_minus'] = False
 
-STOCK_NAME = '贵州茅台'
-STOCK_CODE = '600519.SH'
-DATA_FILE = os.path.join(os.getcwd(), 'data', '600519_SH_daily.csv')
+STOCK_NAME = '广联达'
+STOCK_CODE = '002410.SZ'
+DATA_FILE = os.path.join(os.getcwd(), 'data', '002410_SZ_daily.csv')
 SHOW_DAYS = 80
 MA_PERIOD = 20
 RSI_PERIOD = 14
@@ -140,7 +140,7 @@ def run_demo():
 
     out_dir = os.path.join(os.getcwd(), 'outputs')
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, '8_贵州茅台指标仪表盘.png')
+    out_path = os.path.join(out_dir, '8_广联达指标仪表盘.png')
     plt.savefig(out_path, dpi=150, bbox_inches='tight', facecolor='white')
     print(f"图表已保存：{out_path}")
     if matplotlib.get_backend().lower() != 'agg':
