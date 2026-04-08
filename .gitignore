@@ -1,3 +1,15 @@
 
 data/
 outputs/
+.openclaw/
+openclaw/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+env_lianghua/
+venv/
+.venv/
+*.pkl
+.DS_Store
