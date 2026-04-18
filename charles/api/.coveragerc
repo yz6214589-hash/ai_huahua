@@ -1,0 +1,5 @@
+[run]
+omit =
+  charles_api/app.py
+  charles_api/jobs/*
+  */site-packages/*

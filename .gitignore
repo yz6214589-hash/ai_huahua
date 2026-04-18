@@ -2,6 +2,8 @@
 data/
 outputs/
 .openclaw/
+.trae/
+.vercel/
 __pycache__/
 *.pyc
 *.pyo
@@ -11,4 +13,21 @@ env_lianghua/
 venv/
 .venv/
 *.pkl
+*.html
 .DS_Store
+
+# Local scratch scripts
+_tmp*
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
