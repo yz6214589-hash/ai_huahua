@@ -5,6 +5,10 @@ outputs/
 .trae/
 .vercel/
 __pycache__/
+.ipynb_checkpoints/
+.nanobot/
+vector_db/
+vector_store/
 *.pyc
 *.pyo
 .env
@@ -14,19 +18,23 @@ venv/
 .venv/
 *.pkl
 *.html
+*.faiss
+*.model
+*.db
+*.sqlite
+*.sqlite3
+*.zip
+*.gif
+*.jsonl
+*.pdf
+*.txt
 .DS_Store
-
-# Local scratch scripts
 _tmp*
-
-# Python tooling caches
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 coverage/
-
-# Node / frontend
 node_modules/
 dist/
 build/
