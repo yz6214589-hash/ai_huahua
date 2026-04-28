@@ -126,6 +126,13 @@ export interface StockTechnicalRow {
   kdj_k: number | null
   kdj_d: number | null
   kdj_j: number | null
+  atr14?: number | null
+  ma_custom?: number | null
+  macd_dif_custom?: number | null
+  macd_dea_custom?: number | null
+  macd_hist_custom?: number | null
+  rsi_custom?: number | null
+  atr_custom?: number | null
 }
 
 export interface StockTechnicalLatest {

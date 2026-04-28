@@ -171,11 +171,13 @@ def create_app() -> FastAPI:
     def _schedule_job_id(domain: str) -> str:
         return f"job:{domain}"
 
-    def _parse_cron(expr: str) -> tuple[str, str, str, str, str]:
+    def _parse_cron(expr: str) -> tuple[str, str, str, str, str, str | None]:
         parts = [p for p in (expr or "").strip().split() if p]
-        if len(parts) != 5:
-            raise ValueError("cron must be 5 parts: min hour day month dow")
-        return parts[0], parts[1], parts[2], parts[3], parts[4]
+        if len(parts) not in (5, 6):
+            raise ValueError("cron must be 5 or 6 parts: min hour day month dow [year]")
+        if len(parts) == 5:
+            return parts[0], parts[1], parts[2], parts[3], parts[4], None
+        return parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
 
     def _enqueue_domain(domain: JobDomain, mode: str | None, params: dict[str, Any] | None) -> None:
         key = domain.value
@@ -206,7 +208,7 @@ def create_app() -> FastAPI:
             if not domain:
                 continue
             try:
-                minute, hour, day, month, dow = _parse_cron(str(r.get("cron") or ""))
+                minute, hour, day, month, dow, year = _parse_cron(str(r.get("cron") or ""))
             except Exception:
                 continue
             tz = str(r.get("timezone") or "Asia/Shanghai")
@@ -222,7 +224,10 @@ def create_app() -> FastAPI:
                 dom = JobDomain(domain)
             except Exception:
                 continue
-            trigger = CronTrigger(minute=minute, hour=hour, day=day, month=month, day_of_week=dow, timezone=tz)
+            kw: dict[str, Any] = {"minute": minute, "hour": hour, "day": day, "month": month, "day_of_week": dow, "timezone": tz}
+            if year is not None:
+                kw["year"] = year
+            trigger = CronTrigger(**kw)
             scheduler.add_job(
                 _enqueue_domain,
                 trigger=trigger,
@@ -573,9 +578,50 @@ def create_app() -> FastAPI:
                     tuple(arr),
                 )
                 m = {str(r.get("code")): r.get("name") for r in (rows or []) if r.get("code")}
+                missing = [c for c in arr if not m.get(c)]
+                if missing:
+                    ph2 = ",".join(["%s"] * len(missing))
+                    rows2 = query_dict(
+                        conn,
+                        f"""
+                        SELECT stock_code AS code, stock_name AS name
+                        FROM trade_stock_daily
+                        WHERE stock_code IN ({ph2})
+                        ORDER BY trade_date DESC
+                        """,
+                        tuple(missing),
+                    )
+                    for r in rows2 or []:
+                        code = str(r.get("code") or "")
+                        if code and code in missing and not m.get(code) and r.get("name"):
+                            m[code] = r.get("name")
                 return {"items": [{"code": c, "name": m.get(c)} for c in arr]}
 
             if q:
+                qn = _normalize_stock_code(q)
+                if qn and ((len(q) == 6 and q.isdigit()) or qn == q.upper()):
+                    if has_master:
+                        rows_exact = query_dict(
+                            conn,
+                            "SELECT stock_code AS code, stock_name AS name FROM trade_stock_master WHERE stock_code=%s LIMIT 1",
+                            (qn,),
+                        )
+                        if rows_exact:
+                            return {"items": [{"code": str(rows_exact[0].get("code")), "name": rows_exact[0].get("name")}]}
+                    rows2 = query_dict(
+                        conn,
+                        """
+                        SELECT stock_code AS code, stock_name AS name
+                        FROM trade_stock_daily
+                        WHERE stock_code=%s
+                        ORDER BY trade_date DESC
+                        LIMIT 1
+                        """,
+                        (qn,),
+                    )
+                    if rows2:
+                        return {"items": [{"code": str(rows2[0].get("code")), "name": rows2[0].get("name")}]}
+
                 like = f"%{q}%"
                 if has_master:
                     rows = query_dict(
@@ -583,6 +629,12 @@ def create_app() -> FastAPI:
                         "SELECT stock_code AS code, stock_name AS name FROM trade_stock_master WHERE stock_code LIKE %s OR stock_name LIKE %s ORDER BY stock_code LIMIT %s",
                         (like, like, limit),
                     )
+                    if not rows:
+                        rows = query_dict(
+                            conn,
+                            "SELECT DISTINCT stock_code AS code, stock_name AS name FROM trade_stock_daily WHERE stock_code LIKE %s OR stock_name LIKE %s ORDER BY stock_code LIMIT %s",
+                            (like, like, limit),
+                        )
                 else:
                     rows = query_dict(
                         conn,
@@ -828,11 +880,32 @@ def create_app() -> FastAPI:
             {"key": "total_equity", "label": "净资产", "unit": "元", "tooltip": "净资产(元)", **delta(cur.get("total_equity"), prev.get("total_equity"), 2)},
         ]
 
-        return {"stock_code": code, "stock_name": snap.get("stock_name"), "reportDate": report_date_str, "items": items}
+        name = snap.get("stock_name") or _get_stock_name(code)
+        return {"stock_code": code, "stock_name": name, "reportDate": report_date_str, "items": items}
 
     @app.get("/api/stock/{stock_code}/technical/latest")
-    def stock_technical_latest(stock_code: str) -> dict[str, Any]:
+    def stock_technical_latest(
+        stock_code: str,
+        maPeriod: int = 20,
+        macdShort: int = 12,
+        macdLong: int = 26,
+        macdSignal: int = 9,
+        rsiPeriod: int = 14,
+        atrPeriod: int = 14,
+    ) -> dict[str, Any]:
         code = _normalize_stock_code(stock_code)
+        ma_period = min(max(int(maPeriod or 20), 2), 200)
+        macd_short = min(max(int(macdShort or 12), 2), 200)
+        macd_long = min(max(int(macdLong or 26), 2), 300)
+        macd_signal = min(max(int(macdSignal or 9), 2), 200)
+        rsi_period = min(max(int(rsiPeriod or 14), 2), 200)
+        atr_period = min(max(int(atrPeriod or 14), 2), 200)
+        if macd_short >= macd_long:
+            raise HTTPException(status_code=400, detail="macdShort must be < macdLong")
+
+        lookback = max(ma_period, macd_long + macd_signal, rsi_period + 1, atr_period + 1) + 10
+        lookback = min(max(int(lookback), 60), 400)
+
         conn = connect(mysql_cfg)
         try:
             rows = query_dict(
@@ -848,13 +921,157 @@ def create_app() -> FastAPI:
                 """,
                 (code,),
             )
+
+            atr_rows = query_dict(
+                conn,
+                """
+                SELECT trade_date, high_price, low_price, close_price
+                FROM trade_stock_daily
+                WHERE stock_code=%s
+                ORDER BY trade_date DESC
+                LIMIT %s
+                """,
+                (code, lookback),
+            )
         finally:
             conn.close()
-        return {"stock_code": code, "row": (rows[0] if rows else None)}
+
+        def _ema_opt(values: list[float | None], span: int) -> list[float | None]:
+            if not values:
+                return []
+            alpha = 2.0 / (span + 1.0)
+            out: list[float | None] = []
+            for v in values:
+                if v is None:
+                    out.append(out[-1] if out else None)
+                    continue
+                if not out or out[-1] is None:
+                    out.append(v)
+                    continue
+                out.append(out[-1] + alpha * (v - out[-1]))
+            return out
+
+        def _macd_opt(
+            close: list[float | None], short: int, long: int, signal: int
+        ) -> tuple[list[float | None], list[float | None], list[float | None]]:
+            ema_s = _ema_opt(close, short)
+            ema_l = _ema_opt(close, long)
+            dif: list[float | None] = []
+            for a, b in zip(ema_s, ema_l):
+                dif.append((a - b) if (a is not None and b is not None) else None)
+            dea = _ema_opt(dif, signal)
+            hist: list[float | None] = []
+            for d, e in zip(dif, dea):
+                hist.append(((d - e) * 2.0) if (d is not None and e is not None) else None)
+            return dif, dea, hist
+
+        def _rsi_opt(close: list[float | None], period: int) -> list[float | None]:
+            n = len(close)
+            out: list[float | None] = [None] * n
+            if n < period + 1:
+                return out
+            filled: list[float] = []
+            last = 0.0
+            for v in close:
+                if v is None:
+                    filled.append(last)
+                else:
+                    last = float(v)
+                    filled.append(last)
+            gains = [0.0] * n
+            losses = [0.0] * n
+            for i in range(1, n):
+                d = filled[i] - filled[i - 1]
+                gains[i] = d if d > 0 else 0.0
+                losses[i] = -d if d < 0 else 0.0
+            avg_gain = sum(gains[1 : period + 1]) / period
+            avg_loss = sum(losses[1 : period + 1]) / period
+            for i in range(period, n):
+                if i > period:
+                    avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+                    avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+                if avg_loss == 0:
+                    out[i] = 100.0
+                else:
+                    rs = avg_gain / avg_loss
+                    out[i] = 100.0 - 100.0 / (1.0 + rs)
+            return out
+
+        ma_custom = None
+        macd_dif_custom = None
+        macd_dea_custom = None
+        macd_hist_custom = None
+        rsi_custom = None
+        atr_custom = None
+
+        if atr_rows and len(atr_rows) >= 2:
+            r = list(reversed(atr_rows))
+            close_vals: list[float | None] = [float(x["close_price"]) if x.get("close_price") is not None else None for x in r]
+
+            if any(v is not None for v in close_vals):
+                tail = [v for v in close_vals if v is not None][-ma_period:]
+                ma_custom = (sum(tail) / len(tail)) if tail else None
+
+                dif, dea, hist = _macd_opt(close_vals, macd_short, macd_long, macd_signal)
+                macd_dif_custom = dif[-1] if dif else None
+                macd_dea_custom = dea[-1] if dea else None
+                macd_hist_custom = hist[-1] if hist else None
+
+                rsi_seq = _rsi_opt(close_vals, rsi_period)
+                rsi_custom = rsi_seq[-1] if rsi_seq else None
+
+            prev_close: float | None = None
+            trs: list[float] = []
+            for x in r:
+                hi = x.get("high_price")
+                lo = x.get("low_price")
+                cl = x.get("close_price")
+                if hi is None or lo is None or cl is None:
+                    continue
+                hi_f = float(hi)
+                lo_f = float(lo)
+                cl_f = float(cl)
+                if prev_close is None:
+                    tr = hi_f - lo_f
+                else:
+                    tr = max(hi_f - lo_f, abs(hi_f - prev_close), abs(lo_f - prev_close))
+                trs.append(tr)
+                prev_close = cl_f
+            if len(trs) >= atr_period:
+                atr_custom = sum(trs[-atr_period:]) / float(atr_period)
+
+        row = (rows[0] if rows else None)
+        if row is not None:
+            row["ma_custom"] = ma_custom
+            row["macd_dif_custom"] = macd_dif_custom
+            row["macd_dea_custom"] = macd_dea_custom
+            row["macd_hist_custom"] = macd_hist_custom
+            row["rsi_custom"] = rsi_custom
+            row["atr_custom"] = atr_custom
+        return {"stock_code": code, "row": row}
 
     @app.get("/api/stock/{stock_code}/technical/series")
-    def stock_technical_series(stock_code: str, start: str | None = None, end: str | None = None) -> dict[str, Any]:
+    def stock_technical_series(
+        stock_code: str,
+        start: str | None = None,
+        end: str | None = None,
+        maPeriod: int = 20,
+        macdShort: int = 12,
+        macdLong: int = 26,
+        macdSignal: int = 9,
+        rsiPeriod: int = 14,
+        atrPeriod: int = 14,
+    ) -> dict[str, Any]:
         code = _normalize_stock_code(stock_code)
+        ma_period = min(max(int(maPeriod or 20), 2), 200)
+        macd_short = min(max(int(macdShort or 12), 2), 200)
+        macd_long = min(max(int(macdLong or 26), 2), 300)
+        macd_signal = min(max(int(macdSignal or 9), 2), 200)
+        rsi_period = min(max(int(rsiPeriod or 14), 2), 200)
+        atr_period = min(max(int(atrPeriod or 14), 2), 200)
+        if macd_short >= macd_long:
+            raise HTTPException(status_code=400, detail="macdShort must be < macdLong")
+
         start_s = (start or "").strip()
         end_s = (end or "").strip()
         where = ["stock_code=%s"]
@@ -883,6 +1100,120 @@ def create_app() -> FastAPI:
             )
         finally:
             conn.close()
+
+        def _ema_opt(values: list[float | None], span: int) -> list[float | None]:
+            if not values:
+                return []
+            alpha = 2.0 / (span + 1.0)
+            out: list[float | None] = []
+            for v in values:
+                if v is None:
+                    out.append(out[-1] if out else None)
+                    continue
+                if not out or out[-1] is None:
+                    out.append(v)
+                    continue
+                out.append(out[-1] + alpha * (v - out[-1]))
+            return out
+
+        def _macd_opt(
+            close: list[float | None], short: int, long: int, signal: int
+        ) -> tuple[list[float | None], list[float | None], list[float | None]]:
+            ema_s = _ema_opt(close, short)
+            ema_l = _ema_opt(close, long)
+            dif: list[float | None] = []
+            for a, b in zip(ema_s, ema_l):
+                dif.append((a - b) if (a is not None and b is not None) else None)
+            dea = _ema_opt(dif, signal)
+            hist: list[float | None] = []
+            for d, e in zip(dif, dea):
+                hist.append(((d - e) * 2.0) if (d is not None and e is not None) else None)
+            return dif, dea, hist
+
+        def _rsi_opt(close: list[float | None], period: int) -> list[float | None]:
+            n = len(close)
+            out: list[float | None] = [None] * n
+            if n < period + 1:
+                return out
+            filled: list[float] = []
+            last = 0.0
+            for v in close:
+                if v is None:
+                    filled.append(last)
+                else:
+                    last = float(v)
+                    filled.append(last)
+            gains = [0.0] * n
+            losses = [0.0] * n
+            for i in range(1, n):
+                d = filled[i] - filled[i - 1]
+                gains[i] = d if d > 0 else 0.0
+                losses[i] = -d if d < 0 else 0.0
+            avg_gain = sum(gains[1 : period + 1]) / period
+            avg_loss = sum(losses[1 : period + 1]) / period
+            for i in range(period, n):
+                if i > period:
+                    avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+                    avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+                if avg_loss == 0:
+                    out[i] = 100.0
+                else:
+                    rs = avg_gain / avg_loss
+                    out[i] = 100.0 - 100.0 / (1.0 + rs)
+            return out
+
+        if rows and len(rows) >= 2:
+            close_vals: list[float | None] = [float(r["close_price"]) if r.get("close_price") is not None else None for r in rows]
+            dif, dea, hist = _macd_opt(close_vals, macd_short, macd_long, macd_signal)
+            rsi_seq = _rsi_opt(close_vals, rsi_period)
+
+            ma_seq: list[float | None] = []
+            s = 0.0
+            window: list[float] = []
+            for r in rows:
+                c = r.get("close_price")
+                if c is None:
+                    ma_seq.append(None)
+                    continue
+                cf = float(c)
+                window.append(cf)
+                s += cf
+                if len(window) > ma_period:
+                    s -= window.pop(0)
+                ma_seq.append(s / len(window))
+
+            prev_close = None
+            trs: list[float] = []
+            for i, r in enumerate(rows):
+                hi = r.get("high_price")
+                lo = r.get("low_price")
+                cl = r.get("close_price")
+                if hi is None or lo is None or cl is None:
+                    tr = 0.0
+                    trs.append(tr)
+                    prev_close = cl
+                    r["atr14"] = None
+                    continue
+                hi_f = float(hi)
+                lo_f = float(lo)
+                cl_f = float(cl)
+                if prev_close is None or prev_close is None:
+                    tr = hi_f - lo_f
+                else:
+                    pc = float(prev_close)
+                    tr = max(hi_f - lo_f, abs(hi_f - pc), abs(lo_f - pc))
+                trs.append(tr)
+                prev_close = cl_f
+                if i >= (atr_period - 1):
+                    r["atr_custom"] = sum(trs[i - (atr_period - 1) : i + 1]) / float(atr_period)
+                else:
+                    r["atr_custom"] = None
+
+                r["ma_custom"] = ma_seq[i] if i < len(ma_seq) else None
+                r["rsi_custom"] = rsi_seq[i] if i < len(rsi_seq) else None
+                r["macd_dif_custom"] = dif[i] if i < len(dif) else None
+                r["macd_dea_custom"] = dea[i] if i < len(dea) else None
+                r["macd_hist_custom"] = hist[i] if i < len(hist) else None
         return {"stock_code": code, "rows": rows}
 
     @app.get("/api/stock/{stock_code}/feed")

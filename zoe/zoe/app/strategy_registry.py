@@ -17,6 +17,44 @@ class StrategyMeta:
     requires_predictions: bool = False
 
 
+def _p_int(label: str, help: str, min_v: int | None = None, max_v: int | None = None) -> dict[str, Any]:
+    d: dict[str, Any] = {"type": "int", "label": label, "help": help}
+    if min_v is not None:
+        d["min"] = int(min_v)
+    if max_v is not None:
+        d["max"] = int(max_v)
+    return d
+
+
+def _p_float(
+    label: str,
+    help: str,
+    min_v: float | None = None,
+    max_v: float | None = None,
+    step: float | None = None,
+) -> dict[str, Any]:
+    d: dict[str, Any] = {"type": "float", "label": label, "help": help}
+    if min_v is not None:
+        d["min"] = float(min_v)
+    if max_v is not None:
+        d["max"] = float(max_v)
+    if step is not None:
+        d["step"] = float(step)
+    return d
+
+
+def _p_bool(label: str, help: str) -> dict[str, Any]:
+    return {"type": "bool", "label": label, "help": help}
+
+
+def _p_enum(label: str, help: str, values: list[str]) -> dict[str, Any]:
+    return {"type": "enum", "label": label, "help": help, "values": list(values)}
+
+
+def _p_object(label: str, help: str) -> dict[str, Any]:
+    return {"type": "object", "label": label, "help": help}
+
+
 def _make_dual_ma():
     import backtrader as bt  # type: ignore
 
@@ -1180,77 +1218,105 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "ma_dual": StrategyMeta(
             strategy_id="ma_dual",
             name="MA双均线策略",
-            description="快均线上穿慢均线买入，下穿卖出",
-            params_schema={"fast": {"type": "int", "min": 2, "max": 250}, "slow": {"type": "int", "min": 3, "max": 400}},
+            description="适用：趋势行情。逻辑：快均线上穿慢均线买入，下穿卖出。震荡市可能频繁来回切换。",
+            params_schema={
+                "fast": _p_int("快均线周期", "快均线的周期（通常小于慢均线）。周期越小越敏感，信号越多。", 2, 250),
+                "slow": _p_int("慢均线周期", "慢均线的周期（通常大于快均线）。周期越大越稳健，但信号滞后。", 3, 400),
+            },
             default_params={"fast": 10, "slow": 30},
             bt_strategy_factory=_make_dual_ma,
         ),
         "macd_basic": StrategyMeta(
             strategy_id="macd_basic",
             name="MACD策略",
-            description="DIF上穿DEA买入，下穿卖出",
-            params_schema={"fast": {"type": "int"}, "slow": {"type": "int"}, "signal": {"type": "int"}},
+            description="适用：趋势/波段行情。逻辑：DIF 上穿 DEA（金叉）买入，下穿 DEA（死叉）卖出。",
+            params_schema={
+                "fast": _p_int("快线周期", "MACD 快线 EMA 周期（常用 12）。越小越敏感。", 2, 200),
+                "slow": _p_int("慢线周期", "MACD 慢线 EMA 周期（常用 26）。应大于快线周期。", 3, 400),
+                "signal": _p_int("信号线周期", "DEA（信号线）EMA 周期（常用 9）。越小越敏感。", 2, 200),
+            },
             default_params={"fast": 12, "slow": 26, "signal": 9},
             bt_strategy_factory=_make_macd_basic,
         ),
         "rsi_basic": StrategyMeta(
             strategy_id="rsi_basic",
             name="RSI策略",
-            description="RSI低于超卖阈值买入，高于超买阈值卖出",
-            params_schema={"period": {"type": "int"}, "oversold": {"type": "float"}, "overbought": {"type": "float"}},
+            description="适用：震荡/回调行情。逻辑：RSI 低于超卖阈值买入，高于超买阈值卖出。",
+            params_schema={
+                "period": _p_int("RSI周期", "RSI 计算周期（常用 14）。周期越小越敏感。", 2, 200),
+                "oversold": _p_float("超卖阈值", "RSI 低于该阈值视为超卖区域，触发买入。常用 30。", 1, 60, 1),
+                "overbought": _p_float("超买阈值", "RSI 高于该阈值视为超买区域，触发卖出。常用 70。", 40, 99, 1),
+            },
             default_params={"period": 14, "oversold": 30, "overbought": 70},
             bt_strategy_factory=_make_rsi_basic,
         ),
         "boll_basic": StrategyMeta(
             strategy_id="boll_basic",
             name="布林带策略",
-            description="跌破下轨买入，上穿上轨卖出",
-            params_schema={"period": {"type": "int"}, "devfactor": {"type": "float"}},
+            description="适用：震荡市（均值回归）。逻辑：收盘价跌破下轨买入，上穿上轨卖出。",
+            params_schema={
+                "period": _p_int("布林周期", "布林带中轨的均线周期（常用 20）。", 5, 250),
+                "devfactor": _p_float("标准差倍数", "上下轨距离中轨的标准差倍数（常用 2.0）。越大越宽，触发更少。", 0.5, 6.0, 0.1),
+            },
             default_params={"period": 20, "devfactor": 2.0},
             bt_strategy_factory=_make_boll_basic,
         ),
         "bias": StrategyMeta(
             strategy_id="bias",
             name="乖离率策略",
-            description="BIAS低于阈值买入，高于阈值卖出",
-            params_schema={"period": {"type": "int"}, "buy_threshold": {"type": "float"}, "sell_threshold": {"type": "float"}},
+            description="适用：震荡/回归行情。逻辑：BIAS=(收盘-均线)/均线*100，低于阈值买入，高于阈值卖出。",
+            params_schema={
+                "period": _p_int("均线周期", "用于计算 BIAS 的均线周期（常用 20）。", 2, 250),
+                "buy_threshold": _p_float("买入阈值(%)", "BIAS 小于该阈值触发买入（负值表示低于均线）。例如 -6 表示低于均线 6%。", -50, 0, 0.1),
+                "sell_threshold": _p_float("卖出阈值(%)", "BIAS 大于该阈值触发卖出。", 0, 50, 0.1),
+            },
             default_params={"period": 20, "buy_threshold": -6.0, "sell_threshold": 3.0},
             bt_strategy_factory=_make_bias,
         ),
         "momentum": StrategyMeta(
             strategy_id="momentum",
             name="动量策略",
-            description="ROC高于阈值买入，低于负阈值卖出",
-            params_schema={"period": {"type": "int"}, "threshold": {"type": "float"}},
+            description="适用：趋势/强势行情。逻辑：ROC(涨跌幅)高于阈值买入，低于负阈值卖出。",
+            params_schema={
+                "period": _p_int("ROC周期", "ROC 计算周期（常用 20）。周期越小越敏感。", 2, 250),
+                "threshold": _p_float("动量阈值(%)", "ROC 高于阈值买入；低于 -threshold 卖出。", 0.1, 50, 0.1),
+            },
             default_params={"period": 20, "threshold": 5.0},
             bt_strategy_factory=_make_momentum,
         ),
         "momentum_fast": StrategyMeta(
             strategy_id="momentum_fast",
             name="动量策略(快)",
-            description="ROC更短周期版本",
-            params_schema={"period": {"type": "int"}, "threshold": {"type": "float"}},
+            description="适用：更短周期的动量交易。逻辑同动量策略，但更敏感、信号更多。",
+            params_schema={
+                "period": _p_int("ROC周期", "ROC 计算周期（更短）。", 2, 250),
+                "threshold": _p_float("动量阈值(%)", "ROC 高于阈值买入；低于 -threshold 卖出。", 0.1, 50, 0.1),
+            },
             default_params={"period": 10, "threshold": 3.0},
             bt_strategy_factory=_make_momentum,
         ),
         "rsi_cross_confirm": StrategyMeta(
             strategy_id="rsi_cross_confirm",
             name="RSI增强-穿越确认",
-            description="RSI从超卖区向上穿越阈值后买入，RSI超买卖出",
-            params_schema={"period": {"type": "int"}, "oversold": {"type": "float"}, "overbought": {"type": "float"}},
+            description="适用：震荡/回升确认。逻辑：RSI 从超卖区向上穿越阈值后买入（确认回升），RSI 超买卖出。",
+            params_schema={
+                "period": _p_int("RSI周期", "RSI 计算周期（常用 14）。", 2, 200),
+                "oversold": _p_float("超卖阈值", "RSI 从低于该阈值回升并向上穿越时触发买入。", 1, 60, 1),
+                "overbought": _p_float("超买阈值", "RSI 高于该阈值触发卖出。", 40, 99, 1),
+            },
             default_params={"period": 14, "oversold": 30, "overbought": 70},
             bt_strategy_factory=_make_rsi_cross_confirm,
         ),
         "macd_vol_confirm": StrategyMeta(
             strategy_id="macd_vol_confirm",
             name="MACD增强-成交量确认",
-            description="MACD金叉且成交量满足条件才买入，死叉卖出",
+            description="适用：趋势行情中的过滤增强。逻辑：MACD 金叉且成交量放量确认才买入；MACD 死叉卖出。",
             params_schema={
-                "fast": {"type": "int"},
-                "slow": {"type": "int"},
-                "signal": {"type": "int"},
-                "vol_period": {"type": "int"},
-                "vol_mult": {"type": "float"},
+                "fast": _p_int("快线周期", "MACD 快线 EMA 周期（常用 12）。", 2, 200),
+                "slow": _p_int("慢线周期", "MACD 慢线 EMA 周期（常用 26）。", 3, 400),
+                "signal": _p_int("信号线周期", "DEA（信号线）EMA 周期（常用 9）。", 2, 200),
+                "vol_period": _p_int("成交量均线周期", "成交量均线周期，用于判断放量。常用 20。", 2, 250),
+                "vol_mult": _p_float("放量倍率", "当前成交量需大于 vol_ma * vol_mult 才算放量确认。", 0.1, 10.0, 0.05),
             },
             default_params={"fast": 12, "slow": 26, "signal": 9, "vol_period": 20, "vol_mult": 0.9},
             bt_strategy_factory=_make_macd_vol_confirm,
@@ -1258,13 +1324,13 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "macd_profit_lock": StrategyMeta(
             strategy_id="macd_profit_lock",
             name="MACD增强-利润锁定",
-            description="MACD金叉入场；达到触发利润后用回撤锁定；死叉也出场",
+            description="适用：趋势行情的持有增强。逻辑：MACD 金叉入场；盈利达到阈值后启用回撤锁定；MACD 死叉也出场。",
             params_schema={
-                "fast": {"type": "int"},
-                "slow": {"type": "int"},
-                "signal": {"type": "int"},
-                "profit_trigger": {"type": "float"},
-                "trail_pct": {"type": "float"},
+                "fast": _p_int("快线周期", "MACD 快线 EMA 周期。", 2, 200),
+                "slow": _p_int("慢线周期", "MACD 慢线 EMA 周期。", 3, 400),
+                "signal": _p_int("信号线周期", "DEA（信号线）EMA 周期。", 2, 200),
+                "profit_trigger": _p_float("触发利润(%)", "当持仓收益率达到该阈值后，启用回撤锁定逻辑。", 0.1, 200, 0.1),
+                "trail_pct": _p_float("回撤锁定(%)", "从最高价回撤超过该比例时锁定利润出场。", 0.1, 50, 0.1),
             },
             default_params={"fast": 12, "slow": 26, "signal": 9, "profit_trigger": 5.0, "trail_pct": 3.0},
             bt_strategy_factory=_make_macd_profit_lock,
@@ -1272,25 +1338,30 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "boll_mid_stop": StrategyMeta(
             strategy_id="boll_mid_stop",
             name="布林带增强-中轨止损",
-            description="下轨买入，上轨止盈；反弹到中轨后再跌破中轨止损",
-            params_schema={"period": {"type": "int"}, "devfactor": {"type": "float"}},
+            description="适用：震荡市的风控增强。逻辑：下轨买入，上轨止盈；若反弹到中轨上方后再跌破中轨，触发止损。",
+            params_schema={
+                "period": _p_int("布林周期", "布林带中轨周期（常用 20）。", 5, 250),
+                "devfactor": _p_float("标准差倍数", "上下轨标准差倍数（常用 2.0）。", 0.5, 6.0, 0.1),
+            },
             default_params={"period": 20, "devfactor": 2.0},
             bt_strategy_factory=_make_boll_mid_stop,
         ),
         "adaptive": StrategyMeta(
             strategy_id="adaptive",
             name="综合增强-自适应策略",
-            description="ADX分趋势/震荡，趋势用MACD，震荡用RSI，统一ATR跟踪止损",
+            description="适用：趋势/震荡自适应。逻辑：ADX 判断趋势或震荡；趋势用 MACD 信号，震荡用 RSI 信号；统一 ATR 跟踪止损。",
             params_schema={
-                "adx_period": {"type": "int"},
-                "adx_trend": {"type": "float"},
-                "adx_range": {"type": "float"},
-                "atr_period": {"type": "int"},
-                "atr_mult": {"type": "float"},
-                "macd_fast": {"type": "int"},
-                "macd_slow": {"type": "int"},
-                "macd_signal": {"type": "int"},
-                "rsi_period": {"type": "int"},
+                "adx_period": _p_int("ADX周期", "ADX 计算周期（常用 14）。", 2, 200),
+                "adx_trend": _p_float("趋势阈值", "ADX 大于该值认为趋势行情（偏趋势策略）。常用 25。", 1, 100, 1),
+                "adx_range": _p_float("震荡阈值", "ADX 小于该值认为震荡行情（偏均值回归）。常用 20。", 1, 100, 1),
+                "atr_period": _p_int("ATR周期", "ATR 计算周期（常用 14）。用于跟踪止损。", 2, 200),
+                "atr_mult": _p_float("ATR倍数", "跟踪止损距离：close - atr_mult * ATR。倍数越大越宽松。", 0.1, 10.0, 0.1),
+                "macd_fast": _p_int("MACD快线周期", "趋势模式下 MACD 快线 EMA 周期。", 2, 200),
+                "macd_slow": _p_int("MACD慢线周期", "趋势模式下 MACD 慢线 EMA 周期。", 3, 400),
+                "macd_signal": _p_int("MACD信号线周期", "趋势模式下 MACD 信号线 EMA 周期。", 2, 200),
+                "rsi_period": _p_int("RSI周期", "震荡模式下 RSI 计算周期。", 2, 200),
+                "oversold": _p_float("RSI超卖阈值", "震荡模式下 RSI 低于该值买入。", 1, 60, 1),
+                "overbought": _p_float("RSI超买阈值", "震荡模式下 RSI 高于该值卖出。", 40, 99, 1),
             },
             default_params={
                 "adx_period": 14,
@@ -1310,31 +1381,39 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "macd_divergence": StrategyMeta(
             strategy_id="macd_divergence",
             name="MACD底背离策略",
-            description="价格接近低点且MACD高于低点并金叉态时买入，死叉确认卖出",
-            params_schema={"lookback": {"type": "int"}, "fast": {"type": "int"}, "slow": {"type": "int"}, "signal": {"type": "int"}},
+            description="适用：超跌反弹/拐点捕捉。逻辑：价格接近阶段新低，但 MACD 不再创新低（背离）且处于金叉态买入；死叉确认卖出。",
+            params_schema={
+                "lookback": _p_int("回看窗口", "用于判断阶段低点与 MACD 低点的回看窗口（常用 30）。", 10, 400),
+                "fast": _p_int("快线周期", "MACD 快线 EMA 周期。", 2, 200),
+                "slow": _p_int("慢线周期", "MACD 慢线 EMA 周期。", 3, 400),
+                "signal": _p_int("信号线周期", "DEA（信号线）EMA 周期。", 2, 200),
+            },
             default_params={"lookback": 30, "fast": 12, "slow": 26, "signal": 9},
             bt_strategy_factory=_make_macd_divergence,
         ),
         "turtle_simple": StrategyMeta(
             strategy_id="turtle_simple",
             name="简单海龟交易法则",
-            description="20日上轨突破入场，10日下轨出场",
-            params_schema={"entry_period": {"type": "int"}, "exit_period": {"type": "int"}},
+            description="适用：趋势突破。逻辑：收盘价突破 N 日唐奇安上轨入场，跌破 M 日唐奇安下轨出场。",
+            params_schema={
+                "entry_period": _p_int("入场通道周期", "唐奇安上轨周期（常用 20）。", 2, 400),
+                "exit_period": _p_int("出场通道周期", "唐奇安下轨周期（常用 10）。", 2, 400),
+            },
             default_params={"entry_period": 20, "exit_period": 10},
             bt_strategy_factory=_make_turtle_simple,
         ),
         "turtle_full": StrategyMeta(
             strategy_id="turtle_full",
             name="完整海龟交易法则",
-            description="通道突破入场 + ATR风险仓位 + 金字塔加仓 + 2N止损 + 下轨出场",
+            description="适用：趋势突破（系统化风控）。逻辑：通道突破入场；ATR 风险仓位；金字塔加仓；2N 止损；下轨出场。",
             params_schema={
-                "entry_period": {"type": "int"},
-                "exit_period": {"type": "int"},
-                "atr_period": {"type": "int"},
-                "risk_pct": {"type": "float"},
-                "max_units": {"type": "int"},
-                "add_n": {"type": "float"},
-                "stop_n": {"type": "float"},
+                "entry_period": _p_int("入场通道周期", "唐奇安上轨周期。", 2, 400),
+                "exit_period": _p_int("出场通道周期", "唐奇安下轨周期。", 2, 400),
+                "atr_period": _p_int("ATR周期", "ATR 计算周期（常用 20）。用于风险与加仓步长。", 2, 400),
+                "risk_pct": _p_float("单笔风险占比", "每个单位仓位允许的风险占账户净值的比例（如 0.01=1%）。", 0.0001, 0.2, 0.0005),
+                "max_units": _p_int("最大加仓单位", "最多加仓到多少个单位（常用 4）。", 1, 20),
+                "add_n": _p_float("加仓步长(N)", "每上涨 add_n * ATR 加一单位仓。常用 0.5。", 0.1, 5.0, 0.1),
+                "stop_n": _p_float("止损倍数(N)", "初始/加仓后的止损距离：入场价 - stop_n * ATR。常用 2。", 0.5, 10.0, 0.1),
             },
             default_params={
                 "entry_period": 20,
@@ -1350,17 +1429,17 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "turtle_adx": StrategyMeta(
             strategy_id="turtle_adx",
             name="ADX海龟策略",
-            description="海龟突破前增加ADX过滤",
+            description="适用：趋势突破（减少假突破）。逻辑：只有 ADX 达到阈值才允许执行海龟突破入场；其余同完整海龟。",
             params_schema={
-                "entry_period": {"type": "int"},
-                "exit_period": {"type": "int"},
-                "atr_period": {"type": "int"},
-                "adx_period": {"type": "int"},
-                "adx_threshold": {"type": "float"},
-                "risk_pct": {"type": "float"},
-                "max_units": {"type": "int"},
-                "add_n": {"type": "float"},
-                "stop_n": {"type": "float"},
+                "entry_period": _p_int("入场通道周期", "唐奇安上轨周期。", 2, 400),
+                "exit_period": _p_int("出场通道周期", "唐奇安下轨周期。", 2, 400),
+                "atr_period": _p_int("ATR周期", "ATR 计算周期。", 2, 400),
+                "adx_period": _p_int("ADX周期", "ADX 计算周期（常用 14）。", 2, 200),
+                "adx_threshold": _p_float("ADX阈值", "ADX 大于该阈值才允许突破入场（常用 15）。", 1, 100, 1),
+                "risk_pct": _p_float("单笔风险占比", "每个单位仓位允许的风险占账户净值的比例。", 0.0001, 0.2, 0.0005),
+                "max_units": _p_int("最大加仓单位", "最多加仓到多少个单位。", 1, 20),
+                "add_n": _p_float("加仓步长(N)", "每上涨 add_n * ATR 加一单位仓。", 0.1, 5.0, 0.1),
+                "stop_n": _p_float("止损倍数(N)", "止损距离：入场价 - stop_n * ATR。", 0.5, 10.0, 0.1),
             },
             default_params={
                 "entry_period": 20,
@@ -1378,16 +1457,16 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "turtle_multi_tf": StrategyMeta(
             strategy_id="turtle_multi_tf",
             name="多周期海龟策略",
-            description="周线定方向，日线执行突破/出场与加仓",
+            description="适用：趋势跟随（过滤逆势）。逻辑：周线判断趋势方向，日线执行突破/出场与加仓。",
             params_schema={
-                "daily_entry": {"type": "int"},
-                "daily_exit": {"type": "int"},
-                "weekly_period": {"type": "int"},
-                "atr_period": {"type": "int"},
-                "risk_pct": {"type": "float"},
-                "max_units": {"type": "int"},
-                "add_n": {"type": "float"},
-                "stop_n": {"type": "float"},
+                "daily_entry": _p_int("日线入场通道周期", "日线唐奇安上轨周期（常用 20）。", 2, 400),
+                "daily_exit": _p_int("日线出场通道周期", "日线唐奇安下轨周期（常用 10）。", 2, 400),
+                "weekly_period": _p_int("周线趋势周期", "周线通道周期（常用 8 周）。用于趋势过滤。", 2, 200),
+                "atr_period": _p_int("ATR周期", "ATR 计算周期（常用 20）。", 2, 400),
+                "risk_pct": _p_float("单笔风险占比", "每个单位仓位允许的风险占账户净值的比例。", 0.0001, 0.2, 0.0005),
+                "max_units": _p_int("最大加仓单位", "最多加仓到多少个单位。", 1, 20),
+                "add_n": _p_float("加仓步长(N)", "每上涨 add_n * ATR 加一单位仓。", 0.1, 5.0, 0.1),
+                "stop_n": _p_float("止损倍数(N)", "止损距离：入场价 - stop_n * ATR。", 0.5, 10.0, 0.1),
             },
             default_params={
                 "daily_entry": 20,
@@ -1405,17 +1484,17 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "turtle_ml": StrategyMeta(
             strategy_id="turtle_ml",
             name="ML增强海龟策略",
-            description="突破信号需满足预测概率阈值才入场（predictions需传入）",
+            description="适用：趋势突破 + ML 过滤。逻辑：突破信号需满足预测概率阈值才入场（predictions 需传入）。其余同完整海龟。",
             params_schema={
-                "entry_period": {"type": "int"},
-                "exit_period": {"type": "int"},
-                "atr_period": {"type": "int"},
-                "risk_pct": {"type": "float"},
-                "max_units": {"type": "int"},
-                "add_n": {"type": "float"},
-                "stop_n": {"type": "float"},
-                "ml_threshold": {"type": "float"},
-                "predictions": {"type": "object"},
+                "entry_period": _p_int("入场通道周期", "唐奇安上轨周期。", 2, 400),
+                "exit_period": _p_int("出场通道周期", "唐奇安下轨周期。", 2, 400),
+                "atr_period": _p_int("ATR周期", "ATR 计算周期。", 2, 400),
+                "risk_pct": _p_float("单笔风险占比", "每个单位仓位允许的风险占账户净值的比例。", 0.0001, 0.2, 0.0005),
+                "max_units": _p_int("最大加仓单位", "最多加仓到多少个单位。", 1, 20),
+                "add_n": _p_float("加仓步长(N)", "每上涨 add_n * ATR 加一单位仓。", 0.1, 5.0, 0.1),
+                "stop_n": _p_float("止损倍数(N)", "止损距离：入场价 - stop_n * ATR。", 0.5, 10.0, 0.1),
+                "ml_threshold": _p_float("放行阈值", "预测概率 >= 阈值时才允许入场。", 0.0, 1.0, 0.01),
+                "predictions": _p_object("预测字典", "格式：{ 'YYYY-MM-DD': 概率 }。用于过滤突破信号。"),
             },
             default_params={
                 "entry_period": 20,
@@ -1434,11 +1513,11 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "chan_third_buy": StrategyMeta(
             strategy_id="chan_third_buy",
             name="经典缠论-基础三买",
-            description="依赖数据中的 chan_signal/chan_zg/chan_zd（未提供则不会触发交易）",
+            description="适用：趋势启动（缠论三买）。逻辑：第三类买点入场；跌回中枢上沿止损（可选）；达到固定止盈或三卖离场。",
             params_schema={
-                "take_profit_pct": {"type": "float"},
-                "use_chan_stop": {"type": "bool"},
-                "chan_backend": {"type": "enum", "values": ["chanpy", "self"]},
+                "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场（如 0.15=15%）。", 0.0, 5.0, 0.01),
+                "use_chan_stop": _p_bool("使用中枢止损", "开启后优先用中枢上沿 ZG 作为止损线；否则使用固定比例兜底止损。"),
+                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
             default_params={"take_profit_pct": 0.15, "use_chan_stop": True, "chan_backend": "chanpy"},
             bt_strategy_factory=_make_chan_third_buy,
@@ -1447,16 +1526,16 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "chan_trailing": StrategyMeta(
             strategy_id="chan_trailing",
             name="缠论-量价增强策略",
-            description="三买入场，阶梯止损+ATR跟踪止损+三卖离场；依赖 chan_* 字段",
+            description="适用：趋势波段（更强风控）。逻辑：三买入场；盈利后阶梯止损（保本/锁利）+ ATR 跟踪止损；三卖离场。",
             params_schema={
-                "take_profit_pct": {"type": "float"},
-                "use_chan_stop": {"type": "bool"},
-                "atr_period": {"type": "int"},
-                "atr_exit_mult": {"type": "float"},
-                "breakeven_pct": {"type": "float"},
-                "lock_profit_pct": {"type": "float"},
-                "lock_amount_pct": {"type": "float"},
-                "chan_backend": {"type": "enum", "values": ["chanpy", "self"]},
+                "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场（如 0.15=15%）。", 0.0, 5.0, 0.01),
+                "use_chan_stop": _p_bool("使用中枢止损", "开启后优先用中枢上沿 ZG 作为止损线；否则使用固定比例兜底止损。"),
+                "atr_period": _p_int("ATR周期", "ATR 计算周期（常用 14）。用于跟踪止损。", 2, 200),
+                "atr_exit_mult": _p_float("ATR出场倍数", "跟踪止损距离：最高价 - atr_exit_mult * ATR。", 0.1, 10.0, 0.1),
+                "breakeven_pct": _p_float("保本触发", "收益率达到该阈值后止损抬到成本价（如 0.05=5%）。", 0.0, 1.0, 0.01),
+                "lock_profit_pct": _p_float("锁利触发", "收益率达到该阈值后启动锁利止损（如 0.10=10%）。", 0.0, 2.0, 0.01),
+                "lock_amount_pct": _p_float("锁定利润", "锁利后至少锁定的利润比例（如 0.05=5%）。", 0.0, 2.0, 0.01),
+                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
             default_params={
                 "take_profit_pct": 0.15,
@@ -1474,11 +1553,11 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "chan_multi_tf": StrategyMeta(
             strategy_id="chan_multi_tf",
             name="缠论-多周期缠论策略",
-            description="周线过滤逆势信号（日线三买仅在周线向上时做）；依赖 chan_* 字段",
+            description="适用：趋势过滤（减少逆势信号）。逻辑：周线向上才允许日线三买入场；其余止盈/止损/三卖离场。",
             params_schema={
-                "take_profit_pct": {"type": "float"},
-                "weekly_ma_period": {"type": "int"},
-                "chan_backend": {"type": "enum", "values": ["chanpy", "self"]},
+                "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场。", 0.0, 5.0, 0.01),
+                "weekly_ma_period": _p_int("周线MA周期", "周线趋势过滤的均线周期（默认 20）。周线收盘高于均线视为向上。", 2, 200),
+                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
             default_params={"take_profit_pct": 0.15, "weekly_ma_period": 20, "chan_backend": "chanpy"},
             bt_strategy_factory=_make_chan_multi_tf,
@@ -1488,12 +1567,12 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "chan_ml": StrategyMeta(
             strategy_id="chan_ml",
             name="缠论-ML增强缠论策略",
-            description="三买信号需满足预测概率阈值才入场（predictions需传入），依赖 chan_* 字段",
+            description="适用：缠论三买 + ML 过滤。逻辑：三买信号需满足预测概率阈值才入场（predictions 需传入）；其余止盈/止损/三卖离场。",
             params_schema={
-                "take_profit_pct": {"type": "float"},
-                "ml_threshold": {"type": "float"},
-                "predictions": {"type": "object"},
-                "chan_backend": {"type": "enum", "values": ["chanpy", "self"]},
+                "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场。", 0.0, 5.0, 0.01),
+                "ml_threshold": _p_float("放行阈值", "预测概率 >= 阈值时才允许入场。", 0.0, 1.0, 0.01),
+                "predictions": _p_object("预测字典", "格式：{ 'YYYY-MM-DD': 概率 }。用于过滤三买信号。"),
+                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
             default_params={"take_profit_pct": 0.15, "ml_threshold": 0.5, "predictions": {}, "chan_backend": "chanpy"},
             bt_strategy_factory=_make_chan_ml,
@@ -1503,12 +1582,12 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "grid_classic": StrategyMeta(
             strategy_id="grid_classic",
             name="经典网格交易",
-            description="回看区间构建网格，穿格买卖（震荡收租）",
+            description="适用：震荡行情。逻辑：用回看区间的高低点构建网格，价格穿越网格线触发买卖（收租）。",
             params_schema={
-                "lookback": {"type": "int"},
-                "num_grids": {"type": "int"},
-                "margin_pct": {"type": "float"},
-                "capital_ratio": {"type": "float"},
+                "lookback": _p_int("回看天数", "用于估计区间上下界的回看天数（常用 60）。", 10, 600),
+                "num_grids": _p_int("网格数量", "区间被切分成多少个网格（常用 6~12）。", 2, 200),
+                "margin_pct": _p_float("区间扩展(%)", "在回看最高/最低基础上，上下各扩展 margin_pct（如 0.02=2%）。", 0.0, 1.0, 0.001),
+                "capital_ratio": _p_float("资金占比", "用于网格策略的资金占比（如 0.90=90%）。", 0.0, 1.0, 0.01),
             },
             default_params={"lookback": 60, "num_grids": 8, "margin_pct": 0.02, "capital_ratio": 0.90},
             bt_strategy_factory=_make_grid_classic,
@@ -1516,13 +1595,13 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "chan_grid": StrategyMeta(
             strategy_id="chan_grid",
             name="缠论中枢网络策略",
-            description="中枢ZG/ZD作为网格边界，突破则清仓停用；依赖 chan_zg/chan_zd",
+            description="适用：中枢震荡。逻辑：用中枢 ZG/ZD 作为网格边界；突破中枢则清仓并停用网格。",
             params_schema={
-                "num_grids": {"type": "int"},
-                "capital_ratio": {"type": "float"},
-                "exit_on_breakout": {"type": "bool"},
-                "breakout_pct": {"type": "float"},
-                "chan_backend": {"type": "enum", "values": ["chanpy", "self"]},
+                "num_grids": _p_int("网格数量", "中枢区间被切分成多少个网格（常用 6）。", 2, 200),
+                "capital_ratio": _p_float("资金占比", "用于网格策略的资金占比（如 0.80=80%）。", 0.0, 1.0, 0.01),
+                "exit_on_breakout": _p_bool("突破即退出", "开启后，价格突破/跌破中枢一定比例时清仓并停用网格。"),
+                "breakout_pct": _p_float("突破确认(%)", "突破确认比例（如 0.005=0.5%）。用于避免噪声突破。", 0.0, 0.2, 0.0005),
+                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
             default_params={"num_grids": 6, "capital_ratio": 0.80, "exit_on_breakout": True, "breakout_pct": 0.005, "chan_backend": "chanpy"},
             bt_strategy_factory=_make_chan_grid,
@@ -1531,14 +1610,14 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "chan_grid_trend": StrategyMeta(
             strategy_id="chan_grid_trend",
             name="中枢网格+趋势联动",
-            description="中枢内网格，上破转趋势（ATR跟踪），下破转空；依赖 chan_* 字段",
+            description="适用：中枢震荡 + 突破趋势。逻辑：中枢内做网格；向上突破转趋势持有并用 ATR 跟踪止损；向下跌破转空防守。",
             params_schema={
-                "num_grids": {"type": "int"},
-                "capital_ratio": {"type": "float"},
-                "atr_period": {"type": "int"},
-                "atr_trail_mult": {"type": "float"},
-                "breakout_confirm": {"type": "float"},
-                "chan_backend": {"type": "enum", "values": ["chanpy", "self"]},
+                "num_grids": _p_int("网格数量", "中枢区间被切分成多少个网格。", 2, 200),
+                "capital_ratio": _p_float("资金占比", "用于网格策略的资金占比。", 0.0, 1.0, 0.01),
+                "atr_period": _p_int("ATR周期", "趋势模式下 ATR 跟踪止损的周期（常用 14）。", 2, 200),
+                "atr_trail_mult": _p_float("ATR跟踪倍数", "趋势模式止损距离：最高价 - atr_trail_mult * ATR。", 0.1, 10.0, 0.1),
+                "breakout_confirm": _p_float("突破确认(%)", "突破确认比例（如 0.005=0.5%）。", 0.0, 0.2, 0.0005),
+                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
             default_params={"num_grids": 6, "capital_ratio": 0.80, "atr_period": 14, "atr_trail_mult": 2.5, "breakout_confirm": 0.005, "chan_backend": "chanpy"},
             bt_strategy_factory=_make_chan_grid_trend_linkage,

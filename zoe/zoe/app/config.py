@@ -18,6 +18,7 @@ class Settings:
     db_password: str
 
     presets_path: str
+    instances_path: str
 
 
 def load_settings() -> Settings:
@@ -33,6 +34,7 @@ def load_settings() -> Settings:
     db_password = os.getenv("DB_PASSWORD", "root")
 
     presets_path = os.getenv("PRESETS_PATH", "./zoe/data/strategy_presets.json")
+    instances_path = os.getenv("INSTANCES_PATH", "./zoe/data/strategy_instances.json")
 
     return Settings(
         host=host,
@@ -43,5 +45,6 @@ def load_settings() -> Settings:
         db_user=db_user,
         db_password=db_password,
         presets_path=presets_path,
+        instances_path=instances_path,
     )
 

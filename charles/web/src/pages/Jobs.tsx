@@ -34,6 +34,64 @@ function formatCron(cron: string) {
   return cron
 }
 
+type IntervalUnit = 'minute' | 'hour' | 'week' | 'month' | 'year'
+
+function parseInterval(cron: string): { every: number; unit: IntervalUnit; startTime: string; advanced: boolean } {
+  const parts = (cron || '').trim().split(/\s+/)
+  if (parts.length !== 5 && parts.length !== 6) return { every: 1, unit: 'month', startTime: '18:00', advanced: true }
+  const [min, hour, day, month, dow, year] = parts as [string, string, string, string, string, string | undefined]
+
+  if (/^\*\/\d+$/.test(min) && hour === '*' && day === '*' && month === '*' && dow === '*' && !year) {
+    return { every: Math.max(1, parseInt(min.slice(2), 10) || 1), unit: 'minute', startTime: '00:00', advanced: false }
+  }
+
+  if (/^\*\/\d+$/.test(hour) && day === '*' && month === '*' && dow === '*' && !year) {
+    return {
+      every: Math.max(1, parseInt(hour.slice(2), 10) || 1),
+      unit: 'hour',
+      startTime: `00:${String(min).padStart(2, '0')}`,
+      advanced: false,
+    }
+  }
+
+  if (/^\*\/\d+$/.test(day) && month === '*' && dow === '*' && !year) {
+    const nDays = Math.max(1, parseInt(day.slice(2), 10) || 1)
+    if (nDays % 7 === 0) {
+      return { every: Math.max(1, nDays / 7), unit: 'week', startTime: `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`, advanced: false }
+    }
+  }
+
+  if (day === '1' && /^\*\/\d+$/.test(month) && dow === '*' && !year) {
+    return {
+      every: Math.max(1, parseInt(month.slice(2), 10) || 1),
+      unit: 'month',
+      startTime: `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`,
+      advanced: false,
+    }
+  }
+
+  if (day === '1' && month === '1' && dow === '*' && year && (/^\*\/\d+$/.test(year) || year === '*')) {
+    const n = year === '*' ? 1 : Math.max(1, parseInt(year.slice(2), 10) || 1)
+    return { every: n, unit: 'year', startTime: `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`, advanced: false }
+  }
+
+  return { every: 1, unit: 'month', startTime: '18:00', advanced: true }
+}
+
+function buildCron(every: number, unit: IntervalUnit, startTime: string): string {
+  const n = Math.max(1, Math.trunc(every || 1))
+  const [hhRaw, mmRaw] = (startTime || '00:00').split(':', 2)
+  const hh = Math.min(23, Math.max(0, parseInt(hhRaw || '0', 10) || 0))
+  const mm = Math.min(59, Math.max(0, parseInt(mmRaw || '0', 10) || 0))
+
+  if (unit === 'minute') return `*/${n} * * * *`
+  if (unit === 'hour') return `${mm} */${n} * * *`
+  if (unit === 'week') return `${mm} ${hh} */${7 * n} * *`
+  if (unit === 'month') return `${mm} ${hh} 1 */${n} *`
+  if (unit === 'year') return `${mm} ${hh} 1 1 * */${n}`
+  throw new Error('单位不支持')
+}
+
 export default function Jobs() {
   const [runs, setRuns] = useState<JobRunResult[]>([])
   const [selectedDomain, setSelectedDomain] = useState<JobDomain>('stock_daily')
@@ -42,15 +100,17 @@ export default function Jobs() {
   const [schedules, setSchedules] = useState<Record<JobDomain, JobSchedule>>({} as Record<JobDomain, JobSchedule>)
   const [editingDomain, setEditingDomain] = useState<JobDomain | null>(null)
   const [editEnabled, setEditEnabled] = useState(true)
-  const [editCron, setEditCron] = useState('')
+  const [editEvery, setEditEvery] = useState(1)
+  const [editUnit, setEditUnit] = useState<IntervalUnit>('week')
+  const [editStartTime, setEditStartTime] = useState('18:00')
   const [editTimezone, setEditTimezone] = useState('Asia/Shanghai')
   const [savingSchedule, setSavingSchedule] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const load = async () => {
+  const load = async (opts?: { silent?: boolean }) => {
     setLoading(true)
-    setErr(null)
+    if (!opts?.silent) setErr(null)
     try {
       const r = await fetchJson<{ runs: JobRunResult[] }>('/api/jobs/runs?limit=50')
       setRuns(r.runs || [])
@@ -70,7 +130,7 @@ export default function Jobs() {
   useEffect(() => {
     load()
     const t = window.setInterval(() => {
-      load()
+      load({ silent: true })
     }, 1500)
     return () => window.clearInterval(t)
   }, [])
@@ -107,7 +167,10 @@ export default function Jobs() {
     const sch = schedules[domain]
     setEditingDomain(domain)
     setEditEnabled(sch?.enabled ?? true)
-    setEditCron(sch?.cron ?? '')
+    const parsed = parseInterval(sch?.cron || '')
+    setEditEvery(parsed.every || 1)
+    setEditUnit(parsed.unit || 'week')
+    setEditStartTime(parsed.startTime || '18:00')
     setEditTimezone(sch?.timezone ?? 'Asia/Shanghai')
   }
 
@@ -116,9 +179,10 @@ export default function Jobs() {
     setSavingSchedule(true)
     setErr(null)
     try {
+      const cron = buildCron(editEvery, editUnit, editStartTime)
       await fetchJson<{ ok: boolean }>(`/api/jobs/schedules/${editingDomain}`, {
         method: 'PUT',
-        body: JSON.stringify({ enabled: editEnabled, cron: editCron, timezone: editTimezone }),
+        body: JSON.stringify({ enabled: editEnabled, cron, timezone: editTimezone }),
       })
       setEditingDomain(null)
       await load()
@@ -227,12 +291,37 @@ export default function Jobs() {
                               <option value="0">停用</option>
                             </select>
                           </label>
-                          <label className="block md:col-span-2">
-                            <div className="text-xs text-zinc-500">cron（分 时 日 月 周）</div>
+                          <label className="block">
+                            <div className="text-xs text-zinc-500">采集时间间隔</div>
+                            <div className="mt-1 flex items-center gap-2">
+                              <input
+                                inputMode="numeric"
+                                value={String(editEvery)}
+                                onChange={(e) => {
+                                  const v = e.target.value.replace(/\D/g, '')
+                                  setEditEvery(v ? Math.max(1, parseInt(v, 10)) : 1)
+                                }}
+                                className="w-28 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-zinc-400"
+                              />
+                              <select
+                                value={editUnit}
+                                onChange={(e) => setEditUnit(e.target.value as IntervalUnit)}
+                                className="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-zinc-400"
+                              >
+                                <option value="minute">分</option>
+                                <option value="hour">小时</option>
+                                <option value="week">周</option>
+                                <option value="month">月</option>
+                                <option value="year">年</option>
+                              </select>
+                            </div>
+                          </label>
+                          <label className="block">
+                            <div className="text-xs text-zinc-500">开始时间</div>
                             <input
-                              value={editCron}
-                              onChange={(e) => setEditCron(e.target.value)}
-                              placeholder={sch?.cron || '0 18 * * 1-5'}
+                              type="time"
+                              value={editStartTime}
+                              onChange={(e) => setEditStartTime(e.target.value)}
                               className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-zinc-400"
                             />
                           </label>
@@ -246,7 +335,7 @@ export default function Jobs() {
                           </label>
                         </div>
                         <div className="mt-3 flex items-center justify-between">
-                          <div className="text-xs text-zinc-500">示例：工作日 18:00 → 0 18 * * 1-5；每10分钟 → */10 * * * *</div>
+                          <div className="text-xs text-zinc-500">示例：10 分钟 → */10 * * * *；2 小时 + 08:30 → 30 */2 * * *</div>
                           <button
                             type="button"
                             disabled={savingSchedule}

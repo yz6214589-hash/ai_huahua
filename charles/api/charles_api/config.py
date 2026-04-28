@@ -24,6 +24,12 @@ def load_settings() -> Settings:
     load_dotenv()
     origins_raw = os.getenv("CHARLES_CORS_ORIGINS", "http://localhost:5173")
     origins = [o.strip() for o in origins_raw.split(",") if o.strip()]
+    job_store_dir_raw = os.getenv("CHARLES_JOB_STORE_DIR")
+    job_store_dir = (
+        job_store_dir_raw.strip()
+        if isinstance(job_store_dir_raw, str) and job_store_dir_raw.strip()
+        else os.path.join(os.getcwd(), ".charles", "job_runs")
+    )
     return Settings(
         mysql_host=os.getenv("WUCAI_SQL_HOST", "localhost"),
         mysql_port=int(os.getenv("WUCAI_SQL_PORT", "3306")),
@@ -36,6 +42,6 @@ def load_settings() -> Settings:
         kimi_api_key=os.getenv("KIMI_API_KEY", ""),
         kimi_base_url=os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1"),
         kimi_model=os.getenv("KIMI_MODEL", "kimi-latest"),
-        job_store_dir=os.getenv("CHARLES_JOB_STORE_DIR", os.path.join(os.getcwd(), ".charles", "job_runs")),
+        job_store_dir=job_store_dir,
     )
 

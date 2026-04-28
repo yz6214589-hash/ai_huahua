@@ -16,6 +16,7 @@ from zoe.app.config import load_settings
 from zoe.app.db import fetch_one
 from zoe.app.chan_engine import add_chan_fields
 from zoe.app.indicators import add_technical_indicators, has_talib, talib_backend, talib_error
+from zoe.app.instances import StrategyInstance, load_instances, save_instances
 from zoe.app.market_data import list_stock_codes, load_daily_ohlcv
 from zoe.app.presets import Preset, load_presets, save_presets
 from zoe.app.screener import FinancialFilters, score_factors, screen_financial
@@ -267,6 +268,108 @@ def api_delete_preset(preset_id: str):
     return {"deleted": preset_id}
 
 
+@app.get("/api/v1/strategy-instances")
+def api_list_strategy_instances(strategy_id: str | None = Query(default=None)):
+    instances = load_instances(settings.instances_path)
+    if strategy_id:
+        instances = [x for x in instances if x.strategy_id == strategy_id]
+    return {
+        "instances": [
+            {"instance_id": x.instance_id, "strategy_id": x.strategy_id, "name": x.name, "params": x.params} for x in instances
+        ]
+    }
+
+
+class StrategyInstanceCreateReq(BaseModel):
+    instance_id: str | None = None
+    strategy_id: str
+    name: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+def _coerce_params(strategy: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+    schema = strategy.get("params_schema") or {}
+    defaults = strategy.get("default_params") or {}
+    merged = dict(defaults)
+    merged.update(params or {})
+
+    out: dict[str, Any] = {}
+    for k, meta in schema.items():
+        if k not in merged:
+            continue
+        v = merged.get(k)
+        t = str((meta or {}).get("type") or "").lower()
+        if t in ("int", "integer"):
+            try:
+                out[k] = int(v)
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"invalid_param:{k}")
+        elif t in ("float", "number"):
+            try:
+                out[k] = float(v)
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"invalid_param:{k}")
+        elif t in ("bool", "boolean"):
+            if isinstance(v, bool):
+                out[k] = v
+            elif isinstance(v, str) and v.lower() in ("true", "false"):
+                out[k] = v.lower() == "true"
+            else:
+                raise HTTPException(status_code=400, detail=f"invalid_param:{k}")
+        elif t == "enum":
+            values = (meta or {}).get("values") or []
+            if v not in values:
+                raise HTTPException(status_code=400, detail=f"invalid_param:{k}")
+            out[k] = v
+        elif t == "object":
+            if not isinstance(v, dict):
+                raise HTTPException(status_code=400, detail=f"invalid_param:{k}")
+            out[k] = v
+        else:
+            out[k] = v
+
+    for k in list(out.keys()):
+        if k not in schema:
+            out.pop(k, None)
+    return out
+
+
+@app.post("/api/v1/strategy-instances")
+def api_create_strategy_instance(payload: StrategyInstanceCreateReq = Body(...)):
+    reg = get_strategy_registry()
+    meta = reg.get(payload.strategy_id)
+    if not meta:
+        raise HTTPException(status_code=400, detail="unknown_strategy")
+
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="empty_name")
+
+    strategy = {
+        "params_schema": meta.params_schema,
+        "default_params": meta.default_params,
+    }
+    resolved_params = _coerce_params(strategy, payload.params or {})
+
+    instances = load_instances(settings.instances_path)
+    next_id = 1
+    for x in instances:
+        if x.instance_id.isdigit():
+            next_id = max(next_id, int(x.instance_id) + 1)
+    instance_id = str(next_id)
+    instances.append(StrategyInstance(instance_id=instance_id, strategy_id=payload.strategy_id, name=name, params=resolved_params))
+    save_instances(settings.instances_path, instances)
+    return {"instance_id": instance_id}
+
+
+@app.delete("/api/v1/strategy-instances/{instance_id}")
+def api_delete_strategy_instance(instance_id: str):
+    instances = load_instances(settings.instances_path)
+    new_instances = [x for x in instances if x.instance_id != instance_id]
+    save_instances(settings.instances_path, new_instances)
+    return {"deleted": instance_id}
+
+
 class BacktestReq(BaseModel):
     stock_code: str
     start: str
@@ -293,6 +396,18 @@ def api_backtest(payload: BacktestReq = Body(...)):
     if df.empty:
         raise HTTPException(status_code=404, detail="no_data")
 
+    try:
+        import backtrader  # type: ignore
+    except ModuleNotFoundError:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "backtrader_missing",
+                "message": "回测功能需要 backtrader 依赖。",
+                "hint": "在 zoe 目录执行：pip install -r requirements-backtest.txt",
+            },
+        )
+
     if bool(getattr(meta, "requires_chan", False)):
         p = payload.params or {}
         backend = str(p.get("chan_backend") or "chanpy").strip()
@@ -311,6 +426,17 @@ def api_backtest(payload: BacktestReq = Body(...)):
 
     try:
         strategy_cls = meta.bt_strategy_factory()
+    except ModuleNotFoundError as e:
+        if getattr(e, "name", None) == "backtrader":
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "backtrader_missing",
+                    "message": "回测功能需要 backtrader 依赖。",
+                    "hint": "在 zoe 目录执行：pip install -r requirements-backtest.txt",
+                },
+            )
+        raise HTTPException(status_code=500, detail=f"strategy_factory_failed: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"strategy_factory_failed: {e}")
 
