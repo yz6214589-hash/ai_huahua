@@ -1,0 +1,13 @@
+{
+  "runId": "9128c699f3184ea6ba87f2b9868057be",
+  "domain": "stock_daily",
+  "startedAt": "2026-04-22T10:00:00.006734+00:00",
+  "finishedAt": "2026-04-22T10:00:00.025234+00:00",
+  "status": "failed",
+  "dataSourceFinal": "unknown",
+  "fallbackChain": [],
+  "rowsWritten": 0,
+  "itemsProcessed": 0,
+  "failedItems": [],
+  "message": "PermissionError: [Errno 13] Permission denied: 'C:\\\\Users\\\\40320\\\\tk.csv'"
+}

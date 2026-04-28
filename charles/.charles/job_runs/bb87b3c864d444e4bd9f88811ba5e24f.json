@@ -1,0 +1,15 @@
+{
+  "runId": "bb87b3c864d444e4bd9f88811ba5e24f",
+  "domain": "calendar",
+  "startedAt": "2026-04-22T05:33:57.041582+00:00",
+  "finishedAt": "2026-04-22T05:34:12.623593+00:00",
+  "status": "success",
+  "dataSourceFinal": "akshare",
+  "fallbackChain": [
+    "akshare"
+  ],
+  "rowsWritten": 1448,
+  "itemsProcessed": 1448,
+  "failedItems": [],
+  "message": null
+}
