@@ -27,7 +27,7 @@ HOST = ENV.get("WUCAI_SQL_HOST", "localhost")
 USER = ENV.get("WUCAI_SQL_USERNAME", "root")
 PASSWORD = ENV.get("WUCAI_SQL_PASSWORD", "")
 PORT = int(ENV.get("WUCAI_SQL_PORT", "3306"))
-DB_NAME = ENV.get("WUCAI_SQL_DB", "wucai_trade")
+DB_NAME = ENV.get("WUCAI_SQL_DB", "huahua_trade")
 
 START_DATE = "20230101"
 END_DATE = "20251231"

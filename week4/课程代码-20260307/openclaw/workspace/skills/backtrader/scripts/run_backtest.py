@@ -39,7 +39,7 @@ def get_db_config():
         "host": env.get("WUCAI_SQL_HOST", "localhost"),
         "user": env.get("WUCAI_SQL_USERNAME", "root"),
         "password": env.get("WUCAI_SQL_PASSWORD", ""),
-        "database": env.get("WUCAI_SQL_DB", "wucai_trade"),
+        "database": env.get("WUCAI_SQL_DB", "huahua_trade"),
         "port": int(env.get("WUCAI_SQL_PORT", "3306")),
         "charset": "utf8mb4",
     }

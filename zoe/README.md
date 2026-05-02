@@ -4,7 +4,7 @@ Zoe 是一个面向 AI 量化交易的“数字员工分析师”。她只负责
 
 ### 功能
 
-- 技术指标：从 MySQL 读取日线（`wucai_trade.trade_stock_daily`），实时计算 MA / MACD / RSI / 布林带
+- 技术指标：从 MySQL 读取日线（`huahua_trade.trade_stock_daily`），实时计算 MA / MACD / RSI / 布林带
 - 生成信号：趋势突破 / 震荡下轨等规则信号，并输出评分（0-100）与原因
 - 选股：财务阈值筛选、多因子打分 TopN
 - 策略库：策略列表 + 参数预设管理
@@ -16,7 +16,7 @@ Zoe 是一个面向 AI 量化交易的“数字员工分析师”。她只负责
 ## 1. 环境要求
 
 - Python 3.10+
-- MySQL 8.0+（数据库：`wucai_trade`）
+- MySQL 8.0+（数据库：`huahua_trade`）
 
 ### TA-Lib 说明（Windows）
 
@@ -37,7 +37,7 @@ copy .env.example .env
 
 默认数据库配置为：
 
-- DB_NAME=wucai_trade
+- DB_NAME=huahua_trade
 - DB_USER=root
 - DB_PASSWORD=root
 

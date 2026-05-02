@@ -7,7 +7,7 @@ import re
 SQL_FILE = r"G:\夸克\trade_stock_daily.sql"    # SQL文件路径
 DB_HOST = "localhost"             # 数据库IP
 DB_PORT = 3306                    # 端口
-DB_NAME = "wucai_trade"               # 数据库名
+DB_NAME = "huahua_trade"               # 数据库名
 DB_TABLE = "trade_stock_daily"           # 表名
 DB_USER = "root"                  # 账号
 DB_PASS = "root"                # 密码

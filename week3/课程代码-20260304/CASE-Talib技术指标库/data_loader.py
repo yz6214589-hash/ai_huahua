@@ -147,7 +147,7 @@ def get_instrument_names(codes):
     """
     获取标的显示名称（股票/ETF）。
 
-    学员库 wucai_trade_charles 无 trade_stock_status 表，无法从库中查名称，
+    学员库 huahua_trade_charles 无 trade_stock_status 表，无法从库中查名称，
     直接返回 代码->代码 的映射，调用方仍可用 result[code] 作为显示名。
     """
     if not codes:

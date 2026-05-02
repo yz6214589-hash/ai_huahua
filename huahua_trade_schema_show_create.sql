@@ -1,5 +1,5 @@
-CREATE DATABASE IF NOT EXISTS `wucai_trade` CHARACTER SET utf8mb4;
-USE `wucai_trade`;
+CREATE DATABASE IF NOT EXISTS `huahua_trade` CHARACTER SET utf8mb4;
+USE `huahua_trade`;
 
 -- trade_calendar_event
 CREATE TABLE `trade_calendar_event` (

@@ -35,7 +35,7 @@ def load_settings() -> Settings:
         mysql_port=int(os.getenv("WUCAI_SQL_PORT", "3306")),
         mysql_user=os.getenv("WUCAI_SQL_USERNAME", "root"),
         mysql_password=os.getenv("WUCAI_SQL_PASSWORD", ""),
-        mysql_db=os.getenv("WUCAI_SQL_DB", "wucai_trade"),
+        mysql_db=os.getenv("WUCAI_SQL_DB", "huahua_trade"),
         cors_origins=origins,
         dashscope_api_key=os.getenv("DASHSCOPE_API_KEY", ""),
         qwen_model=os.getenv("QWEN_MODEL", "qwen-max"),

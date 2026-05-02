@@ -3,7 +3,7 @@
 MACD底背离策略 - 自定义策略示例
 
 使用方法:
-  1. 在 wucai_trade/strategies/ 目录下创建 .py 文件
+  1. 在 huahua_trade/strategies/ 目录下创建 .py 文件
   2. 定义 STRATEGY_META 字典（策略元信息）
   3. 定义 Strategy 类，继承 backtrader.Strategy
   4. 系统会自动加载并注册到策略列表

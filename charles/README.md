@@ -5,8 +5,8 @@ Charles 是 AI 量化交易系统的输入端（Input）：负责对接 QMT / Ak
 本仓库中 `../week1/`、`../week2/` 为课程示例代码；本项目落地代码位于本目录下：
 - 后端（FastAPI）：`api/`
 - 前端（React Web 控制台）：`web/`
-- MySQL 建库与表结构：`../wucai_trade_schema_show_create.sql`
-- Charles 扩展表（股票代码-企业名称映射）：`sql/wucai_trade_charles_extra.sql`
+- MySQL 建库与表结构：`../huahua_trade_schema_show_create.sql`
+- Charles 扩展表（股票代码-企业名称映射）：`sql/huahua_trade_charles_extra.sql`
 
 ## 数据源优先级规则（强制）
 
@@ -21,8 +21,8 @@ Charles 是 AI 量化交易系统的输入端（Input）：负责对接 QMT / Ak
 
 ## 1) MySQL 初始化
 
-1. 创建数据库并建表（MySQL 8.0）：执行 `../wucai_trade_schema_show_create.sql`
-2. 初始化 Charles 扩展表：执行 `sql/wucai_trade_charles_extra.sql`
+1. 创建数据库并建表（MySQL 8.0）：执行 `../huahua_trade_schema_show_create.sql`
+2. 初始化 Charles 扩展表：执行 `sql/huahua_trade_charles_extra.sql`
 2. 确保你的 MySQL 账号具备建库/建表权限，或先让 DBA 代执行
 
 ## 2) 后端启动（FastAPI）

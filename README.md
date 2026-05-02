@@ -11,4 +11,4 @@
 - 前端（React Web 控制台）：`charles/web/`
 - 一键启动脚本：`charles/scripts/`
 
-MySQL 建库与表结构位于仓库根目录：`wucai_trade_schema_show_create.sql`
+MySQL 建库与表结构位于仓库根目录：`huahua_trade_schema_show_create.sql`

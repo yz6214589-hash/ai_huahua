@@ -14,7 +14,7 @@ DB_CONFIG = {
     'host': _env.get('WUCAI_SQL_HOST', 'localhost'),
     'user': _env.get('WUCAI_SQL_USERNAME', 'root'),
     'password': _env.get('WUCAI_SQL_PASSWORD', ''),
-    'database': _env.get('WUCAI_SQL_DB', 'wucai_trade'),
+    'database': _env.get('WUCAI_SQL_DB', 'huahua_trade'),
     'port': int(_env.get('WUCAI_SQL_PORT', '3306')),
     'charset': 'utf8mb4'
 }
