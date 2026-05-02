@@ -24,6 +24,7 @@ class JobDomain(str, Enum):
     report_consensus = "report_consensus"
     calendar = "calendar"
     catalyst = "catalyst"
+    sentiment_monitor = "sentiment_monitor"
 
 
 class JobRunRequest(BaseModel):

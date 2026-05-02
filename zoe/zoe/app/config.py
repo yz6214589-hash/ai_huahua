@@ -19,6 +19,9 @@ class Settings:
 
     presets_path: str
     instances_path: str
+    reports_path: str
+    mainforce_tasks_path: str
+    mainforce_artifacts_path: str
 
 
 def load_settings() -> Settings:
@@ -35,6 +38,9 @@ def load_settings() -> Settings:
 
     presets_path = os.getenv("PRESETS_PATH", "./zoe/data/strategy_presets.json")
     instances_path = os.getenv("INSTANCES_PATH", "./zoe/data/strategy_instances.json")
+    reports_path = os.getenv("REPORTS_PATH", "./zoe/data/reports")
+    mainforce_tasks_path = os.getenv("MAINFORCE_TASKS_PATH", "./zoe/data/mainforce_tasks.json")
+    mainforce_artifacts_path = os.getenv("MAINFORCE_ARTIFACTS_PATH", "./zoe/data/mainforce")
 
     return Settings(
         host=host,
@@ -46,5 +52,8 @@ def load_settings() -> Settings:
         db_password=db_password,
         presets_path=presets_path,
         instances_path=instances_path,
+        reports_path=reports_path,
+        mainforce_tasks_path=mainforce_tasks_path,
+        mainforce_artifacts_path=mainforce_artifacts_path,
     )
 

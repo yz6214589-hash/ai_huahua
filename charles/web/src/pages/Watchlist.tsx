@@ -88,6 +88,7 @@ export default function Watchlist() {
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [searching, setSearching] = useState(false)
+  const [searchErr, setSearchErr] = useState<string | null>(null)
 
   const pinned = useMemo(() => items.filter((x) => x.pinned), [items])
   const normal = useMemo(() => items.filter((x) => !x.pinned), [items])
@@ -122,17 +123,23 @@ export default function Watchlist() {
       const v = q.trim()
       if (!v) {
         setResults([])
+        setSearchErr(null)
         return
       }
+      const ctrl = new AbortController()
+      const tt = window.setTimeout(() => ctrl.abort(), 5000)
       setSearching(true)
       try {
-        const r = await fetchJson<{ items: StockSearchItem[] }>(`/api/stocks?q=${encodeURIComponent(v)}&limit=20`)
+        setSearchErr(null)
+        const r = await fetchJson<{ items: StockSearchItem[] }>(`/api/stocks?q=${encodeURIComponent(v)}&limit=20`, { signal: ctrl.signal })
         if (!alive) return
         setResults(r.items || [])
       } catch {
         if (!alive) return
         setResults([])
+        setSearchErr('搜索超时或失败')
       } finally {
+        window.clearTimeout(tt)
         if (alive) setSearching(false)
       }
     }, 250)
@@ -241,6 +248,7 @@ export default function Watchlist() {
             </div>
             <div className="mt-3 space-y-2">
               {searching ? <div className="text-xs text-zinc-500">搜索中…</div> : null}
+              {searchErr ? <div className="text-xs text-red-600">{searchErr}</div> : null}
               {q.trim() && results.length === 0 && !searching ? <div className="text-xs text-zinc-500">无匹配结果</div> : null}
               {results.map((r) => (
                 <div key={r.code} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2">

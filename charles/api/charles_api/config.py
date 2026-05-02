@@ -18,6 +18,10 @@ class Settings:
     kimi_base_url: str
     kimi_model: str
     job_store_dir: str
+    deepseek_api_key: str
+    deepseek_base_url: str
+    deepseek_model: str
+    report_data_dir: str
 
 
 def load_settings() -> Settings:
@@ -29,6 +33,12 @@ def load_settings() -> Settings:
         job_store_dir_raw.strip()
         if isinstance(job_store_dir_raw, str) and job_store_dir_raw.strip()
         else os.path.join(os.getcwd(), ".charles", "job_runs")
+    )
+    report_data_dir = os.getenv("CHARLES_REPORT_DATA_DIR")
+    report_data_dir2 = (
+        report_data_dir.strip()
+        if isinstance(report_data_dir, str) and report_data_dir.strip()
+        else os.path.join(os.getcwd(), "api", "data")
     )
     return Settings(
         mysql_host=os.getenv("WUCAI_SQL_HOST", "localhost"),
@@ -43,5 +53,9 @@ def load_settings() -> Settings:
         kimi_base_url=os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1"),
         kimi_model=os.getenv("KIMI_MODEL", "kimi-latest"),
         job_store_dir=job_store_dir,
+        deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", ""),
+        deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+        deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+        report_data_dir=report_data_dir2,
     )
 

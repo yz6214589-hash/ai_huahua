@@ -11,6 +11,7 @@ import pandas as pd
 class BacktestResult:
     metrics: dict[str, Any]
     trades: list[dict[str, Any]]
+    nav_log: list[dict[str, Any]]
 
 
 def _extract_trades(strat: Any) -> list[dict[str, Any]]:
@@ -21,6 +22,16 @@ def _extract_trades(strat: Any) -> list[dict[str, Any]]:
         if isinstance(t, dict):
             trades.append(t)
     return trades
+
+
+def _extract_nav_log(strat: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if not hasattr(strat, "_nav_log"):
+        return out
+    for row in getattr(strat, "_nav_log", []) or []:
+        if isinstance(row, dict):
+            out.append(row)
+    return out
 
 
 def run_backtest(
@@ -34,10 +45,10 @@ def run_backtest(
     try:
         import backtrader as bt  # type: ignore
     except Exception as e:
-        return BacktestResult(metrics={"error": "backtrader_missing", "detail": str(e)}, trades=[])
+        return BacktestResult(metrics={"error": "backtrader_missing", "detail": str(e)}, trades=[], nav_log=[])
 
     if df.empty:
-        return BacktestResult(metrics={"error": "empty_data"}, trades=[])
+        return BacktestResult(metrics={"error": "empty_data"}, trades=[], nav_log=[])
 
     data_df = df.copy()
     if "trade_date" not in data_df.columns:
@@ -83,6 +94,7 @@ def run_backtest(
         def __init__(self) -> None:
             super().__init__()
             self._trade_log: list[dict[str, Any]] = []
+            self._nav_log: list[dict[str, Any]] = []
 
         def notify_trade(self, trade: Any) -> None:
             if not trade.isclosed:
@@ -96,6 +108,16 @@ def run_backtest(
                     "size": float(trade.size),
                 }
             )
+
+        def next(self) -> None:
+            try:
+                dt = self.data.datetime.date(0).isoformat()
+                nav = float(self.broker.getvalue())
+                if not self._nav_log or self._nav_log[-1].get("date") != dt:
+                    self._nav_log.append({"date": dt, "nav": nav})
+            except Exception:
+                pass
+            return super().next()
 
     cerebro.addstrategy(_Wrapped, **(strategy_params or {}))
 
@@ -131,5 +153,5 @@ def run_backtest(
         "win_rate": float(win_rate),
     }
 
-    return BacktestResult(metrics=metrics, trades=_extract_trades(strat))
+    return BacktestResult(metrics=metrics, trades=_extract_trades(strat), nav_log=_extract_nav_log(strat))
 

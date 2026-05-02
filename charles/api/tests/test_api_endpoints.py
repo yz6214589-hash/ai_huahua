@@ -114,6 +114,9 @@ def client2(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> TestClient:
         if "select count(*) as c from trade_stock_master" in s:
             return [{"c": len(store["master"])}]
 
+        if "select stock_code as code, stock_name as name from trade_stock_master" in s:
+            return [{"code": c, "name": n} for c, n in store["master"].items()]
+
         if "from trade_stock_master where stock_code in" in s:
             codes = list(p)
             out = []
@@ -325,3 +328,52 @@ def test_summary_and_data(client2: TestClient):
     d = client2.get("/api/data/trade_stock_daily?page=1&pageSize=1&stock_code=600000.SH&trade_date=2026-04-01,2026-04-01")
     assert d.status_code == 200
 
+
+@pytest.fixture()
+def client_summary_missing_tables(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> TestClient:
+    os.environ["CHARLES_SKIP_APP_IMPORT"] = "1"
+    os.environ["CHARLES_JOB_STORE_DIR"] = str(tmp_path / "job_runs")
+
+    import importlib
+
+    mod = importlib.import_module("charles_api.app")
+
+    class DummyConn:
+        def commit(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    def connect(_cfg: Any) -> DummyConn:
+        return DummyConn()
+
+    def query_dict(_conn: DummyConn, sql: str, params: tuple[Any, ...] | None = None) -> list[dict[str, Any]]:
+        import pymysql
+
+        s = " ".join(sql.split()).lower()
+        if "from trade_stock_financial" in s:
+            raise pymysql.err.ProgrammingError(1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+        return [{"d": None, "c": 0}]
+
+    def execute(_conn: DummyConn, sql: str, params: tuple[Any, ...] | None = None) -> int:
+        return 0
+
+    def executemany(_conn: DummyConn, sql: str, rows: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(mod, "connect", connect)
+    monkeypatch.setattr(mod, "query_dict", query_dict)
+    monkeypatch.setattr(mod, "execute", execute)
+    monkeypatch.setattr(mod, "executemany", executemany)
+
+    app = mod.create_app()
+    return TestClient(app)
+
+
+def test_summary_handles_missing_tables(client_summary_missing_tables: TestClient):
+    r = client_summary_missing_tables.get("/api/summary")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["trade_stock_financial"]["count"] == 0
+    assert data["trade_stock_financial"]["latest"] is None

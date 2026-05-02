@@ -1,12 +1,15 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { Database, Gauge, PlayCircle, Search, Star } from 'lucide-react'
+import { Activity, Database, FileText, Gauge, PlayCircle, Search, Star } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { AssistantDrawer } from '@/components/AssistantDrawer'
 
 function Sidebar() {
   const items = [
     { to: '/', label: '总览', icon: Gauge },
     { to: '/jobs', label: '采集任务', icon: PlayCircle },
+    { to: '/reports', label: '智能研报', icon: FileText },
+    { to: '/sentiment', label: '舆情监控', icon: Activity },
     { to: '/data', label: '数据与交付', icon: Database },
     { to: '/watchlist', label: '自选股', icon: Star },
   ]
@@ -52,6 +55,8 @@ function Topbar() {
 
   const title = useMemo(() => {
     if (location.pathname.startsWith('/jobs')) return '采集任务'
+    if (location.pathname.startsWith('/reports')) return '智能研报'
+    if (location.pathname.startsWith('/sentiment')) return '舆情监控'
     if (location.pathname.startsWith('/data')) return '数据与交付'
     if (location.pathname.startsWith('/watchlist')) return '自选股'
     if (location.pathname.startsWith('/stock/')) return '个股详情'
@@ -113,6 +118,7 @@ export default function AppShell() {
           </main>
         </div>
       </div>
+      <AssistantDrawer />
     </div>
   )
 }

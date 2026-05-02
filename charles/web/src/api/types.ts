@@ -155,3 +155,71 @@ export interface StockFeedResponse {
   items: StockFeedItem[]
 }
 
+export type ReportModel = 'qwen-max' | 'deepseek'
+export type ReportTaskStatus = 'waiting' | 'running' | 'success' | 'failed'
+
+export interface ReportTask {
+  task_id: string
+  model: ReportModel
+  stock_codes: string[]
+  stock_names: string[]
+  status: ReportTaskStatus
+  created_at: string
+  started_at?: string | null
+  finished_at?: string | null
+  error_message?: string | null
+}
+
+export interface SentimentRun {
+  run_id: string
+  trigger: string
+  stock_codes: string[]
+  stock_names: string[]
+  days: number
+  use_llm: boolean
+  status: string
+  total_events: number
+  created_at: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  error_message?: string | null
+}
+
+export interface SentimentEvent {
+  id: number
+  run_id: string
+  stock_code: string
+  stock_name?: string | null
+  source_type: string
+  source_title?: string | null
+  source_url?: string | null
+  published_at?: string | null
+  event_type: string
+  event_category: string
+  signal: string
+  signal_reason?: string | null
+  impact?: string | null
+  confidence?: number | null
+  urgency?: string | null
+}
+
+export interface MacroIndicator {
+  indicator: string
+  value: number | null
+  date?: string | null
+  name?: string | null
+  error?: string | null
+}
+
+export interface MacroComposite {
+  composite_fear_greed_index: number
+  overall_sentiment: string
+  action_suggestion: string
+  timestamp: string
+}
+
+export interface MacroLatest {
+  indicators: MacroIndicator[]
+  composite: MacroComposite
+}
+

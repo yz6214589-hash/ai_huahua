@@ -2,8 +2,11 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic==2.8.2
 python-dotenv==1.0.1
+python-multipart==0.0.27
 pymysql==1.1.1
 pandas==2.2.2
 numpy==2.0.1
 Jinja2==3.1.4
+quantstats==0.0.81
+scikit-learn==1.5.1
 pytest==8.3.2
