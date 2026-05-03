@@ -1,37 +1,43 @@
 # Code Wiki：ai_huahua
 
-本仓库是一个“课程代码 + 项目落地”的集合仓库。核心落地项目主要有：
+本仓库包含“落地系统 + 课程代码（统一放在 `lesson/`）”。落地系统以“数据采集 → 分析决策 → 交易执行 → 风控审计 → CEO 控制台整合”为主线，核心模块包括：
 
-- **Charles（数字员工情报官）**：数据采集 / 清洗 / 标准化入库（MySQL）/ 数据交付，全栈（FastAPI + React）。
-- **Zoe（数字员工分析师）**：从 MySQL 读取行情与财务数据，计算指标、生成信号、选股与回测，单体 FastAPI（自带 Web UI）。
-- **nanobot-main（课程样例）**：通用个人 AI Agent（Python 包 + CLI + OpenAI-Compat API）。
-- **week1 ~ week10**：课程周代码（大量独立脚本/案例工程）。
+- **Charles（数字员工情报官）**：数据采集/清洗/落库（MySQL）+ 数据交付（API/Web）+ 舆情监控 + 研报生成 + 助手能力（API/Web）
+- **Zoe（数字员工分析师）**：指标/信号/选股/回测 + 主力识别 + 绩效分析（API/Web）
+- **Ethan（交易官）**：交易执行与任务编排（含 QMT 连接、执行任务、RL 训练/回测、WebSocket 事件）
+- **Kris（风控官）**：风控决策引擎（审批、ATR 止损、宏观门控、审计日志、风控状态）
+- **CEO 控制台（ceo/）**：整合型 Web 工作台（实盘/模拟盘监控、回测、晨会、投研对话、调度）
+- **lesson/**：课程周代码（`lesson/week1` ~ `lesson/week11`）
 
 ---
 
 ## 1. 仓库目录结构（Top-Level）
 
-> 以“可落地工程”为主线；week* 目录属于教学脚本集合，通常按文件直接运行。
+> 以“可落地工程”为主线；课程代码已迁移至 `lesson/`。
 
 ```
 ai_huahua/
-  charles/                       # 全栈项目：数据采集/清洗/交付
-    api/                         # FastAPI 后端
-    web/                         # React 控制台
-    scripts/                     # Windows 一键启动脚本（cmd/ps1）
-    sql/                         # Charles 扩展表等 SQL
-  zoe/                           # 单体项目：指标/信号/选股/回测（FastAPI + 模板页）
-  week1/ ... week10/             # 课程周代码（大量独立脚本/CASE）
+  charles/                       # 情报官：采集/清洗/落库/交付 + 舆情/研报/助手
+  zoe/                           # 分析师：指标/信号/选股/回测 + 主力识别 + 绩效分析
+  ethan/                         # 交易官：执行引擎 + QMT + RL + Web 控制台
+  kris/                          # 风控官：风控引擎 + 审批/审计 Web 控制台
+  ceo/                           # CEO 控制台：整合型 Web 工作台（晨会/投研/实盘/回测/调度）
+  lesson/                        # 课程周代码：lesson/week1 ~ lesson/week11
   huahua_trade_schema_show_create.sql  # MySQL 主库建表脚本（huahua_trade）
+  CODE_WIKI.md                   # 本文档（仓库总览）
   python_file_index.md           # Python 文件索引（辅助快速定位）
   generate_python_file_index.py  # 生成索引的脚本
   _generate_py_html_docs.py      # 生成文档的脚本（仓库自带）
-  vercel.json                    # 部署配置（与 Web/服务相关）
+  CHANGELOG.md                   # 变更记录
+  vercel.json                    # 部署配置
 ```
 
 相关说明：
 
 - 仓库顶层 README：[README.md](./README.md)
+- Charles Wiki：[charles/CODE_WIKI.md](./charles/CODE_WIKI.md)
+- Zoe Wiki：[zoe/CODE_WIKI.md](./zoe/CODE_WIKI.md)
+- CEO 控制台说明：[ceo/README.md](./ceo/README.md)
 - Charles 项目说明与启动：[charles/README.md](./charles/README.md)
 - Zoe 项目说明与启动：[zoe/README.md](./zoe/README.md)
 
@@ -42,22 +48,28 @@ ai_huahua/
 ### 2.1 数据流（核心主线）
 
 1. **数据源**：QMT / Tushare / AkShare / 研报文件 / 联网搜索（催化剂）等
-2. **Charles**：
-   - 拉取与清洗数据
-   - 写入 MySQL（`huahua_trade`）
-   - 对外提供 API（供 Web 控制台、或其他系统调用）
-3. **Zoe**：
-   - 从 MySQL 读取（例如 `trade_stock_daily`、`trade_stock_financial`）
-   - 计算技术指标、生成信号评分
-   - 选股与回测结果通过自身 API/Web 输出
+2. **Charles（输入端）**：
+   - 拉取/清洗数据，落库到 MySQL（`huahua_trade`）
+   - 按任务域调度（cron）并记录运行结果
+   - 提供数据浏览/导出、舆情监控、研报生成与助手 API
+3. **Zoe（分析端）**：
+   - 从 MySQL 读取行情/财务/宏观等，计算指标与信号
+   - 主力识别与绩效分析（用于解释策略表现与交易质量）
+4. **Ethan（执行端）**：
+   - 连接 miniQMT/QMT，基于任务执行下单与执行监控
+   - 提供执行任务 API 与 WebSocket 事件流（实时进度与审计）
+5. **Kris（风控端）**：
+   - 对交易请求做审批/限仓/止损/宏观门控，并记录审计日志
+6. **CEO 控制台（整合端）**：
+   - 提供统一 Web 工作台：实盘/模拟盘、回测、晨会、投研对话与调度器
 
 ### 2.2 依赖关系（项目之间）
 
-- Charles 与 Zoe **共享同一套 MySQL 库**（`huahua_trade`），表结构主要由：
+- Charles、Zoe、CEO（晨会/龙头/回测相关）等模块 **共享同一套 MySQL 库**（`huahua_trade`），表结构主要由：
   - [huahua_trade_schema_show_create.sql](./huahua_trade_schema_show_create.sql) 提供基础表（行情/财务/宏观/新闻等）
   - Charles 后端启动时会自动补齐一些业务表（见下文 3.3）
-- week* 中部分脚本同样会读写 `huahua_trade`（取决于具体 CASE）。
-- nanobot-main 与上述两个业务项目无强耦合，属于课程中的独立工程样例。
+- `lesson/` 中部分脚本同样会读写 `huahua_trade`（取决于具体 CASE）。
+- CEO 的投研对话依赖 `ceo/third_party/charles_bundle` 中的 Charles/Nanobot 组件（见 `ceo/README.md`）。
 
 ---
 
@@ -86,7 +98,7 @@ Charles 是“AI 量化交易系统输入端（Input）”：
 #### 模块划分（职责）
 
 - API 应用与路由聚合：[charles/api/charles_api/app.py](./charles/api/charles_api/app.py)
-  - 包含：健康检查、汇总、任务触发、任务状态、任务计划、数据查询、导出、自选股、个股快照等路由
+  - 包含：健康检查、汇总、任务触发、任务计划、数据查询、导出、自选股、个股快照、研报/舆情/助手等路由
 - 配置加载（.env）：[charles/api/charles_api/config.py](./charles/api/charles_api/config.py)
   - `load_settings()` 负责读取环境变量与默认值
 - MySQL 访问封装：[charles/api/charles_api/db.py](./charles/api/charles_api/db.py)
@@ -101,9 +113,13 @@ Charles 是“AI 量化交易系统输入端（Input）”：
   - `stock_daily.py`：日线（含指标字段）入库
   - `stock_financial.py`：财务数据入库
   - `stock_news.py`：新闻/公告/研报抓取与可选 LLM 摘要
+  - `sentiment_monitor.py`：舆情监控任务（落盘运行结果与详情）
   - `macro_indicator.py`、`rate_daily.py`、`calendar.py`、`report_consensus.py`、`catalyst.py`：宏观/利率/日历/研报一致预期/催化剂等
 - 清洗逻辑：[charles/api/charles_api/cleaning/](./charles/api/charles_api/cleaning/)
   - 例如 `ohlcv.py`：OHLCV 字段清洗、对齐与标准化
+- 研报生成模块：[charles/api/charles_api/reports/](./charles/api/charles_api/reports/)
+- 舆情分析模块：[charles/api/charles_api/sentiment/](./charles/api/charles_api/sentiment/)
+- 助手模块：[charles/api/charles_api/assistant/](./charles/api/charles_api/assistant/)
 
 #### 关键流程（后端核心机制）
 
@@ -229,6 +245,8 @@ Zoe 是“策略计算与因子挖掘端（Analysis）”，核心特点：
 - 回测相关：
   - 回测 API 由 [main.py](./zoe/zoe/app/main.py) 中 `/api/v1/backtest/*` 实现
   - backtrader 作为可选依赖（未安装时会提示缺依赖）
+- 主力识别模块：`zoe/zoe/app/mainforce/`
+- 绩效分析模块：`zoe/zoe/app/performance/`
 
 ### 4.3 关键函数/类（Zoe）
 
@@ -261,88 +279,125 @@ Zoe 是“策略计算与因子挖掘端（Analysis）”，核心特点：
 
 ---
 
-## 5. nanobot-main（课程工程：AI Agent）
+## 5. Ethan（交易官）
 
-仓库中存在两份 nanobot-main（week8 与 week9），内容基本一致但 week9 通常更新更全：
+Ethan 是交易执行与任务编排服务（FastAPI + WebSocket），核心能力包括：
 
-- week8：[week8/课程代码-20260408/nanobot-main/](./week8/课程代码-20260408/nanobot-main/)
-- week9：[week9/课程代码-20260411/nanobot-main/](./week9/课程代码-20260411/nanobot-main/)
+- QMT 连接与交易查询（资产/持仓/订单/成交/事件）
+- 交易执行任务创建、模拟与执行（带执行过程事件流）
+- RL 训练与回测接口（训练过程通过 WS 推送）
 
-### 5.1 定位与职责
+入口与代码位置：
 
-nanobot-main 是一个可安装的 Python 包，提供：
+- 后端：`ethan/backend/`（启动入口：[run_server.py](./ethan/backend/run_server.py)）
+- 后端 FastAPI：`ethan/backend/ethan_api/app.py`
+- 前端：`ethan/frontend/`（Vite）
 
-- CLI 对话式 agent
-- 多 provider（OpenAI/Anthropic 等）适配
-- 工具系统（文件系统、shell、web、spawn、cron 等）
-- OpenAI-Compatible API 服务（用于本地中转或对外暴露 `/v1/chat/completions`）
+常用运行方式（默认端口 8001）：
 
-### 5.2 关键入口
+```bash
+python ethan/backend/run_server.py
+```
 
-- 依赖与 console script 定义（CLI 入口）：[pyproject.toml](./week9/课程代码-20260411/nanobot-main/pyproject.toml)
-- CLI 命令实现：[nanobot/cli/commands.py](./week9/课程代码-20260411/nanobot-main/nanobot/cli/commands.py)
-- Agent 核心循环：[nanobot/agent/loop.py](./week9/课程代码-20260411/nanobot-main/nanobot/agent/loop.py)
-- OpenAI-Compatible API Server：[nanobot/api/server.py](./week9/课程代码-20260411/nanobot-main/nanobot/api/server.py)
+依赖要点：
 
-### 5.3 运行方式
-
-以 week9 版本为例，详细文档见：[README.md](./week9/课程代码-20260411/nanobot-main/README.md)。
-
-- 安装：在 `nanobot-main` 目录下执行 `pip install -e .`
-- 运行：
-  - CLI：`nanobot agent`
-  - 网关：`nanobot gateway`
-  - API：`pip install "nanobot-ai[api]" && nanobot serve`
+- 交易连接需要环境变量：`QMT_PATH`、`ACCOUNT_ID`（见 `POST /api/trading/connect`）
+- 前端通过 CORS 允许来源：`ETHAN_CORS_ORIGINS`（默认 `http://localhost:5173`）
 
 ---
 
-## 6. week1 ~ week10（课程周代码）
+## 6. Kris（风控官）
 
-### 6.1 组织方式
+Kris 是风控决策服务（FastAPI），核心能力包括：
 
-- 按周/讲次/CASE 划分目录
-- 文件通常为 **独立脚本**，依赖条件取决于案例内容（可能需要 MySQL、第三方数据源 Key、或特定 Python 库）
+- 交易请求审批：给出 `APPROVE/WARN/REJECT` 与原因，并可返回建议降仓金额/数量
+- ATR 止损检查、持仓注册与移除
+- 宏观门控（例如 VIX 风险系数）
+- 审计日志与状态查询
 
-### 6.2 运行方式（通用）
+入口与代码位置：
 
-- 进入对应目录，直接运行脚本：`python xxx.py`
-- 如果脚本涉及 `huahua_trade` 数据库，需要先完成 MySQL 建库建表（见 Charles 的初始化步骤）
-
-### 6.3 快速索引
-
-- Python 文件索引：[python_file_index.md](./python_file_index.md)
-- 生成索引脚本：[generate_python_file_index.py](./generate_python_file_index.py)
+- 后端：`kris/api/`（启动入口：[run_server.py](./kris/api/run_server.py)，默认端口 8011）
+- 风控引擎：`kris/api/kirs_api/risk_engine.py`
+- Web：`kris/web/`（Vite）
 
 ---
 
-## 7. 常用运行/开发清单（汇总）
+## 7. CEO 控制台（整合型 Web 工作台）
 
-### 7.1 MySQL（共享底座）
+CEO 控制台是整合型 Web 工作台（FastAPI + 模板页 + 可挂载 Gradio 投研对话），核心能力包括：
+
+- 实盘/模拟盘监控与引擎启停
+- 回测（单股/策略）
+- 晨会工作流（LangGraph）
+- 投研对话（依赖 `third_party/charles_bundle` 与 `DASHSCOPE_API_KEY`）
+- 定时调度器（08:30 数据增量、交易时段启停等）
+
+说明与启动见：[ceo/README.md](./ceo/README.md)
+
+入口：
+
+- Web：`python ceo/app.py`（默认 7865）
+- Scheduler：`python ceo/scheduler.py`
+
+---
+
+## 8. lesson/（课程周代码）
+
+课程周代码已统一迁移到 `lesson/`，按 `week1` ~ `week11` 组织。大多数文件是独立脚本，通常直接运行：
+
+```bash
+python your_script.py
+```
+
+其中部分 CASE 会读写 `huahua_trade`（需要先按建表 SQL 初始化数据库）。
+
+---
+
+## 9. 常用运行/开发清单（汇总）
+
+### 9.1 MySQL（共享底座）
 
 - 建库建表：[huahua_trade_schema_show_create.sql](./huahua_trade_schema_show_create.sql)
 - Charles 扩展 SQL：[charles/sql/huahua_trade_charles_extra.sql](./charles/sql/huahua_trade_charles_extra.sql)
 
-### 7.2 Charles
+### 9.2 Charles
 
-- 后端：`python charles/api/run_server.py`（或按 charles README 的方式运行）
+- 后端：`python charles/api/run_server.py`
 - 前端：`cd charles/web && npm run dev`
 
-### 7.3 Zoe
+### 9.3 Zoe
 
 - `python -m zoe.app.main`
 
+### 9.4 Ethan
+
+- `python ethan/backend/run_server.py`
+
+### 9.5 Kris
+
+- `python kris/api/run_server.py`
+
+### 9.6 CEO 控制台
+
+- `python ceo/app.py`
+
 ---
 
-## 8. 代码阅读建议（上手路径）
+## 10. 代码阅读建议（上手路径）
 
-如果目标是快速理解“落地系统如何工作”，推荐阅读顺序：
+如果目标是快速理解“落地系统如何协同工作”，推荐阅读顺序：
 
-1. [README.md](./README.md)（仓库导航）
-2. [charles/README.md](./charles/README.md)（输入端：采集任务、数据源优先级、启动方式）
-3. Charles 后端入口：
+1. [README.md](./README.md)（最新目录导航）
+2. [CODE_WIKI.md](./CODE_WIKI.md)（系统总览与各模块关系）
+3. Charles（输入端）：
+   - [charles/CODE_WIKI.md](./charles/CODE_WIKI.md)
    - [charles/api/charles_api/app.py](./charles/api/charles_api/app.py)
-   - [charles/api/charles_api/jobs/](./charles/api/charles_api/jobs/)
 4. MySQL 表结构（理解数据落在哪里）：[huahua_trade_schema_show_create.sql](./huahua_trade_schema_show_create.sql)
-5. [zoe/README.md](./zoe/README.md) 与 Zoe 入口 [zoe/zoe/app/main.py](./zoe/zoe/app/main.py)
-6. week* 只在需要追溯某个算法/课堂实现时再按索引定位阅读
-
+5. Zoe（分析端）：
+   - [zoe/CODE_WIKI.md](./zoe/CODE_WIKI.md)
+   - [zoe/zoe/app/main.py](./zoe/zoe/app/main.py)
+6. Ethan（执行端）：[ethan/backend/ethan_api/app.py](./ethan/backend/ethan_api/app.py)
+7. Kris（风控端）：[kris/api/kirs_api/app.py](./kris/api/kirs_api/app.py)
+8. CEO 控制台（整合端）：[ceo/README.md](./ceo/README.md) 与 [ceo/app.py](./ceo/app.py)
+9. 课程代码：需要追溯课堂实现时再从 `lesson/` 按周定位（可用 [python_file_index.md](./python_file_index.md) 辅助检索）
