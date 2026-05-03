@@ -13,9 +13,16 @@ export default function DashboardPage() {
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const [startNav, setStartNav] = useState<number>(1000000)
-  const [vix, setVix] = useState<number>(18.5)
-  const [nav, setNav] = useState<number>(1000000)
+  const [startNav, setStartNav] = useState<string>('1000000')
+  const [vix, setVix] = useState<string>('18.5')
+  const [nav, setNav] = useState<string>('1000000')
+
+  const parseNum = (s: string) => {
+    const t = s.trim()
+    if (t === '') return NaN
+    const n = Number(t)
+    return Number.isFinite(n) ? n : NaN
+  }
 
   const load = async () => {
     setLoading(true)
@@ -79,16 +86,22 @@ export default function DashboardPage() {
               <div className="space-y-1">
                 <div className="text-xs text-zinc-600">start_day(start_nav)</div>
                 <input
-                  value={String(startNav)}
-                  onChange={(e) => setStartNav(Number(e.target.value || 0))}
+                  value={startNav}
+                  onChange={(e) => setStartNav(e.target.value)}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                 />
               </div>
               <div className="flex items-end">
                 <button
                   onClick={async () => {
-                    await fetchJson('/api/kris/start-day', { method: 'POST', body: JSON.stringify({ start_nav: startNav }) })
-                    await load()
+                    try {
+                      const n = parseNum(startNav)
+                      if (!(n > 0)) throw new Error('请输入有效的 start_nav')
+                      await fetchJson('/api/kris/start-day', { method: 'POST', body: JSON.stringify({ start_nav: n }) })
+                      await load()
+                    } catch (e) {
+                      setErr(e instanceof Error ? e.message : String(e))
+                    }
                   }}
                   className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800"
                 >
@@ -99,16 +112,22 @@ export default function DashboardPage() {
               <div className="space-y-1">
                 <div className="text-xs text-zinc-600">更新 VIX</div>
                 <input
-                  value={String(vix)}
-                  onChange={(e) => setVix(Number(e.target.value || 0))}
+                  value={vix}
+                  onChange={(e) => setVix(e.target.value)}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                 />
               </div>
               <div className="flex items-end">
                 <button
                   onClick={async () => {
-                    await fetchJson('/api/kris/update-macro', { method: 'POST', body: JSON.stringify({ vix }) })
-                    await load()
+                    try {
+                      const n = parseNum(vix)
+                      if (!Number.isFinite(n)) throw new Error('请输入有效的 VIX')
+                      await fetchJson('/api/kris/update-macro', { method: 'POST', body: JSON.stringify({ vix: n }) })
+                      await load()
+                    } catch (e) {
+                      setErr(e instanceof Error ? e.message : String(e))
+                    }
                   }}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50"
                 >
@@ -120,14 +139,20 @@ export default function DashboardPage() {
                 <div className="text-xs text-zinc-600">on_trade_complete(nav)</div>
                 <div className="flex gap-2">
                   <input
-                    value={String(nav)}
-                    onChange={(e) => setNav(Number(e.target.value || 0))}
+                    value={nav}
+                    onChange={(e) => setNav(e.target.value)}
                     className="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                   />
                   <button
                     onClick={async () => {
-                      await fetchJson('/api/kris/trade-complete', { method: 'POST', body: JSON.stringify({ nav }) })
-                      await load()
+                      try {
+                        const n = parseNum(nav)
+                        if (!(n > 0)) throw new Error('请输入有效的 nav')
+                        await fetchJson('/api/kris/trade-complete', { method: 'POST', body: JSON.stringify({ nav: n }) })
+                        await load()
+                      } catch (e) {
+                        setErr(e instanceof Error ? e.message : String(e))
+                      }
                     }}
                     className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50"
                   >

@@ -38,7 +38,7 @@ export default function DashboardPage() {
       setPositions(p.items)
       setEvents(e.items)
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -52,7 +52,7 @@ export default function DashboardPage() {
       await apiPost('/api/trading/connect')
       await refreshAll()
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     }
   }
 

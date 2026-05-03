@@ -14,7 +14,7 @@ export default function LoginPage() {
       const s = await apiGet<TradingState>('/api/trading/state')
       setState(s)
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -29,7 +29,7 @@ export default function LoginPage() {
       await apiPost('/api/trading/connect')
       await refresh()
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
@@ -42,7 +42,7 @@ export default function LoginPage() {
       await apiPost('/api/trading/disconnect')
       await refresh()
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
@@ -102,7 +102,7 @@ export default function LoginPage() {
       <div className="rounded-2xl border border-[#1f2c4d] bg-[rgba(15,26,51,.9)] p-4">
         <div className="text-sm font-semibold">说明</div>
         <div className="mt-2 text-xs leading-6 text-[#9fb0d0]">
-          <div>后端默认地址：http://localhost:8001</div>
+          <div>后端默认地址：{`${window.location.protocol}//${window.location.hostname || '127.0.0.1'}:8001`}</div>
           <div>前端可通过 VITE_ETHAN_API_BASE 覆盖后端地址</div>
           <div>实盘连接依赖 xtquant + 已启动登录的 MiniQMT 客户端</div>
         </div>
@@ -110,4 +110,3 @@ export default function LoginPage() {
     </div>
   )
 }
-

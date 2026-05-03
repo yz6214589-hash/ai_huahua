@@ -9,7 +9,7 @@ class TestKirsApi(unittest.TestCase):
     def setUp(self):
         from fastapi.testclient import TestClient
 
-        from kirs_api.app import create_app
+        from kris_api.app import create_app
 
         self.client = TestClient(create_app())
 
@@ -63,7 +63,7 @@ class TestKirsApi(unittest.TestCase):
         resp = self.client.post(
             "/api/kris/approve",
             json={
-                "order": {"stock_code": "510050.SH", "direction": "sell", "amount": 100_000, "price": 3.0},
+                "order": {"stock_code": "510050.SH", "direction": "buy", "amount": 100_000, "price": 3.0},
                 "portfolio": {
                     "total_asset": 1_000_000,
                     "prices": {"510050.SH": 3.0},
@@ -75,3 +75,23 @@ class TestKirsApi(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data["decision"], "halt")
+
+    def test_macro_halt_allows_sell(self):
+        self.client.post("/api/kris/start-day", json={"start_nav": 1_000_000})
+        self.client.post("/api/kris/update-macro", json={"vix": 50.0})
+
+        resp = self.client.post(
+            "/api/kris/approve",
+            json={
+                "order": {"stock_code": "510050.SH", "direction": "sell", "amount": 100_000, "price": 3.0},
+                "portfolio": {
+                    "total_asset": 1_000_000,
+                    "prices": {"510050.SH": 3.0},
+                    "atr": {"510050.SH": 0.05},
+                },
+                "context": {"news_text": "立案调查 财务造假"},
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["decision"], "approve")

@@ -47,7 +47,7 @@ export default function ResearchLabPage() {
       setRunId(res.run.id)
       connectWs(res.run.id)
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -76,7 +76,7 @@ export default function ResearchLabPage() {
       const res = await apiGet<{ run: Record<string, unknown> }>(`/api/rl/runs/${runId}`)
       setTrainEvents((prev) => [...prev.slice(-300), { type: 'run', data: res.run }])
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -96,7 +96,7 @@ export default function ResearchLabPage() {
       })
       setBacktestResult(res)
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     }
   }
 

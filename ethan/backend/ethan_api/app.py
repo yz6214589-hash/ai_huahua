@@ -20,13 +20,28 @@ from .ws.hub import WsHub
 def create_app() -> FastAPI:
     app = FastAPI(title="Ethan API", version="0.1.0")
 
-    cors_origins = [o.strip() for o in str(os.getenv("ETHAN_CORS_ORIGINS") or "http://localhost:5173").split(",") if o.strip()]
+    def err_detail(code: str, message: str, hint: str | None = None) -> dict[str, Any]:
+        d: dict[str, Any] = {"code": code, "message": message}
+        if hint:
+            d["hint"] = hint
+        return d
+
+    cors_env = str(os.getenv("ETHAN_CORS_ORIGINS") or "").strip()
+    cors_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+    cors_kwargs: dict[str, Any]
+    if cors_origins:
+        cors_kwargs = {"allow_origins": cors_origins}
+    else:
+        cors_kwargs = {
+            "allow_origins": [],
+            "allow_origin_regex": r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        }
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        **cors_kwargs,
     )
 
     app.state.store = InMemoryStore()
@@ -52,7 +67,14 @@ def create_app() -> FastAPI:
         qmt_path = str(os.getenv("QMT_PATH") or "").strip()
         account_id = str(os.getenv("ACCOUNT_ID") or "").strip()
         if not qmt_path or not account_id:
-            raise HTTPException(status_code=400, detail="QMT_PATH and ACCOUNT_ID required")
+            raise HTTPException(
+                status_code=400,
+                detail=err_detail(
+                    "missing_env",
+                    "缺少交易连接配置",
+                    "请设置 QMT_PATH 与 ACCOUNT_ID，并确保 MiniQMT 已启动且登录完成",
+                ),
+            )
 
         trader = MiniQMTTrader(qmt_path=qmt_path, account_id=account_id)
         trader.connect()
@@ -76,28 +98,40 @@ def create_app() -> FastAPI:
     def trading_asset() -> dict[str, Any]:
         trader: MiniQMTTrader | None = app.state.trader
         if not trader or not trader.connected:
-            raise HTTPException(status_code=503, detail="trader not connected")
+            raise HTTPException(
+                status_code=503,
+                detail=err_detail("trader_not_connected", "交易连接未建立", "请先在连接页点击连接与校验"),
+            )
         return trader.query_asset()
 
     @app.get("/api/trading/positions")
     def trading_positions() -> dict[str, Any]:
         trader: MiniQMTTrader | None = app.state.trader
         if not trader or not trader.connected:
-            raise HTTPException(status_code=503, detail="trader not connected")
+            raise HTTPException(
+                status_code=503,
+                detail=err_detail("trader_not_connected", "交易连接未建立", "请先在连接页点击连接与校验"),
+            )
         return {"items": trader.query_positions()}
 
     @app.get("/api/trading/orders")
     def trading_orders() -> dict[str, Any]:
         trader: MiniQMTTrader | None = app.state.trader
         if not trader or not trader.connected:
-            raise HTTPException(status_code=503, detail="trader not connected")
+            raise HTTPException(
+                status_code=503,
+                detail=err_detail("trader_not_connected", "交易连接未建立", "请先在连接页点击连接与校验"),
+            )
         return {"items": trader.query_orders()}
 
     @app.get("/api/trading/trades")
     def trading_trades() -> dict[str, Any]:
         trader: MiniQMTTrader | None = app.state.trader
         if not trader or not trader.connected:
-            raise HTTPException(status_code=503, detail="trader not connected")
+            raise HTTPException(
+                status_code=503,
+                detail=err_detail("trader_not_connected", "交易连接未建立", "请先在连接页点击连接与校验"),
+            )
         return {"items": trader.query_trades()}
 
     @app.get("/api/trading/events")
@@ -115,7 +149,14 @@ def create_app() -> FastAPI:
                 df = load_stock_data(body.symbol, None, None)
                 adv = float(df["volume"].mean())
             except Exception as e:
-                raise HTTPException(status_code=503, detail=f"data_unavailable: {type(e).__name__}: {e}")
+                raise HTTPException(
+                    status_code=503,
+                    detail=err_detail(
+                        "data_unavailable",
+                        "历史数据源不可用",
+                        "请确认 MySQL 已启动，并配置 WUCAI_SQL_HOST/WUCAI_SQL_PORT/WUCAI_SQL_USERNAME/WUCAI_SQL_PASSWORD/WUCAI_SQL_DB",
+                    ),
+                )
         else:
             adv = float(body.adv)
         task = create_task(body, adv)
@@ -143,7 +184,14 @@ def create_app() -> FastAPI:
             df = load_stock_data(task.symbol, None, None)
             daily = [df.iloc[i] for i in range(len(df))]
         except Exception as e:
-            raise HTTPException(status_code=503, detail=f"data_unavailable: {type(e).__name__}: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail=err_detail(
+                    "data_unavailable",
+                    "历史数据源不可用",
+                    "请确认 MySQL 已启动，并配置 WUCAI_SQL_HOST/WUCAI_SQL_PORT/WUCAI_SQL_USERNAME/WUCAI_SQL_PASSWORD/WUCAI_SQL_DB",
+                ),
+            )
         res = simulate(task, daily, body)
         return {"items": res}
 
@@ -154,10 +202,16 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="task not found")
         trader: MiniQMTTrader | None = app.state.trader
         if not trader or not trader.connected:
-            raise HTTPException(status_code=503, detail="trader not connected")
+            raise HTTPException(
+                status_code=503,
+                detail=err_detail("trader_not_connected", "交易连接未建立", "请先在连接页点击连接与校验"),
+            )
         loop = app.state.loop
         if loop is None:
-            raise HTTPException(status_code=500, detail="server loop unavailable")
+            raise HTTPException(
+                status_code=500,
+                detail=err_detail("server_unavailable", "服务运行状态异常", "请重启后端服务"),
+            )
         bg.add_task(start_execution, store=app.state.store, hub=app.state.hub, loop=loop, task_id=task_id, trader=trader)
         return {"ok": True}
 
@@ -182,9 +236,22 @@ def create_app() -> FastAPI:
     def rl_train(body: RLTrainRequest) -> dict[str, Any]:
         loop = app.state.loop
         if loop is None:
-            raise HTTPException(status_code=500, detail="server loop unavailable")
-        run = start_train(store=app.state.store, hub=app.state.hub, loop=loop, req=body)
-        return {"run": run.model_dump()}
+            raise HTTPException(
+                status_code=500,
+                detail=err_detail("server_unavailable", "服务运行状态异常", "请重启后端服务"),
+            )
+        try:
+            run = start_train(store=app.state.store, hub=app.state.hub, loop=loop, req=body)
+            return {"run": run.model_dump()}
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail=err_detail(
+                    "data_unavailable",
+                    "历史数据源不可用",
+                    "请确认 MySQL 已启动，并配置 WUCAI_SQL_HOST/WUCAI_SQL_PORT/WUCAI_SQL_USERNAME/WUCAI_SQL_PASSWORD/WUCAI_SQL_DB",
+                ),
+            )
 
     @app.get("/api/rl/runs")
     def rl_runs() -> dict[str, Any]:
@@ -214,7 +281,14 @@ def create_app() -> FastAPI:
         try:
             return backtest(body)
         except Exception as e:
-            raise HTTPException(status_code=503, detail=f"data_unavailable: {type(e).__name__}: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail=err_detail(
+                    "data_unavailable",
+                    "历史数据源不可用",
+                    "请确认 MySQL 已启动，并配置 WUCAI_SQL_HOST/WUCAI_SQL_PORT/WUCAI_SQL_USERNAME/WUCAI_SQL_PASSWORD/WUCAI_SQL_DB",
+                ),
+            )
 
     @app.post("/api/agent/run")
     def agent_run(body: dict[str, Any]) -> dict[str, Any]:

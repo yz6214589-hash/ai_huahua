@@ -17,7 +17,7 @@ export default function ExecutionMonitorPage() {
       const res = await apiGet<{ items: TaskItem[] }>('/api/executions')
       setTasks(res.items)
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -50,7 +50,7 @@ export default function ExecutionMonitorPage() {
       ws.onerror = () => setErr('WebSocket 连接失败')
       ws.onclose = () => {}
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -60,7 +60,7 @@ export default function ExecutionMonitorPage() {
     try {
       await apiPost(`/api/executions/${taskId.trim()}/stop`)
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -158,4 +158,3 @@ export default function ExecutionMonitorPage() {
     </div>
   )
 }
-

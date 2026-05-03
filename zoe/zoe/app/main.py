@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import os
+import sys
 from datetime import date, datetime
+from importlib import import_module
+from importlib import metadata
 from typing import Any
 from uuid import uuid4
 
@@ -30,6 +33,7 @@ from zoe.app.performance.quantstats_engine import calc_quantstats_metrics
 from zoe.app.performance.report import generate_report_html
 from zoe.app.performance.svd import diagnose_market_regime
 from zoe.app.mainforce.engine import run_mainforce_job
+from zoe.app.mainforce.params import validate_mainforce_params
 from zoe.app.mainforce.store import MainForceTask, create_task, delete_task, get_task, load_tasks, save_tasks, upsert_task
 
 
@@ -77,6 +81,21 @@ def page_mainforce(request: Request):
 
 @app.get("/health")
 def health():
+    def dep(pkg: str, mod: str | None = None) -> dict[str, Any]:
+        out: dict[str, Any] = {"package": pkg}
+        try:
+            out["version"] = metadata.version(pkg)
+        except Exception as e:
+            out["version_error"] = str(e)
+        if mod:
+            try:
+                import_module(mod)
+                out["import_ok"] = True
+            except Exception as e:
+                out["import_ok"] = False
+                out["import_error"] = str(e)
+        return out
+
     db_ok = False
     try:
         row = fetch_one(settings, "SELECT 1 AS ok", tuple())
@@ -85,10 +104,16 @@ def health():
         db_ok = False
     return {
         "time": datetime.now().isoformat(timespec="seconds"),
+        "python": sys.version.split(" ")[0],
         "talib": has_talib(),
         "talib_backend": talib_backend(),
         "talib_error": talib_error(),
         "db": db_ok,
+        "deps": {
+            "websockets": dep("websockets", "websockets"),
+            "quantstats": dep("quantstats", "quantstats"),
+            "yfinance": dep("yfinance", "yfinance"),
+        },
     }
 
 
@@ -810,6 +835,47 @@ class MainForceTaskCreateReq(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+def _validate_mainforce_params(params: dict[str, Any]) -> dict[str, int]:
+    p = params or {}
+    allowed = {"n_samples_per_class", "seed", "n_ticks", "window"}
+    unknown = [k for k in p.keys() if k not in allowed]
+    if unknown:
+        raise HTTPException(status_code=400, detail={"error": "invalid_params", "fields": {"params": f"unknown_keys: {unknown}"}})
+
+    def as_int(key: str, default: int) -> int:
+        v = p.get(key, default)
+        if v is None:
+            return int(default)
+        try:
+            return int(v)
+        except Exception:
+            raise HTTPException(status_code=400, detail={"error": "invalid_params", "fields": {key: "not_int"}})
+
+    n_samples_per_class = as_int("n_samples_per_class", 200)
+    seed = as_int("seed", 42)
+    n_ticks = as_int("n_ticks", 300)
+    window = as_int("window", 50)
+
+    errors: dict[str, str] = {}
+    if n_samples_per_class < 1 or n_samples_per_class > 500:
+        errors["n_samples_per_class"] = "range: 1..500"
+    if n_ticks < 30 or n_ticks > 1000:
+        errors["n_ticks"] = "range: 30..1000"
+    if window < 5 or window > 300:
+        errors["window"] = "range: 5..300"
+    if window >= n_ticks:
+        errors["window"] = "must_be_lt_n_ticks"
+    if errors:
+        raise HTTPException(status_code=400, detail={"error": "invalid_params", "fields": errors})
+
+    return {
+        "n_samples_per_class": int(n_samples_per_class),
+        "seed": int(seed),
+        "n_ticks": int(n_ticks),
+        "window": int(window),
+    }
+
+
 def _task_to_dict(t: MainForceTask) -> dict[str, Any]:
     return {
         "task_id": t.task_id,
@@ -852,7 +918,8 @@ def api_mainforce_create_task(payload: MainForceTaskCreateReq = Body(...)):
     if not stock_code:
         raise HTTPException(status_code=400, detail="empty_stock_code")
 
-    task = create_task(stock_code=stock_code, company_name=payload.company_name, params=payload.params or {}, tasks_path=settings.mainforce_tasks_path)
+    params = validate_mainforce_params(payload.params or {})
+    task = create_task(stock_code=stock_code, company_name=payload.company_name, params=params, tasks_path=settings.mainforce_tasks_path)
     tasks = load_tasks(settings.mainforce_tasks_path)
     tasks.append(task)
     save_tasks(settings.mainforce_tasks_path, tasks)
@@ -947,13 +1014,14 @@ def api_mainforce_run_task(task_id: str):
     if not t:
         raise HTTPException(status_code=404, detail="not_found")
 
+    p = validate_mainforce_params(t.params or {})
     now = datetime.now().isoformat(timespec="seconds")
     running = MainForceTask(
         task_id=t.task_id,
         stock_code=t.stock_code,
         company_name=t.company_name,
         mode=t.mode,
-        params=t.params,
+        params=p,
         status="running",
         created_at=t.created_at,
         updated_at=now,
@@ -963,14 +1031,13 @@ def api_mainforce_run_task(task_id: str):
     upsert_task(settings.mainforce_tasks_path, running)
 
     out_dir = os.path.join(os.path.abspath(settings.mainforce_artifacts_path), t.task_id)
-    p = t.params or {}
     try:
         res = run_mainforce_job(
             output_dir=out_dir,
-            n_samples_per_class=int(p.get("n_samples_per_class", 200)),
-            seed=int(p.get("seed", 42)),
-            n_ticks=int(p.get("n_ticks", 300)),
-            window=int(p.get("window", 50)),
+            n_samples_per_class=int(p.get("n_samples_per_class")),
+            seed=int(p.get("seed")),
+            n_ticks=int(p.get("n_ticks")),
+            window=int(p.get("window")),
             stock_code=t.stock_code,
         )
         artifacts_url = {

@@ -9,4 +9,5 @@ numpy==2.0.1
 Jinja2==3.1.4
 quantstats==0.0.81
 scikit-learn==1.5.1
+websockets>=13.0
 pytest==8.3.2

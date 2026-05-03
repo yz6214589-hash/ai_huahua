@@ -26,6 +26,11 @@ def health():
         from xtquant import xtdata
         xtdata.connect()
         rows.append({"item": "xtdata 行情", "value": "已连接", "status": "OK"})
+    except ModuleNotFoundError as e:
+        if (getattr(e, "name", "") or "").startswith("xtquant"):
+            rows.append({"item": "xtdata 行情", "value": "未安装 xtquant（行情能力不可用）", "status": "WARN"})
+        else:
+            rows.append({"item": "xtdata 行情", "value": str(e)[:60], "status": "ERROR"})
     except Exception as e:
         rows.append({"item": "xtdata 行情", "value": str(e)[:60], "status": "ERROR"})
 
@@ -54,6 +59,16 @@ def health():
     else:
         rows.append({"item": "live_state.json",
                      "value": "不存在 (启动模拟盘后会自动创建)", "status": "WARN"})
+
+    try:
+        from lib.strategy_registry import list_groups, list_strategies
+        strategies = list_strategies()
+        groups = list_groups()
+        rows.append({"item": "策略库",
+                     "value": f"策略 {len(strategies)} 个 / 分组 {len(groups)} 个", "status": "OK"})
+    except Exception as e:
+        rows.append({"item": "策略库",
+                     "value": f"读取失败: {type(e).__name__}: {str(e)[:60]}", "status": "ERROR"})
 
     if OUTPUTS_RESEARCH.exists():
         n = len(list(OUTPUTS_RESEARCH.glob("morning_brief_*.html")))

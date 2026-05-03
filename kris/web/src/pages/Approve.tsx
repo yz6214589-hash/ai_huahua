@@ -7,13 +7,13 @@ import { DecisionBadge } from '@/components/DecisionBadge'
 export default function ApprovePage() {
   const [stockCode, setStockCode] = useState('510050.SH')
   const [direction, setDirection] = useState<Direction>('buy')
-  const [amount, setAmount] = useState<number>(100000)
-  const [price, setPrice] = useState<number>(3)
-  const [quantity, setQuantity] = useState<number>(0)
-  const [currentPrice, setCurrentPrice] = useState<number>(3)
-  const [totalAsset, setTotalAsset] = useState<number>(1000000)
-  const [atr, setAtr] = useState<number>(0.05)
-  const [vix, setVix] = useState<number>(18.5)
+  const [amount, setAmount] = useState<string>('100000')
+  const [price, setPrice] = useState<string>('3')
+  const [quantity, setQuantity] = useState<string>('0')
+  const [currentPrice, setCurrentPrice] = useState<string>('3')
+  const [totalAsset, setTotalAsset] = useState<string>('1000000')
+  const [atr, setAtr] = useState<string>('0.05')
+  const [vix, setVix] = useState<string>('18.5')
   const [newsText, setNewsText] = useState<string>('')
 
   const [loading, setLoading] = useState(false)
@@ -24,23 +24,43 @@ export default function ApprovePage() {
     setLoading(true)
     setErr(null)
     try {
+      const parseNum = (s: string) => {
+        const t = s.trim()
+        if (t === '') return 0
+        const n = Number(t)
+        return Number.isFinite(n) ? n : NaN
+      }
+
+      const vixN = parseNum(vix)
+      const priceN = parseNum(price)
+      const amountN = override?.amount ?? parseNum(amount)
+      const quantityN = override?.quantity ?? parseNum(quantity)
+      const currentPriceN = parseNum(currentPrice)
+      const totalAssetN = parseNum(totalAsset)
+      const atrN = parseNum(atr)
+
+      if (!Number.isFinite(vixN)) throw new Error('请输入有效的 VIX')
+      if (!(amountN > 0)) throw new Error('请输入有效的下单金额')
+      if (!(priceN > 0)) throw new Error('请输入有效的委托价格')
+      if (!(totalAssetN > 0)) throw new Error('请输入有效的总资产')
+
       await fetchJson('/api/kris/update-macro', {
         method: 'POST',
-        body: JSON.stringify({ vix }),
+        body: JSON.stringify({ vix: vixN }),
       })
 
       const req: ApproveRequest = {
         order: {
           stock_code: stockCode.trim(),
           direction,
-          amount: override?.amount ?? amount,
-          price,
-          quantity: override?.quantity ?? quantity,
+          amount: amountN,
+          price: priceN,
+          quantity: Number.isFinite(quantityN) ? quantityN : 0,
         },
         portfolio: {
-          total_asset: totalAsset,
-          prices: { [stockCode.trim()]: currentPrice },
-          atr: { [stockCode.trim()]: atr },
+          total_asset: totalAssetN,
+          prices: { [stockCode.trim()]: Number.isFinite(currentPriceN) ? currentPriceN : 0 },
+          atr: { [stockCode.trim()]: Number.isFinite(atrN) ? atrN : 0 },
         },
         context: { news_text: newsText },
       }
@@ -60,8 +80,8 @@ export default function ApprovePage() {
   const applySuggestionAndSubmit = async () => {
     if (!result) return
     if (result.suggested_amount <= 0 || result.suggested_quantity <= 0) return
-    setAmount(result.suggested_amount)
-    setQuantity(result.suggested_quantity)
+    setAmount(String(result.suggested_amount))
+    setQuantity(String(result.suggested_quantity))
     await submit({ amount: result.suggested_amount, quantity: result.suggested_quantity })
   }
 
@@ -99,8 +119,8 @@ export default function ApprovePage() {
               <div className="space-y-1">
                 <div className="text-xs text-zinc-600">下单金额（元）</div>
                 <input
-                  value={Number.isFinite(amount) ? String(amount) : ''}
-                  onChange={(e) => setAmount(Number(e.target.value || 0))}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                 />
               </div>
@@ -108,8 +128,8 @@ export default function ApprovePage() {
               <div className="space-y-1">
                 <div className="text-xs text-zinc-600">委托价格</div>
                 <input
-                  value={Number.isFinite(price) ? String(price) : ''}
-                  onChange={(e) => setPrice(Number(e.target.value || 0))}
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                 />
               </div>
@@ -117,8 +137,8 @@ export default function ApprovePage() {
               <div className="space-y-1">
                 <div className="text-xs text-zinc-600">数量（股，可选）</div>
                 <input
-                  value={Number.isFinite(quantity) ? String(quantity) : ''}
-                  onChange={(e) => setQuantity(Number(e.target.value || 0))}
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                 />
               </div>
@@ -126,8 +146,8 @@ export default function ApprovePage() {
               <div className="space-y-1">
                 <div className="text-xs text-zinc-600">现价（价格偏离）</div>
                 <input
-                  value={Number.isFinite(currentPrice) ? String(currentPrice) : ''}
-                  onChange={(e) => setCurrentPrice(Number(e.target.value || 0))}
+                  value={currentPrice}
+                  onChange={(e) => setCurrentPrice(e.target.value)}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                 />
               </div>
@@ -135,8 +155,8 @@ export default function ApprovePage() {
               <div className="space-y-1">
                 <div className="text-xs text-zinc-600">总资产（元）</div>
                 <input
-                  value={Number.isFinite(totalAsset) ? String(totalAsset) : ''}
-                  onChange={(e) => setTotalAsset(Number(e.target.value || 0))}
+                  value={totalAsset}
+                  onChange={(e) => setTotalAsset(e.target.value)}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                 />
               </div>
@@ -144,8 +164,8 @@ export default function ApprovePage() {
               <div className="space-y-1">
                 <div className="text-xs text-zinc-600">ATR</div>
                 <input
-                  value={Number.isFinite(atr) ? String(atr) : ''}
-                  onChange={(e) => setAtr(Number(e.target.value || 0))}
+                  value={atr}
+                  onChange={(e) => setAtr(e.target.value)}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                 />
               </div>
@@ -153,8 +173,8 @@ export default function ApprovePage() {
               <div className="space-y-1">
                 <div className="text-xs text-zinc-600">VIX</div>
                 <input
-                  value={Number.isFinite(vix) ? String(vix) : ''}
-                  onChange={(e) => setVix(Number(e.target.value || 0))}
+                  value={vix}
+                  onChange={(e) => setVix(e.target.value)}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                 />
               </div>

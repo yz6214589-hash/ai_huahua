@@ -273,7 +273,7 @@ class MacroGate:
         if self.position_coefficient <= 0:
             return RiskDecision(
                 decision=Decision.HALT,
-                reason=f"VIX={self.current_vix:.1f} 极度恐慌, 暂停所有开仓",
+                reason=f"VIX={self.current_vix:.1f} 极度恐慌, 禁止开仓（买入）",
                 rule_name="宏观VIX门控",
                 max_position_pct=0.0,
             )
@@ -307,6 +307,12 @@ class RiskManager:
             return d, checks
 
         macro_d = self.macro.check()
+        if macro_d.decision == Decision.HALT and order.direction == "sell":
+            macro_d = RiskDecision(
+                decision=Decision.APPROVE,
+                reason=f"VIX={self.macro.current_vix:.1f} 极端风险, 仅禁止开仓（买入）, 允许卖出减仓",
+                rule_name="宏观VIX门控",
+            )
         checks.append(macro_d)
         if macro_d.decision == Decision.HALT:
             self._log(order, macro_d)

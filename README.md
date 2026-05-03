@@ -4,6 +4,7 @@
 
 ## 目录导航
 
+- `ai_quant/`：统一 AI 量化系统默认入口（FastAPI + React + Streamlit Chat）
 - `charles/`：数字员工情报官（采集 / 清洗 / 落库 / Web 控制台）
 - `zoe/`：数字员工分析师（指标 / 信号 / 选股 / 回测）
 - `ceo/`：CEO 控制台（整合型 Web 工作台：实盘/模拟盘、回测、晨会、投研对话等）
@@ -18,6 +19,12 @@
 - 总览 Wiki：`CODE_WIKI.md`
 - Charles Wiki：`charles/CODE_WIKI.md`
 - Zoe Wiki：`zoe/CODE_WIKI.md`
+
+## 默认入口与保留策略
+
+- 默认入口已切换到 `ai_quant/`，用于日常开发、联调和演示。
+- 原 `charles/`、`zoe/`、`ethan/`、`kris/`、`ceo/` 工程保留，用于迁移期对照与回归。
+- 若无特殊说明，请优先使用统一系统，不再以原子系统作为默认启动入口。
 
 ## Charles（数字员工情报官）
 

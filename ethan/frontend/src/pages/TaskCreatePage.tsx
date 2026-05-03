@@ -76,7 +76,7 @@ export default function TaskCreatePage() {
       const res = await apiPost<CreateResp>('/api/executions', payload)
       setTaskId(res.task.id)
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
@@ -91,7 +91,7 @@ export default function TaskCreatePage() {
       const first = res.items[0]
       setSimSummary(first?.summary || null)
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
@@ -104,7 +104,7 @@ export default function TaskCreatePage() {
     try {
       await apiPost(`/api/executions/${taskId}/start`)
     } catch (e) {
-      setErr(String(e))
+      setErr(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
@@ -312,4 +312,3 @@ export default function TaskCreatePage() {
     </div>
   )
 }
-

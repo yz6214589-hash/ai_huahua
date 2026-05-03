@@ -1,0 +1,3981 @@
+{
+  "base": "http://127.0.0.1:7865",
+  "results": [
+    {
+      "id": "API-01",
+      "title": "系统健康检查返回数组",
+      "method": "GET",
+      "path": "/api/system/health",
+      "body": null,
+      "status": 200,
+      "elapsed_ms": 207,
+      "passed": true,
+      "resp_json_preview": [
+        {
+          "item": "Python 版本",
+          "value": "3.10.7",
+          "status": "OK"
+        },
+        {
+          "item": "xtdata 行情",
+          "value": "No module named 'xtquant'",
+          "status": "ERROR"
+        },
+        {
+          "item": "DASHSCOPE_API_KEY",
+          "value": "已配置",
+          "status": "OK"
+        },
+        {
+          "item": "QMT_PATH",
+          "value": "未配置 (实盘下单不可用)",
+          "status": "WARN"
+        },
+        {
+          "item": "live_state.json",
+          "value": "updated_at=2026-05-03T10:09:52",
+          "status": "OK"
+        },
+        {
+          "item": "晨会分析 HTML",
+          "value": "2 份",
+          "status": "OK"
+        }
+      ],
+      "resp_error": null
+    },
+    {
+      "id": "API-02",
+      "title": "Live 路由探活",
+      "method": "GET",
+      "path": "/api/live/ping",
+      "body": null,
+      "status": 200,
+      "elapsed_ms": 10,
+      "passed": true,
+      "resp_json_preview": {
+        "ok": true,
+        "module": "live",
+        "hint": "绑定接口: POST /api/live/stock/bind"
+      },
+      "resp_error": null
+    },
+    {
+      "id": "API-03",
+      "title": "读取 live_state（不存在也应返回默认结构）",
+      "method": "GET",
+      "path": "/api/live/state",
+      "body": null,
+      "status": 200,
+      "elapsed_ms": 36,
+      "passed": true,
+      "resp_json_preview": {
+        "trading_status": "RUNNING",
+        "capital": 1000000.0,
+        "positions": [
+          {
+            "code": "600519.SH",
+            "name": "贵州茅台",
+            "volume": 100,
+            "cost": 1464.49,
+            "cur_price": 1464.49,
+            "market_value": 146449.0,
+            "pnl": 0.0,
+            "pnl_pct": 0.0
+          },
+          {
+            "code": "688981.SH",
+            "name": "中芯国际",
+            "volume": 1900,
+            "cost": 96.4,
+            "cur_price": 96.4,
+            "market_value": 183160.0,
+            "pnl": 0.0,
+            "pnl_pct": 0.0
+          },
+          {
+            "code": "300750.SZ",
+            "name": "宁德时代",
+            "volume": 400,
+            "cost": 409.73,
+            "cur_price": 409.73,
+            "market_value": 163892.0,
+            "pnl": 0.0,
+            "pnl_pct": 0.0
+          },
+          {
+            "code": "513100.SH",
+            "name": "纳指ETF",
+            "volume": 110000,
+            "cost": 1.72,
+            "cur_price": 1.72,
+            "market_value": 189200.0,
+            "pnl": 0.0,
+            "pnl_pct": 0.0
+          },
+          {
+            "code": "000001.SZ",
+            "name": "平安银行",
+            "volume": 17100,
+            "cost": 11.09,
+            "cur_price": 11.09,
+            "market_value": 189639.0,
+            "pnl": 0.0,
+            "pnl_pct": 0.0
+          }
+        ],
+        "today_pnl": 0.0,
+        "today_pnl_pct": 0.0,
+        "events": [
+          {
+            "ts": "2026-04-28T14:59:16",
+            "type": "loop_cycle",
+            "signal_count": 4,
+            "duration_ms": 1680
+          },
+          {
+            "ts": "2026-04-29T10:06:01",
+            "type": "loop_cycle",
+            "signal_count": 2,
+            "duration_ms": 1991
+          },
+          {
+            "ts": "2026-04-29T10:07:03",
+            "type": "loop_cycle",
+            "signal_count": 2,
+            "duration_ms": 1981
+          },
+          {
+            "ts": "2026-04-29T10:08:05",
+            "type": "loop_cycle",
+            "signal_count": 2,
+            "duration_ms": 2409
+          },
+          {
+            "ts": "2026-04-29T10:09:07",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1919
+          },
+          {
+            "ts": "2026-04-29T10:10:09",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1386
+          },
+          {
+            "ts": "2026-04-29T10:11:10",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1444
+          },
+          {
+            "ts": "2026-04-29T10:12:12",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1828
+          },
+          {
+            "ts": "2026-04-29T10:13:14",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1594
+          },
+          {
+            "ts": "2026-04-29T10:14:17",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 3159
+          },
+          {
+            "ts": "2026-04-29T10:15:19",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2510
+          },
+          {
+            "ts": "2026-04-29T10:16:21",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1555
+          },
+          {
+            "ts": "2026-04-29T10:17:24",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2523
+          },
+          {
+            "ts": "2026-04-29T10:18:25",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1515
+          },
+          {
+            "ts": "2026-04-29T10:19:27",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1591
+          },
+          {
+            "ts": "2026-04-29T10:20:28",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1540
+          },
+          {
+            "ts": "2026-04-29T10:21:31",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2223
+          },
+          {
+            "ts": "2026-04-29T10:22:32",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1783
+          },
+          {
+            "ts": "2026-04-29T10:23:34",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1362
+          },
+          {
+            "ts": "2026-04-29T10:24:35",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1597
+          },
+          {
+            "ts": "2026-04-29T10:25:37",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1724
+          },
+          {
+            "ts": "2026-04-29T10:26:39",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1805
+          },
+          {
+            "ts": "2026-04-29T10:27:41",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2287
+          },
+          {
+            "ts": "2026-04-29T10:28:44",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 3029
+          },
+          {
+            "ts": "2026-04-29T10:28:59",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1328
+          },
+          {
+            "ts": "2026-04-29T10:30:01",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1384
+          },
+          {
+            "ts": "2026-04-29T10:31:02",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1700
+          },
+          {
+            "ts": "2026-04-29T10:32:05",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2037
+          },
+          {
+            "ts": "2026-04-29T10:33:07",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2085
+          },
+          {
+            "ts": "2026-04-29T10:34:08",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1527
+          },
+          {
+            "ts": "2026-04-29T10:35:10",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1880
+          },
+          {
+            "ts": "2026-04-29T10:36:12",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1847
+          },
+          {
+            "ts": "2026-04-29T10:37:14",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2225
+          },
+          {
+            "ts": "2026-04-29T10:38:16",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1453
+          },
+          {
+            "ts": "2026-04-29T10:39:17",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1663
+          },
+          {
+            "ts": "2026-04-29T10:40:19",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1251
+          },
+          {
+            "ts": "2026-04-29T10:41:21",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2319
+          },
+          {
+            "ts": "2026-04-29T10:42:23",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1927
+          },
+          {
+            "ts": "2026-04-29T10:43:25",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1475
+          },
+          {
+            "ts": "2026-04-29T10:44:26",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1737
+          },
+          {
+            "ts": "2026-04-29T10:45:28",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1452
+          },
+          {
+            "ts": "2026-04-29T10:46:30",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1707
+          },
+          {
+            "ts": "2026-04-29T10:47:32",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1992
+          },
+          {
+            "ts": "2026-04-29T10:48:33",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1366
+          },
+          {
+            "ts": "2026-04-29T10:49:34",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1444
+          },
+          {
+            "ts": "2026-04-29T10:50:36",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1334
+          },
+          {
+            "ts": "2026-04-29T10:51:38",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1926
+          },
+          {
+            "ts": "2026-04-29T10:52:40",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1884
+          },
+          {
+            "ts": "2026-04-29T10:53:41",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1383
+          },
+          {
+            "ts": "2026-04-29T10:54:43",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1494
+          },
+          {
+            "ts": "2026-04-29T10:55:44",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1429
+          },
+          {
+            "ts": "2026-04-29T10:56:46",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1869
+          },
+          {
+            "ts": "2026-04-29T10:57:48",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1685
+          },
+          {
+            "ts": "2026-04-29T10:58:20",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1286
+          },
+          {
+            "ts": "2026-04-29T10:59:22",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1460
+          },
+          {
+            "ts": "2026-04-29T11:00:23",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1365
+          },
+          {
+            "ts": "2026-04-29T11:01:25",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1599
+          },
+          {
+            "ts": "2026-04-29T11:02:27",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1782
+          },
+          {
+            "ts": "2026-04-29T11:03:28",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1445
+          },
+          {
+            "ts": "2026-04-29T11:04:30",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1369
+          },
+          {
+            "ts": "2026-04-29T11:05:31",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1470
+          },
+          {
+            "ts": "2026-04-29T11:06:34",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2563
+          },
+          {
+            "ts": "2026-04-29T11:07:36",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2373
+          },
+          {
+            "ts": "2026-04-29T11:08:38",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1641
+          },
+          {
+            "ts": "2026-04-29T11:09:40",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1599
+          },
+          {
+            "ts": "2026-04-29T11:10:41",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1489
+          },
+          {
+            "ts": "2026-04-29T11:11:43",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2242
+          },
+          {
+            "ts": "2026-04-29T11:12:45",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1984
+          },
+          {
+            "ts": "2026-04-29T11:13:47",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1456
+          },
+          {
+            "ts": "2026-04-29T11:14:48",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1472
+          },
+          {
+            "ts": "2026-04-29T11:15:51",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2936
+          },
+          {
+            "ts": "2026-04-29T11:16:53",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2087
+          },
+          {
+            "ts": "2026-04-29T11:17:55",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1788
+          },
+          {
+            "ts": "2026-04-29T11:18:57",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1486
+          },
+          {
+            "ts": "2026-04-29T11:19:58",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1473
+          },
+          {
+            "ts": "2026-04-29T11:21:00",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1559
+          },
+          {
+            "ts": "2026-04-29T11:22:02",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1733
+          },
+          {
+            "ts": "2026-04-29T11:23:03",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1549
+          },
+          {
+            "ts": "2026-04-29T11:24:05",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1442
+          },
+          {
+            "ts": "2026-04-29T11:25:06",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1659
+          },
+          {
+            "ts": "2026-04-29T11:26:08",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1536
+          },
+          {
+            "ts": "2026-04-29T11:27:10",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1852
+          },
+          {
+            "ts": "2026-04-29T11:28:12",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2195
+          },
+          {
+            "ts": "2026-04-29T11:29:14",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1512
+          },
+          {
+            "ts": "2026-04-29T13:00:18",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1643
+          },
+          {
+            "ts": "2026-04-29T13:01:20",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1654
+          },
+          {
+            "ts": "2026-04-29T13:02:21",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1649
+          },
+          {
+            "ts": "2026-04-29T13:03:23",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1336
+          },
+          {
+            "ts": "2026-04-29T13:04:24",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1476
+          },
+          {
+            "ts": "2026-04-29T13:05:25",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1321
+          },
+          {
+            "ts": "2026-04-29T13:06:27",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1864
+          },
+          {
+            "ts": "2026-04-29T13:07:29",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1637
+          },
+          {
+            "ts": "2026-04-29T13:08:30",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1265
+          },
+          {
+            "ts": "2026-04-29T13:09:32",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1238
+          },
+          {
+            "ts": "2026-04-29T13:10:33",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1205
+          },
+          {
+            "ts": "2026-04-29T13:11:34",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1275
+          },
+          {
+            "ts": "2026-04-29T13:12:35",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1286
+          },
+          {
+            "ts": "2026-04-29T13:13:37",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1358
+          },
+          {
+            "ts": "2026-04-29T13:14:38",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1505
+          },
+          {
+            "ts": "2026-04-29T13:15:40",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1316
+          },
+          {
+            "ts": "2026-04-29T13:16:41",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1329
+          },
+          {
+            "ts": "2026-04-29T13:17:43",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1378
+          },
+          {
+            "ts": "2026-04-29T13:18:44",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1276
+          },
+          {
+            "ts": "2026-04-29T13:19:46",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1816
+          },
+          {
+            "ts": "2026-04-29T13:20:47",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1200
+          },
+          {
+            "ts": "2026-04-29T13:21:48",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1520
+          },
+          {
+            "ts": "2026-04-29T13:22:50",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1648
+          },
+          {
+            "ts": "2026-04-29T13:23:51",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1286
+          },
+          {
+            "ts": "2026-04-29T13:24:53",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1315
+          },
+          {
+            "ts": "2026-04-29T13:25:54",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1280
+          },
+          {
+            "ts": "2026-04-29T13:26:56",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1537
+          },
+          {
+            "ts": "2026-04-29T13:27:57",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1330
+          },
+          {
+            "ts": "2026-04-29T13:28:59",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1693
+          },
+          {
+            "ts": "2026-04-29T13:30:00",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1398
+          },
+          {
+            "ts": "2026-04-29T13:31:02",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1224
+          },
+          {
+            "ts": "2026-04-29T13:32:03",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1314
+          },
+          {
+            "ts": "2026-04-29T13:33:05",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2118
+          },
+          {
+            "ts": "2026-04-29T13:34:07",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1508
+          },
+          {
+            "ts": "2026-04-29T13:35:08",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1446
+          },
+          {
+            "ts": "2026-04-29T13:36:10",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1447
+          },
+          {
+            "ts": "2026-04-29T13:37:11",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1732
+          },
+          {
+            "ts": "2026-04-29T13:38:13",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1840
+          },
+          {
+            "ts": "2026-04-29T13:39:14",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1271
+          },
+          {
+            "ts": "2026-04-29T13:40:16",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1353
+          },
+          {
+            "ts": "2026-04-29T13:41:18",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2448
+          },
+          {
+            "ts": "2026-04-29T13:42:20",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1987
+          },
+          {
+            "ts": "2026-04-29T13:43:22",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1689
+          },
+          {
+            "ts": "2026-04-29T13:44:23",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1184
+          },
+          {
+            "ts": "2026-04-29T13:45:26",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2731
+          },
+          {
+            "ts": "2026-04-29T13:46:27",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1312
+          },
+          {
+            "ts": "2026-04-29T13:47:29",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1340
+          },
+          {
+            "ts": "2026-04-29T13:48:30",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1262
+          },
+          {
+            "ts": "2026-04-29T13:49:31",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1320
+          },
+          {
+            "ts": "2026-04-29T13:50:33",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1250
+          },
+          {
+            "ts": "2026-04-29T13:51:34",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1242
+          },
+          {
+            "ts": "2026-04-29T13:52:35",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1270
+          },
+          {
+            "ts": "2026-04-29T13:53:37",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1896
+          },
+          {
+            "ts": "2026-04-29T13:54:39",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1282
+          },
+          {
+            "ts": "2026-04-29T13:55:41",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2332
+          },
+          {
+            "ts": "2026-04-29T13:56:43",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2152
+          },
+          {
+            "ts": "2026-04-29T13:57:44",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1293
+          },
+          {
+            "ts": "2026-04-29T13:58:46",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1197
+          },
+          {
+            "ts": "2026-04-29T13:59:47",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1341
+          },
+          {
+            "ts": "2026-04-29T14:00:49",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2009
+          },
+          {
+            "ts": "2026-04-29T14:01:51",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1685
+          },
+          {
+            "ts": "2026-04-29T14:02:52",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1483
+          },
+          {
+            "ts": "2026-04-29T14:03:54",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1923
+          },
+          {
+            "ts": "2026-04-29T14:04:57",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2253
+          },
+          {
+            "ts": "2026-04-29T14:05:58",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1748
+          },
+          {
+            "ts": "2026-04-29T14:07:00",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1286
+          },
+          {
+            "ts": "2026-04-29T14:08:01",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1193
+          },
+          {
+            "ts": "2026-04-29T14:09:03",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1811
+          },
+          {
+            "ts": "2026-04-29T14:10:05",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2050
+          },
+          {
+            "ts": "2026-04-29T14:11:06",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1377
+          },
+          {
+            "ts": "2026-04-29T14:12:08",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1601
+          },
+          {
+            "ts": "2026-04-29T14:13:10",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2126
+          },
+          {
+            "ts": "2026-04-29T14:14:12",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1473
+          },
+          {
+            "ts": "2026-04-29T14:15:13",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1810
+          },
+          {
+            "ts": "2026-04-29T14:16:15",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1269
+          },
+          {
+            "ts": "2026-04-29T14:17:16",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1577
+          },
+          {
+            "ts": "2026-04-29T14:18:18",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1635
+          },
+          {
+            "ts": "2026-04-29T14:19:20",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1755
+          },
+          {
+            "ts": "2026-04-29T14:20:21",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1594
+          },
+          {
+            "ts": "2026-04-29T14:21:23",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1631
+          },
+          {
+            "ts": "2026-04-29T14:22:26",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2434
+          },
+          {
+            "ts": "2026-04-29T14:23:27",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1231
+          },
+          {
+            "ts": "2026-04-29T14:24:29",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2113
+          },
+          {
+            "ts": "2026-04-29T14:25:31",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1946
+          },
+          {
+            "ts": "2026-04-29T14:26:32",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1378
+          },
+          {
+            "ts": "2026-04-29T14:27:34",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1854
+          },
+          {
+            "ts": "2026-04-29T14:28:36",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1273
+          },
+          {
+            "ts": "2026-04-29T14:29:37",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1624
+          },
+          {
+            "ts": "2026-04-29T14:30:39",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1389
+          },
+          {
+            "ts": "2026-04-29T14:31:40",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1433
+          },
+          {
+            "ts": "2026-04-29T14:32:41",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1267
+          },
+          {
+            "ts": "2026-04-29T14:33:43",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1901
+          },
+          {
+            "ts": "2026-04-29T14:34:45",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1218
+          },
+          {
+            "ts": "2026-04-29T14:35:46",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1327
+          },
+          {
+            "ts": "2026-04-29T14:36:48",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1718
+          },
+          {
+            "ts": "2026-04-29T14:37:49",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1634
+          },
+          {
+            "ts": "2026-04-29T14:38:51",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1290
+          },
+          {
+            "ts": "2026-04-29T14:39:52",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1455
+          },
+          {
+            "ts": "2026-04-29T14:40:54",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1502
+          },
+          {
+            "ts": "2026-04-29T14:41:56",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2169
+          },
+          {
+            "ts": "2026-04-29T14:42:57",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1159
+          },
+          {
+            "ts": "2026-04-29T14:43:59",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1649
+          },
+          {
+            "ts": "2026-04-29T14:45:00",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1306
+          },
+          {
+            "ts": "2026-04-29T14:46:02",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1585
+          },
+          {
+            "ts": "2026-04-29T14:47:03",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1548
+          },
+          {
+            "ts": "2026-04-29T14:48:05",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1415
+          },
+          {
+            "ts": "2026-04-29T14:50:57",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1441
+          },
+          {
+            "ts": "2026-04-29T14:51:58",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1793
+          },
+          {
+            "ts": "2026-04-29T14:53:00",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1545
+          },
+          {
+            "ts": "2026-04-29T14:54:02",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 2438
+          },
+          {
+            "ts": "2026-04-29T14:55:04",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1613
+          },
+          {
+            "ts": "2026-04-29T14:56:06",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1420
+          },
+          {
+            "ts": "2026-04-29T14:57:07",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1300
+          },
+          {
+            "ts": "2026-04-29T14:58:08",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1185
+          },
+          {
+            "ts": "2026-04-29T14:59:09",
+            "type": "loop_cycle",
+            "signal_count": 1,
+            "duration_ms": 1143
+          },
+          {
+            "ts": "2026-04-29T20:57:44",
+            "type": "loop_cycle",
+            "signal_count": 0,
+            "duration_ms": 8713
+          }
+        ],
+        "signals": [
+          {
+            "ts": "2026-04-01T15:00:00",
+            "code": "300750.SZ",
+            "side": "sell",
+            "strategy": "macd_1d",
+            "reason": "[日K] 死叉 12/26/9 DIF-DEA=-0.1544"
+          },
+          {
+            "ts": "2026-04-02T15:00:00",
+            "code": "688981.SH",
+            "side": "sell",
+            "strategy": "turtle_donchian",
+            "reason": "收盘 93.20 跌破 10 日低 94.00"
+          },
+          {
+            "ts": "2026-04-02T15:00:00",
+            "code": "000001.SZ",
+            "side": "sell",
+            "strategy": "boll_revert",
+            "reason": "收盘 11.27 > 上轨 11.25 (中轨 10.92)"
+          },
+          {
+            "ts": "2026-04-03T15:00:00",
+            "code": "688981.SH",
+            "side": "sell",
+            "strategy": "turtle_donchian",
+            "reason": "收盘 91.78 跌破 10 日低 92.51"
+          },
+          {
+            "ts": "2026-04-08T15:00:00",
+            "code": "513100.SH",
+            "side": "buy",
+            "strategy": "turtle_donchian",
+            "reason": "收盘 1.83 突破 20 日高 1.80"
+          },
+          {
+            "ts": "2026-04-13T15:00:00",
+            "code": "600519.SH",
+            "side": "sell",
+            "strategy": "boll_revert",
+            "reason": "跌破中轨 1443.34 止盈 (前 1453.96/中 1441.86)"
+          },
+          {
+            "ts": "2026-04-13T15:00:00",
+            "code": "300750.SZ",
+            "side": "buy",
+            "strategy": "macd_1d",
+            "reason": "[日K] 金叉 12/26/9 DIF-DEA=+0.0982"
+          },
+          {
+            "ts": "2026-04-15T15:00:00",
+            "code": "513100.SH",
+            "side": "buy",
+            "strategy": "turtle_donchian",
+            "reason": "收盘 1.86 突破 20 日高 1.84"
+          },
+          {
+            "ts": "2026-04-16T15:00:00",
+            "code": "513100.SH",
+            "side": "buy",
+            "strategy": "turtle_donchian",
+            "reason": "收盘 1.91 突破 20 日高 1.87"
+          },
+          {
+            "ts": "2026-04-17T15:00:00",
+            "code": "600519.SH",
+            "side": "sell",
+            "strategy": "boll_revert",
+            "reason": "跌破中轨 1439.22 止盈 (前 1462.84/中 1441.51)"
+          },
+          {
+            "ts": "2026-04-17T15:00:00",
+            "code": "000001.SZ",
+            "side": "sell",
+            "strategy": "boll_revert",
+            "reason": "跌破中轨 11.03 止盈 (前 11.09/中 11.02)"
+          },
+          {
+            "ts": "2026-04-20T15:00:00",
+            "code": "688981.SH",
+            "side": "buy",
+            "strategy": "turtle_donchian",
+            "reason": "收盘 107.96 突破 20 日高 107.30"
+          },
+          {
+            "ts": "2026-04-22T15:00:00",
+            "code": "000001.SZ",
+            "side": "sell",
+            "strategy": "boll_revert",
+            "reason": "跌破中轨 11.08 止盈 (前 11.08/中 11.08)"
+          },
+          {
+            "ts": "2026-04-24T15:00:00",
+            "code": "688981.SH",
+            "side": "buy",
+            "strategy": "turtle_donchian",
+            "reason": "收盘 110.96 突破 20 日高 109.12"
+          },
+          {
+            "ts": "2026-04-27T15:00:00",
+            "code": "600519.SH",
+            "side": "sell",
+            "strategy": "boll_revert",
+            "reason": "跌破中轨 1440.48 止盈 (前 1458.49/中 1441.13)"
+          },
+          {
+            "ts": "2026-04-27T15:00:00",
+            "code": "688981.SH",
+            "side": "buy",
+            "strategy": "turtle_donchian",
+            "reason": "收盘 116.58 突破 20 日高 113.25"
+          },
+          {
+            "ts": "2026-04-27T15:00:00",
+            "code": "513100.SH",
+            "side": "buy",
+            "strategy": "turtle_donchian",
+            "reason": "收盘 1.95 突破 20 日高 1.92"
+          },
+          {
+            "ts": "2026-04-27T15:00:00",
+            "code": "000001.SZ",
+            "side": "sell",
+            "strategy": "boll_revert",
+            "reason": "收盘 11.38 > 上轨 11.31 (中轨 11.11)"
+          },
+          {
+            "ts": "2026-04-28T15:00:00",
+            "code": "300750.SZ",
+            "side": "sell",
+            "strategy": "macd_1d",
+            "reason": "[日K] 死叉 12/26/9 DIF-DEA=-0.8800"
+          },
+          {
+            "ts": "2026-04-28T15:00:00",
+            "code": "513100.SH",
+            "side": "buy",
+            "strategy": "turtle_donchian",
+            "reason": "收盘 1.95 突破 20 日高 1.95"
+          },
+          {
+            "ts": "2026-04-28T15:00:00",
+            "code": "000001.SZ",
+            "side": "sell",
+            "strategy": "boll_revert",
+            "reason": "收盘 11.39 > 上轨 11.35 (中轨 11.12)"
+          }
+        ],
+        "orders": [],
+        "pnl_history": [
+          {
+            "ts": "2026-04-01T14:59:00",
+            "pnl": 2300.0,
+            "pnl_pct": 0.0023
+          },
+          {
+            "ts": "2026-04-02T14:59:00",
+            "pnl": -6777.0,
+            "pnl_pct": -0.0068
+          },
+          {
+            "ts": "2026-04-03T14:59:00",
+            "pnl": -16812.0,
+            "pnl_pct": -0.0168
+          },
+          {
+            "ts": "2026-04-07T14:59:00",
+            "pnl": -13691.0,
+            "pnl_pct": -0.0137
+          },
+          {
+            "ts": "2026-04-08T14:59:00",
+            "pnl": 16416.0,
+            "pnl_pct": 0.0164
+          },
+          {
+            "ts": "2026-04-09T14:59:00",
+            "pnl": 7533.0,
+            "pnl_pct": 0.0075
+          },
+          {
+            "ts": "2026-04-10T14:59:00",
+            "pnl": 20004.0,
+            "pnl_pct": 0.02
+          },
+          {
+            "ts": "2026-04-13T14:59:00",
+            "pnl": 21136.0,
+            "pnl_pct": 0.0211
+          },
+          {
+            "ts": "2026-04-14T14:59:00",
+            "pnl": 29311.0,
+            "pnl_pct": 0.0293
+          },
+          {
+            "ts": "2026-04-15T14:59:00",
+            "pnl": 40970.0,
+            "pnl_pct": 0.041
+          },
+          {
+            "ts": "2026-04-16T14:59:00",
+            "pnl": 52887.0,
+            "pnl_pct": 0.0529
+          },
+          {
+            "ts": "2026-04-17T14:59:00",
+            "pnl": 42392.0,
+            "pnl_pct": 0.0424
+          },
+          {
+            "ts": "2026-04-20T14:59:00",
+            "pnl": 43899.0,
+            "pnl_pct": 0.0439
+          },
+          {
+            "ts": "2026-04-21T14:59:00",
+            "pnl": 49663.0,
+            "pnl_pct": 0.0497
+          },
+          {
+            "ts": "2026-04-22T14:59:00",
+            "pnl": 44421.0,
+            "pnl_pct": 0.0444
+          },
+          {
+            "ts": "2026-04-23T14:59:00",
+            "pnl": 44132.0,
+            "pnl_pct": 0.0441
+          },
+          {
+            "ts": "2026-04-24T14:59:00",
+            "pnl": 60163.0,
+            "pnl_pct": 0.0602
+          },
+          {
+            "ts": "2026-04-27T14:59:00",
+            "pnl": 71982.0,
+            "pnl_pct": 0.072
+          },
+          {
+            "ts": "2026-04-28T10:34:30",
+            "pnl": 69193.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-28T10:35:31",
+            "pnl": 69057.0,
+            "pnl_pct": 0.0691
+          },
+          {
+            "ts": "2026-04-28T10:36:31",
+            "pnl": 68905.0,
+            "pnl_pct": 0.0689
+          },
+          {
+            "ts": "2026-04-28T10:37:32",
+            "pnl": 68663.0,
+            "pnl_pct": 0.0687
+          },
+          {
+            "ts": "2026-04-28T10:38:33",
+            "pnl": 68355.0,
+            "pnl_pct": 0.0684
+          },
+          {
+            "ts": "2026-04-28T10:39:34",
+            "pnl": 68290.0,
+            "pnl_pct": 0.0683
+          },
+          {
+            "ts": "2026-04-28T10:40:35",
+            "pnl": 68384.0,
+            "pnl_pct": 0.0684
+          },
+          {
+            "ts": "2026-04-28T10:41:37",
+            "pnl": 68083.0,
+            "pnl_pct": 0.0681
+          },
+          {
+            "ts": "2026-04-28T10:42:40",
+            "pnl": 67687.0,
+            "pnl_pct": 0.0677
+          },
+          {
+            "ts": "2026-04-28T10:43:42",
+            "pnl": 68015.0,
+            "pnl_pct": 0.068
+          },
+          {
+            "ts": "2026-04-28T10:44:43",
+            "pnl": 67433.0,
+            "pnl_pct": 0.0674
+          },
+          {
+            "ts": "2026-04-28T10:45:44",
+            "pnl": 68145.0,
+            "pnl_pct": 0.0681
+          },
+          {
+            "ts": "2026-04-28T10:46:45",
+            "pnl": 68247.0,
+            "pnl_pct": 0.0682
+          },
+          {
+            "ts": "2026-04-28T10:47:47",
+            "pnl": 67935.0,
+            "pnl_pct": 0.0679
+          },
+          {
+            "ts": "2026-04-28T10:48:48",
+            "pnl": 67825.0,
+            "pnl_pct": 0.0678
+          },
+          {
+            "ts": "2026-04-28T10:49:50",
+            "pnl": 67804.0,
+            "pnl_pct": 0.0678
+          },
+          {
+            "ts": "2026-04-28T10:50:48",
+            "pnl": 68151.0,
+            "pnl_pct": 0.0682
+          },
+          {
+            "ts": "2026-04-28T10:51:49",
+            "pnl": 67911.0,
+            "pnl_pct": 0.0679
+          },
+          {
+            "ts": "2026-04-28T10:52:50",
+            "pnl": 68136.0,
+            "pnl_pct": 0.0681
+          },
+          {
+            "ts": "2026-04-28T10:53:51",
+            "pnl": 67621.0,
+            "pnl_pct": 0.0676
+          },
+          {
+            "ts": "2026-04-28T10:54:52",
+            "pnl": 68106.0,
+            "pnl_pct": 0.0681
+          },
+          {
+            "ts": "2026-04-28T10:55:53",
+            "pnl": 68025.0,
+            "pnl_pct": 0.068
+          },
+          {
+            "ts": "2026-04-28T10:56:53",
+            "pnl": 67958.0,
+            "pnl_pct": 0.068
+          },
+          {
+            "ts": "2026-04-28T10:57:55",
+            "pnl": 68074.0,
+            "pnl_pct": 0.0681
+          },
+          {
+            "ts": "2026-04-28T10:58:56",
+            "pnl": 68304.0,
+            "pnl_pct": 0.0683
+          },
+          {
+            "ts": "2026-04-28T10:59:56",
+            "pnl": 68525.0,
+            "pnl_pct": 0.0685
+          },
+          {
+            "ts": "2026-04-28T11:00:57",
+            "pnl": 68693.0,
+            "pnl_pct": 0.0687
+          },
+          {
+            "ts": "2026-04-28T11:01:57",
+            "pnl": 68712.0,
+            "pnl_pct": 0.0687
+          },
+          {
+            "ts": "2026-04-28T11:03:02",
+            "pnl": 69195.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-28T11:04:03",
+            "pnl": 69019.0,
+            "pnl_pct": 0.069
+          },
+          {
+            "ts": "2026-04-28T11:05:04",
+            "pnl": 68930.0,
+            "pnl_pct": 0.0689
+          },
+          {
+            "ts": "2026-04-28T11:06:05",
+            "pnl": 68701.0,
+            "pnl_pct": 0.0687
+          },
+          {
+            "ts": "2026-04-28T11:07:06",
+            "pnl": 68555.0,
+            "pnl_pct": 0.0686
+          },
+          {
+            "ts": "2026-04-28T11:08:07",
+            "pnl": 68195.0,
+            "pnl_pct": 0.0682
+          },
+          {
+            "ts": "2026-04-28T11:09:08",
+            "pnl": 68361.0,
+            "pnl_pct": 0.0684
+          },
+          {
+            "ts": "2026-04-28T11:10:09",
+            "pnl": 68536.0,
+            "pnl_pct": 0.0685
+          },
+          {
+            "ts": "2026-04-28T11:11:09",
+            "pnl": 68970.0,
+            "pnl_pct": 0.069
+          },
+          {
+            "ts": "2026-04-28T11:12:10",
+            "pnl": 69154.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-28T11:13:11",
+            "pnl": 69096.0,
+            "pnl_pct": 0.0691
+          },
+          {
+            "ts": "2026-04-28T11:14:12",
+            "pnl": 69164.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-28T11:15:13",
+            "pnl": 69942.0,
+            "pnl_pct": 0.0699
+          },
+          {
+            "ts": "2026-04-28T11:16:14",
+            "pnl": 69670.0,
+            "pnl_pct": 0.0697
+          },
+          {
+            "ts": "2026-04-28T11:17:14",
+            "pnl": 69396.0,
+            "pnl_pct": 0.0694
+          },
+          {
+            "ts": "2026-04-28T11:18:15",
+            "pnl": 69503.0,
+            "pnl_pct": 0.0695
+          },
+          {
+            "ts": "2026-04-28T11:19:16",
+            "pnl": 69433.0,
+            "pnl_pct": 0.0694
+          },
+          {
+            "ts": "2026-04-28T11:20:17",
+            "pnl": 69737.0,
+            "pnl_pct": 0.0697
+          },
+          {
+            "ts": "2026-04-28T11:21:18",
+            "pnl": 69444.0,
+            "pnl_pct": 0.0694
+          },
+          {
+            "ts": "2026-04-28T11:22:18",
+            "pnl": 69655.0,
+            "pnl_pct": 0.0697
+          },
+          {
+            "ts": "2026-04-28T11:23:19",
+            "pnl": 69448.0,
+            "pnl_pct": 0.0694
+          },
+          {
+            "ts": "2026-04-28T11:24:21",
+            "pnl": 69575.0,
+            "pnl_pct": 0.0696
+          },
+          {
+            "ts": "2026-04-28T11:25:22",
+            "pnl": 69615.0,
+            "pnl_pct": 0.0696
+          },
+          {
+            "ts": "2026-04-28T11:26:22",
+            "pnl": 69309.0,
+            "pnl_pct": 0.0693
+          },
+          {
+            "ts": "2026-04-28T11:27:23",
+            "pnl": 69166.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-28T11:28:24",
+            "pnl": 69468.0,
+            "pnl_pct": 0.0695
+          },
+          {
+            "ts": "2026-04-28T11:29:25",
+            "pnl": 69294.0,
+            "pnl_pct": 0.0693
+          },
+          {
+            "ts": "2026-04-28T12:22:19",
+            "pnl": 69233.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-28T13:00:17",
+            "pnl": 68835.0,
+            "pnl_pct": 0.0688
+          },
+          {
+            "ts": "2026-04-28T13:01:20",
+            "pnl": 69070.0,
+            "pnl_pct": 0.0691
+          },
+          {
+            "ts": "2026-04-28T13:02:23",
+            "pnl": 69450.0,
+            "pnl_pct": 0.0694
+          },
+          {
+            "ts": "2026-04-28T13:03:27",
+            "pnl": 69248.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-28T13:04:30",
+            "pnl": 69008.0,
+            "pnl_pct": 0.069
+          },
+          {
+            "ts": "2026-04-28T13:05:32",
+            "pnl": 69295.0,
+            "pnl_pct": 0.0693
+          },
+          {
+            "ts": "2026-04-28T13:06:36",
+            "pnl": 68693.0,
+            "pnl_pct": 0.0687
+          },
+          {
+            "ts": "2026-04-28T13:07:39",
+            "pnl": 69337.0,
+            "pnl_pct": 0.0693
+          },
+          {
+            "ts": "2026-04-28T13:08:42",
+            "pnl": 69082.0,
+            "pnl_pct": 0.0691
+          },
+          {
+            "ts": "2026-04-28T13:09:45",
+            "pnl": 68642.0,
+            "pnl_pct": 0.0686
+          },
+          {
+            "ts": "2026-04-28T13:10:47",
+            "pnl": 68637.0,
+            "pnl_pct": 0.0686
+          },
+          {
+            "ts": "2026-04-28T13:11:50",
+            "pnl": 67972.0,
+            "pnl_pct": 0.068
+          },
+          {
+            "ts": "2026-04-28T13:12:54",
+            "pnl": 67857.0,
+            "pnl_pct": 0.0679
+          },
+          {
+            "ts": "2026-04-28T13:13:59",
+            "pnl": 67617.0,
+            "pnl_pct": 0.0676
+          },
+          {
+            "ts": "2026-04-28T13:15:03",
+            "pnl": 67342.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-28T13:16:05",
+            "pnl": 68153.0,
+            "pnl_pct": 0.0682
+          },
+          {
+            "ts": "2026-04-28T13:17:07",
+            "pnl": 68376.0,
+            "pnl_pct": 0.0684
+          },
+          {
+            "ts": "2026-04-28T13:18:10",
+            "pnl": 68353.0,
+            "pnl_pct": 0.0684
+          },
+          {
+            "ts": "2026-04-28T13:19:12",
+            "pnl": 68539.0,
+            "pnl_pct": 0.0685
+          },
+          {
+            "ts": "2026-04-28T13:20:14",
+            "pnl": 68455.0,
+            "pnl_pct": 0.0685
+          },
+          {
+            "ts": "2026-04-28T13:21:15",
+            "pnl": 68653.0,
+            "pnl_pct": 0.0687
+          },
+          {
+            "ts": "2026-04-28T13:22:17",
+            "pnl": 68621.0,
+            "pnl_pct": 0.0686
+          },
+          {
+            "ts": "2026-04-28T13:23:20",
+            "pnl": 68613.0,
+            "pnl_pct": 0.0686
+          },
+          {
+            "ts": "2026-04-28T13:24:22",
+            "pnl": 68588.0,
+            "pnl_pct": 0.0686
+          },
+          {
+            "ts": "2026-04-28T13:25:24",
+            "pnl": 68642.0,
+            "pnl_pct": 0.0686
+          },
+          {
+            "ts": "2026-04-28T13:26:26",
+            "pnl": 69129.0,
+            "pnl_pct": 0.0691
+          },
+          {
+            "ts": "2026-04-28T13:27:29",
+            "pnl": 69247.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-28T13:28:31",
+            "pnl": 68688.0,
+            "pnl_pct": 0.0687
+          },
+          {
+            "ts": "2026-04-28T13:29:34",
+            "pnl": 68849.0,
+            "pnl_pct": 0.0688
+          },
+          {
+            "ts": "2026-04-28T13:30:35",
+            "pnl": 68211.0,
+            "pnl_pct": 0.0682
+          },
+          {
+            "ts": "2026-04-28T13:31:37",
+            "pnl": 68340.0,
+            "pnl_pct": 0.0683
+          },
+          {
+            "ts": "2026-04-28T13:32:40",
+            "pnl": 68932.0,
+            "pnl_pct": 0.0689
+          },
+          {
+            "ts": "2026-04-28T13:33:43",
+            "pnl": 68424.0,
+            "pnl_pct": 0.0684
+          },
+          {
+            "ts": "2026-04-28T13:34:47",
+            "pnl": 68210.0,
+            "pnl_pct": 0.0682
+          },
+          {
+            "ts": "2026-04-28T13:35:50",
+            "pnl": 67892.0,
+            "pnl_pct": 0.0679
+          },
+          {
+            "ts": "2026-04-28T13:36:54",
+            "pnl": 67335.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-28T13:38:00",
+            "pnl": 66845.0,
+            "pnl_pct": 0.0668
+          },
+          {
+            "ts": "2026-04-28T13:39:03",
+            "pnl": 66805.0,
+            "pnl_pct": 0.0668
+          },
+          {
+            "ts": "2026-04-28T13:40:05",
+            "pnl": 66839.0,
+            "pnl_pct": 0.0668
+          },
+          {
+            "ts": "2026-04-28T13:41:07",
+            "pnl": 67588.0,
+            "pnl_pct": 0.0676
+          },
+          {
+            "ts": "2026-04-28T13:42:09",
+            "pnl": 67771.0,
+            "pnl_pct": 0.0678
+          },
+          {
+            "ts": "2026-04-28T13:43:12",
+            "pnl": 67568.0,
+            "pnl_pct": 0.0676
+          },
+          {
+            "ts": "2026-04-28T13:44:16",
+            "pnl": 67439.0,
+            "pnl_pct": 0.0674
+          },
+          {
+            "ts": "2026-04-28T13:45:19",
+            "pnl": 67137.0,
+            "pnl_pct": 0.0671
+          },
+          {
+            "ts": "2026-04-28T13:46:21",
+            "pnl": 67594.0,
+            "pnl_pct": 0.0676
+          },
+          {
+            "ts": "2026-04-28T13:47:24",
+            "pnl": 67653.0,
+            "pnl_pct": 0.0677
+          },
+          {
+            "ts": "2026-04-28T13:48:28",
+            "pnl": 67838.0,
+            "pnl_pct": 0.0678
+          },
+          {
+            "ts": "2026-04-28T13:49:33",
+            "pnl": 67260.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-28T13:50:35",
+            "pnl": 66754.0,
+            "pnl_pct": 0.0668
+          },
+          {
+            "ts": "2026-04-28T13:51:37",
+            "pnl": 66575.0,
+            "pnl_pct": 0.0666
+          },
+          {
+            "ts": "2026-04-28T13:52:41",
+            "pnl": 66332.0,
+            "pnl_pct": 0.0663
+          },
+          {
+            "ts": "2026-04-28T13:53:45",
+            "pnl": 67072.0,
+            "pnl_pct": 0.0671
+          },
+          {
+            "ts": "2026-04-28T13:54:48",
+            "pnl": 67230.0,
+            "pnl_pct": 0.0672
+          },
+          {
+            "ts": "2026-04-28T13:55:50",
+            "pnl": 66987.0,
+            "pnl_pct": 0.067
+          },
+          {
+            "ts": "2026-04-28T13:56:53",
+            "pnl": 66886.0,
+            "pnl_pct": 0.0669
+          },
+          {
+            "ts": "2026-04-28T13:57:57",
+            "pnl": 66586.0,
+            "pnl_pct": 0.0666
+          },
+          {
+            "ts": "2026-04-28T13:59:00",
+            "pnl": 67033.0,
+            "pnl_pct": 0.067
+          },
+          {
+            "ts": "2026-04-28T14:00:04",
+            "pnl": 66846.0,
+            "pnl_pct": 0.0668
+          },
+          {
+            "ts": "2026-04-28T14:01:07",
+            "pnl": 67052.0,
+            "pnl_pct": 0.0671
+          },
+          {
+            "ts": "2026-04-28T14:02:09",
+            "pnl": 66797.0,
+            "pnl_pct": 0.0668
+          },
+          {
+            "ts": "2026-04-28T14:03:13",
+            "pnl": 67273.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-28T14:04:16",
+            "pnl": 66994.0,
+            "pnl_pct": 0.067
+          },
+          {
+            "ts": "2026-04-28T14:05:18",
+            "pnl": 66718.0,
+            "pnl_pct": 0.0667
+          },
+          {
+            "ts": "2026-04-28T14:06:20",
+            "pnl": 67081.0,
+            "pnl_pct": 0.0671
+          },
+          {
+            "ts": "2026-04-28T14:07:22",
+            "pnl": 66975.0,
+            "pnl_pct": 0.067
+          },
+          {
+            "ts": "2026-04-28T14:08:25",
+            "pnl": 67314.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-28T14:09:28",
+            "pnl": 67361.0,
+            "pnl_pct": 0.0674
+          },
+          {
+            "ts": "2026-04-28T14:10:30",
+            "pnl": 67447.0,
+            "pnl_pct": 0.0674
+          },
+          {
+            "ts": "2026-04-28T14:11:34",
+            "pnl": 67205.0,
+            "pnl_pct": 0.0672
+          },
+          {
+            "ts": "2026-04-28T14:12:37",
+            "pnl": 67134.0,
+            "pnl_pct": 0.0671
+          },
+          {
+            "ts": "2026-04-28T14:13:40",
+            "pnl": 67374.0,
+            "pnl_pct": 0.0674
+          },
+          {
+            "ts": "2026-04-28T14:14:45",
+            "pnl": 67692.0,
+            "pnl_pct": 0.0677
+          },
+          {
+            "ts": "2026-04-28T14:15:47",
+            "pnl": 66985.0,
+            "pnl_pct": 0.067
+          },
+          {
+            "ts": "2026-04-28T14:16:49",
+            "pnl": 66915.0,
+            "pnl_pct": 0.0669
+          },
+          {
+            "ts": "2026-04-28T14:17:52",
+            "pnl": 66414.0,
+            "pnl_pct": 0.0664
+          },
+          {
+            "ts": "2026-04-28T14:18:55",
+            "pnl": 66697.0,
+            "pnl_pct": 0.0667
+          },
+          {
+            "ts": "2026-04-28T14:19:57",
+            "pnl": 66420.0,
+            "pnl_pct": 0.0664
+          },
+          {
+            "ts": "2026-04-28T14:21:00",
+            "pnl": 66290.0,
+            "pnl_pct": 0.0663
+          },
+          {
+            "ts": "2026-04-28T14:22:02",
+            "pnl": 66017.0,
+            "pnl_pct": 0.066
+          },
+          {
+            "ts": "2026-04-28T14:23:05",
+            "pnl": 65846.0,
+            "pnl_pct": 0.0658
+          },
+          {
+            "ts": "2026-04-28T14:24:07",
+            "pnl": 65765.0,
+            "pnl_pct": 0.0658
+          },
+          {
+            "ts": "2026-04-28T14:25:09",
+            "pnl": 65519.0,
+            "pnl_pct": 0.0655
+          },
+          {
+            "ts": "2026-04-28T14:26:11",
+            "pnl": 65873.0,
+            "pnl_pct": 0.0659
+          },
+          {
+            "ts": "2026-04-28T14:27:14",
+            "pnl": 65666.0,
+            "pnl_pct": 0.0657
+          },
+          {
+            "ts": "2026-04-28T14:28:18",
+            "pnl": 65582.0,
+            "pnl_pct": 0.0656
+          },
+          {
+            "ts": "2026-04-28T14:29:21",
+            "pnl": 65965.0,
+            "pnl_pct": 0.066
+          },
+          {
+            "ts": "2026-04-28T14:30:23",
+            "pnl": 65887.0,
+            "pnl_pct": 0.0659
+          },
+          {
+            "ts": "2026-04-28T14:31:25",
+            "pnl": 65908.0,
+            "pnl_pct": 0.0659
+          },
+          {
+            "ts": "2026-04-28T14:32:28",
+            "pnl": 65851.0,
+            "pnl_pct": 0.0659
+          },
+          {
+            "ts": "2026-04-28T14:33:34",
+            "pnl": 65386.0,
+            "pnl_pct": 0.0654
+          },
+          {
+            "ts": "2026-04-28T14:34:38",
+            "pnl": 65135.0,
+            "pnl_pct": 0.0651
+          },
+          {
+            "ts": "2026-04-28T14:35:40",
+            "pnl": 65004.0,
+            "pnl_pct": 0.065
+          },
+          {
+            "ts": "2026-04-28T14:36:43",
+            "pnl": 65175.0,
+            "pnl_pct": 0.0652
+          },
+          {
+            "ts": "2026-04-28T14:37:47",
+            "pnl": 65434.0,
+            "pnl_pct": 0.0654
+          },
+          {
+            "ts": "2026-04-28T14:38:51",
+            "pnl": 66046.0,
+            "pnl_pct": 0.066
+          },
+          {
+            "ts": "2026-04-28T14:39:53",
+            "pnl": 65712.0,
+            "pnl_pct": 0.0657
+          },
+          {
+            "ts": "2026-04-28T14:40:56",
+            "pnl": 66391.0,
+            "pnl_pct": 0.0664
+          },
+          {
+            "ts": "2026-04-28T14:41:58",
+            "pnl": 66109.0,
+            "pnl_pct": 0.0661
+          },
+          {
+            "ts": "2026-04-28T14:43:06",
+            "pnl": 66567.0,
+            "pnl_pct": 0.0666
+          },
+          {
+            "ts": "2026-04-28T14:44:41",
+            "pnl": 66567.0,
+            "pnl_pct": 0.0666
+          },
+          {
+            "ts": "2026-04-28T14:45:43",
+            "pnl": 66567.0,
+            "pnl_pct": 0.0666
+          },
+          {
+            "ts": "2026-04-28T14:46:47",
+            "pnl": 67922.0,
+            "pnl_pct": 0.0679
+          },
+          {
+            "ts": "2026-04-28T14:47:49",
+            "pnl": 67753.0,
+            "pnl_pct": 0.0678
+          },
+          {
+            "ts": "2026-04-28T14:48:51",
+            "pnl": 67195.0,
+            "pnl_pct": 0.0672
+          },
+          {
+            "ts": "2026-04-28T14:49:54",
+            "pnl": 67316.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-28T14:50:55",
+            "pnl": 67588.0,
+            "pnl_pct": 0.0676
+          },
+          {
+            "ts": "2026-04-28T14:51:58",
+            "pnl": 67412.0,
+            "pnl_pct": 0.0674
+          },
+          {
+            "ts": "2026-04-28T14:53:00",
+            "pnl": 67151.0,
+            "pnl_pct": 0.0672
+          },
+          {
+            "ts": "2026-04-28T14:54:03",
+            "pnl": 67011.0,
+            "pnl_pct": 0.067
+          },
+          {
+            "ts": "2026-04-28T14:55:06",
+            "pnl": 66654.0,
+            "pnl_pct": 0.0667
+          },
+          {
+            "ts": "2026-04-28T14:56:09",
+            "pnl": 67275.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-28T14:57:11",
+            "pnl": 67321.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-28T14:58:13",
+            "pnl": 67541.0,
+            "pnl_pct": 0.0675
+          },
+          {
+            "ts": "2026-04-28T14:59:14",
+            "pnl": 67321.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-29T10:05:59",
+            "pnl": 60785.0,
+            "pnl_pct": 0.0608
+          },
+          {
+            "ts": "2026-04-29T10:07:01",
+            "pnl": 61917.0,
+            "pnl_pct": 0.0619
+          },
+          {
+            "ts": "2026-04-29T10:08:03",
+            "pnl": 62580.0,
+            "pnl_pct": 0.0626
+          },
+          {
+            "ts": "2026-04-29T10:09:05",
+            "pnl": 62645.0,
+            "pnl_pct": 0.0626
+          },
+          {
+            "ts": "2026-04-29T10:10:07",
+            "pnl": 62631.0,
+            "pnl_pct": 0.0626
+          },
+          {
+            "ts": "2026-04-29T10:11:09",
+            "pnl": 62725.0,
+            "pnl_pct": 0.0627
+          },
+          {
+            "ts": "2026-04-29T10:12:10",
+            "pnl": 62771.0,
+            "pnl_pct": 0.0628
+          },
+          {
+            "ts": "2026-04-29T10:13:12",
+            "pnl": 63029.0,
+            "pnl_pct": 0.063
+          },
+          {
+            "ts": "2026-04-29T10:14:14",
+            "pnl": 63447.0,
+            "pnl_pct": 0.0634
+          },
+          {
+            "ts": "2026-04-29T10:15:17",
+            "pnl": 63855.0,
+            "pnl_pct": 0.0639
+          },
+          {
+            "ts": "2026-04-29T10:16:19",
+            "pnl": 63722.0,
+            "pnl_pct": 0.0637
+          },
+          {
+            "ts": "2026-04-29T10:17:21",
+            "pnl": 63469.0,
+            "pnl_pct": 0.0635
+          },
+          {
+            "ts": "2026-04-29T10:18:24",
+            "pnl": 63734.0,
+            "pnl_pct": 0.0637
+          },
+          {
+            "ts": "2026-04-29T10:19:25",
+            "pnl": 63847.0,
+            "pnl_pct": 0.0638
+          },
+          {
+            "ts": "2026-04-29T10:20:27",
+            "pnl": 63082.0,
+            "pnl_pct": 0.0631
+          },
+          {
+            "ts": "2026-04-29T10:21:28",
+            "pnl": 63081.0,
+            "pnl_pct": 0.0631
+          },
+          {
+            "ts": "2026-04-29T10:22:31",
+            "pnl": 63132.0,
+            "pnl_pct": 0.0631
+          },
+          {
+            "ts": "2026-04-29T10:23:32",
+            "pnl": 63115.0,
+            "pnl_pct": 0.0631
+          },
+          {
+            "ts": "2026-04-29T10:24:34",
+            "pnl": 62902.0,
+            "pnl_pct": 0.0629
+          },
+          {
+            "ts": "2026-04-29T10:25:35",
+            "pnl": 62883.0,
+            "pnl_pct": 0.0629
+          },
+          {
+            "ts": "2026-04-29T10:26:37",
+            "pnl": 62620.0,
+            "pnl_pct": 0.0626
+          },
+          {
+            "ts": "2026-04-29T10:27:39",
+            "pnl": 62518.0,
+            "pnl_pct": 0.0625
+          },
+          {
+            "ts": "2026-04-29T10:28:41",
+            "pnl": 62883.0,
+            "pnl_pct": 0.0629
+          },
+          {
+            "ts": "2026-04-29T10:28:58",
+            "pnl": 63075.0,
+            "pnl_pct": 0.0631
+          },
+          {
+            "ts": "2026-04-29T10:29:59",
+            "pnl": 62795.0,
+            "pnl_pct": 0.0628
+          },
+          {
+            "ts": "2026-04-29T10:31:01",
+            "pnl": 62741.0,
+            "pnl_pct": 0.0627
+          },
+          {
+            "ts": "2026-04-29T10:32:02",
+            "pnl": 62774.0,
+            "pnl_pct": 0.0628
+          },
+          {
+            "ts": "2026-04-29T10:33:05",
+            "pnl": 62915.0,
+            "pnl_pct": 0.0629
+          },
+          {
+            "ts": "2026-04-29T10:34:07",
+            "pnl": 62660.0,
+            "pnl_pct": 0.0627
+          },
+          {
+            "ts": "2026-04-29T10:35:08",
+            "pnl": 62518.0,
+            "pnl_pct": 0.0625
+          },
+          {
+            "ts": "2026-04-29T10:36:10",
+            "pnl": 63024.0,
+            "pnl_pct": 0.063
+          },
+          {
+            "ts": "2026-04-29T10:37:12",
+            "pnl": 63044.0,
+            "pnl_pct": 0.063
+          },
+          {
+            "ts": "2026-04-29T10:38:14",
+            "pnl": 62768.0,
+            "pnl_pct": 0.0628
+          },
+          {
+            "ts": "2026-04-29T10:39:16",
+            "pnl": 62327.0,
+            "pnl_pct": 0.0623
+          },
+          {
+            "ts": "2026-04-29T10:40:17",
+            "pnl": 61633.0,
+            "pnl_pct": 0.0616
+          },
+          {
+            "ts": "2026-04-29T10:41:19",
+            "pnl": 61517.0,
+            "pnl_pct": 0.0615
+          },
+          {
+            "ts": "2026-04-29T10:42:21",
+            "pnl": 61386.0,
+            "pnl_pct": 0.0614
+          },
+          {
+            "ts": "2026-04-29T10:43:23",
+            "pnl": 61257.0,
+            "pnl_pct": 0.0613
+          },
+          {
+            "ts": "2026-04-29T10:44:25",
+            "pnl": 61663.0,
+            "pnl_pct": 0.0617
+          },
+          {
+            "ts": "2026-04-29T10:45:26",
+            "pnl": 61340.0,
+            "pnl_pct": 0.0613
+          },
+          {
+            "ts": "2026-04-29T10:46:28",
+            "pnl": 61587.0,
+            "pnl_pct": 0.0616
+          },
+          {
+            "ts": "2026-04-29T10:47:30",
+            "pnl": 62038.0,
+            "pnl_pct": 0.062
+          },
+          {
+            "ts": "2026-04-29T10:48:32",
+            "pnl": 61866.0,
+            "pnl_pct": 0.0619
+          },
+          {
+            "ts": "2026-04-29T10:49:33",
+            "pnl": 62547.0,
+            "pnl_pct": 0.0625
+          },
+          {
+            "ts": "2026-04-29T10:50:35",
+            "pnl": 63148.0,
+            "pnl_pct": 0.0631
+          },
+          {
+            "ts": "2026-04-29T10:51:36",
+            "pnl": 63385.0,
+            "pnl_pct": 0.0634
+          },
+          {
+            "ts": "2026-04-29T10:52:38",
+            "pnl": 62694.0,
+            "pnl_pct": 0.0627
+          },
+          {
+            "ts": "2026-04-29T10:53:40",
+            "pnl": 62929.0,
+            "pnl_pct": 0.0629
+          },
+          {
+            "ts": "2026-04-29T10:54:41",
+            "pnl": 63152.0,
+            "pnl_pct": 0.0632
+          },
+          {
+            "ts": "2026-04-29T10:55:43",
+            "pnl": 62581.0,
+            "pnl_pct": 0.0626
+          },
+          {
+            "ts": "2026-04-29T10:56:44",
+            "pnl": 62355.0,
+            "pnl_pct": 0.0624
+          },
+          {
+            "ts": "2026-04-29T10:57:46",
+            "pnl": 62702.0,
+            "pnl_pct": 0.0627
+          },
+          {
+            "ts": "2026-04-29T10:58:19",
+            "pnl": 63047.0,
+            "pnl_pct": 0.063
+          },
+          {
+            "ts": "2026-04-29T10:59:21",
+            "pnl": 63024.0,
+            "pnl_pct": 0.063
+          },
+          {
+            "ts": "2026-04-29T11:00:22",
+            "pnl": 62821.0,
+            "pnl_pct": 0.0628
+          },
+          {
+            "ts": "2026-04-29T11:01:23",
+            "pnl": 62845.0,
+            "pnl_pct": 0.0628
+          },
+          {
+            "ts": "2026-04-29T11:02:25",
+            "pnl": 63001.0,
+            "pnl_pct": 0.063
+          },
+          {
+            "ts": "2026-04-29T11:03:27",
+            "pnl": 63148.0,
+            "pnl_pct": 0.0631
+          },
+          {
+            "ts": "2026-04-29T11:04:28",
+            "pnl": 62919.0,
+            "pnl_pct": 0.0629
+          },
+          {
+            "ts": "2026-04-29T11:05:30",
+            "pnl": 62758.0,
+            "pnl_pct": 0.0628
+          },
+          {
+            "ts": "2026-04-29T11:06:31",
+            "pnl": 62920.0,
+            "pnl_pct": 0.0629
+          },
+          {
+            "ts": "2026-04-29T11:07:34",
+            "pnl": 62760.0,
+            "pnl_pct": 0.0628
+          },
+          {
+            "ts": "2026-04-29T11:08:36",
+            "pnl": 63337.0,
+            "pnl_pct": 0.0633
+          },
+          {
+            "ts": "2026-04-29T11:09:38",
+            "pnl": 63834.0,
+            "pnl_pct": 0.0638
+          },
+          {
+            "ts": "2026-04-29T11:10:40",
+            "pnl": 64200.0,
+            "pnl_pct": 0.0642
+          },
+          {
+            "ts": "2026-04-29T11:11:41",
+            "pnl": 64437.0,
+            "pnl_pct": 0.0644
+          },
+          {
+            "ts": "2026-04-29T11:12:43",
+            "pnl": 64993.0,
+            "pnl_pct": 0.065
+          },
+          {
+            "ts": "2026-04-29T11:13:45",
+            "pnl": 65551.0,
+            "pnl_pct": 0.0656
+          },
+          {
+            "ts": "2026-04-29T11:14:47",
+            "pnl": 65151.0,
+            "pnl_pct": 0.0652
+          },
+          {
+            "ts": "2026-04-29T11:15:48",
+            "pnl": 65265.0,
+            "pnl_pct": 0.0653
+          },
+          {
+            "ts": "2026-04-29T11:16:51",
+            "pnl": 65303.0,
+            "pnl_pct": 0.0653
+          },
+          {
+            "ts": "2026-04-29T11:17:53",
+            "pnl": 66130.0,
+            "pnl_pct": 0.0661
+          },
+          {
+            "ts": "2026-04-29T11:18:55",
+            "pnl": 66160.0,
+            "pnl_pct": 0.0662
+          },
+          {
+            "ts": "2026-04-29T11:19:57",
+            "pnl": 65711.0,
+            "pnl_pct": 0.0657
+          },
+          {
+            "ts": "2026-04-29T11:20:58",
+            "pnl": 65813.0,
+            "pnl_pct": 0.0658
+          },
+          {
+            "ts": "2026-04-29T11:22:00",
+            "pnl": 66373.0,
+            "pnl_pct": 0.0664
+          },
+          {
+            "ts": "2026-04-29T11:23:02",
+            "pnl": 66115.0,
+            "pnl_pct": 0.0661
+          },
+          {
+            "ts": "2026-04-29T11:24:03",
+            "pnl": 65386.0,
+            "pnl_pct": 0.0654
+          },
+          {
+            "ts": "2026-04-29T11:25:05",
+            "pnl": 66160.0,
+            "pnl_pct": 0.0662
+          },
+          {
+            "ts": "2026-04-29T11:26:06",
+            "pnl": 66278.0,
+            "pnl_pct": 0.0663
+          },
+          {
+            "ts": "2026-04-29T11:27:08",
+            "pnl": 65768.0,
+            "pnl_pct": 0.0658
+          },
+          {
+            "ts": "2026-04-29T11:28:10",
+            "pnl": 66218.0,
+            "pnl_pct": 0.0662
+          },
+          {
+            "ts": "2026-04-29T11:29:12",
+            "pnl": 66828.0,
+            "pnl_pct": 0.0668
+          },
+          {
+            "ts": "2026-04-29T13:00:16",
+            "pnl": 67343.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-29T13:01:18",
+            "pnl": 66545.0,
+            "pnl_pct": 0.0665
+          },
+          {
+            "ts": "2026-04-29T13:02:20",
+            "pnl": 66629.0,
+            "pnl_pct": 0.0666
+          },
+          {
+            "ts": "2026-04-29T13:03:21",
+            "pnl": 66212.0,
+            "pnl_pct": 0.0662
+          },
+          {
+            "ts": "2026-04-29T13:04:23",
+            "pnl": 66699.0,
+            "pnl_pct": 0.0667
+          },
+          {
+            "ts": "2026-04-29T13:05:24",
+            "pnl": 66638.0,
+            "pnl_pct": 0.0666
+          },
+          {
+            "ts": "2026-04-29T13:06:25",
+            "pnl": 67138.0,
+            "pnl_pct": 0.0671
+          },
+          {
+            "ts": "2026-04-29T13:07:27",
+            "pnl": 66630.0,
+            "pnl_pct": 0.0666
+          },
+          {
+            "ts": "2026-04-29T13:08:29",
+            "pnl": 66440.0,
+            "pnl_pct": 0.0664
+          },
+          {
+            "ts": "2026-04-29T13:09:30",
+            "pnl": 66650.0,
+            "pnl_pct": 0.0667
+          },
+          {
+            "ts": "2026-04-29T13:10:32",
+            "pnl": 66365.0,
+            "pnl_pct": 0.0664
+          },
+          {
+            "ts": "2026-04-29T13:11:33",
+            "pnl": 66232.0,
+            "pnl_pct": 0.0662
+          },
+          {
+            "ts": "2026-04-29T13:12:34",
+            "pnl": 67055.0,
+            "pnl_pct": 0.0671
+          },
+          {
+            "ts": "2026-04-29T13:13:35",
+            "pnl": 66788.0,
+            "pnl_pct": 0.0668
+          },
+          {
+            "ts": "2026-04-29T13:14:37",
+            "pnl": 66435.0,
+            "pnl_pct": 0.0664
+          },
+          {
+            "ts": "2026-04-29T13:15:38",
+            "pnl": 67116.0,
+            "pnl_pct": 0.0671
+          },
+          {
+            "ts": "2026-04-29T13:16:40",
+            "pnl": 66964.0,
+            "pnl_pct": 0.067
+          },
+          {
+            "ts": "2026-04-29T13:17:41",
+            "pnl": 66392.0,
+            "pnl_pct": 0.0664
+          },
+          {
+            "ts": "2026-04-29T13:18:43",
+            "pnl": 65585.0,
+            "pnl_pct": 0.0656
+          },
+          {
+            "ts": "2026-04-29T13:19:44",
+            "pnl": 65512.0,
+            "pnl_pct": 0.0655
+          },
+          {
+            "ts": "2026-04-29T13:20:46",
+            "pnl": 65726.0,
+            "pnl_pct": 0.0657
+          },
+          {
+            "ts": "2026-04-29T13:21:47",
+            "pnl": 65292.0,
+            "pnl_pct": 0.0653
+          },
+          {
+            "ts": "2026-04-29T13:22:49",
+            "pnl": 66119.0,
+            "pnl_pct": 0.0661
+          },
+          {
+            "ts": "2026-04-29T13:23:50",
+            "pnl": 66141.0,
+            "pnl_pct": 0.0661
+          },
+          {
+            "ts": "2026-04-29T13:24:52",
+            "pnl": 66302.0,
+            "pnl_pct": 0.0663
+          },
+          {
+            "ts": "2026-04-29T13:25:53",
+            "pnl": 66677.0,
+            "pnl_pct": 0.0667
+          },
+          {
+            "ts": "2026-04-29T13:26:54",
+            "pnl": 66848.0,
+            "pnl_pct": 0.0668
+          },
+          {
+            "ts": "2026-04-29T13:27:56",
+            "pnl": 67040.0,
+            "pnl_pct": 0.067
+          },
+          {
+            "ts": "2026-04-29T13:28:57",
+            "pnl": 67430.0,
+            "pnl_pct": 0.0674
+          },
+          {
+            "ts": "2026-04-29T13:29:59",
+            "pnl": 67714.0,
+            "pnl_pct": 0.0677
+          },
+          {
+            "ts": "2026-04-29T13:31:00",
+            "pnl": 67752.0,
+            "pnl_pct": 0.0678
+          },
+          {
+            "ts": "2026-04-29T13:32:02",
+            "pnl": 67164.0,
+            "pnl_pct": 0.0672
+          },
+          {
+            "ts": "2026-04-29T13:33:03",
+            "pnl": 67394.0,
+            "pnl_pct": 0.0674
+          },
+          {
+            "ts": "2026-04-29T13:34:05",
+            "pnl": 68081.0,
+            "pnl_pct": 0.0681
+          },
+          {
+            "ts": "2026-04-29T13:35:07",
+            "pnl": 67516.0,
+            "pnl_pct": 0.0675
+          },
+          {
+            "ts": "2026-04-29T13:36:08",
+            "pnl": 67315.0,
+            "pnl_pct": 0.0673
+          },
+          {
+            "ts": "2026-04-29T13:37:10",
+            "pnl": 67530.0,
+            "pnl_pct": 0.0675
+          },
+          {
+            "ts": "2026-04-29T13:38:11",
+            "pnl": 67394.0,
+            "pnl_pct": 0.0674
+          },
+          {
+            "ts": "2026-04-29T13:39:13",
+            "pnl": 67663.0,
+            "pnl_pct": 0.0677
+          },
+          {
+            "ts": "2026-04-29T13:40:14",
+            "pnl": 68182.0,
+            "pnl_pct": 0.0682
+          },
+          {
+            "ts": "2026-04-29T13:41:16",
+            "pnl": 68421.0,
+            "pnl_pct": 0.0684
+          },
+          {
+            "ts": "2026-04-29T13:42:18",
+            "pnl": 68641.0,
+            "pnl_pct": 0.0686
+          },
+          {
+            "ts": "2026-04-29T13:43:20",
+            "pnl": 68890.0,
+            "pnl_pct": 0.0689
+          },
+          {
+            "ts": "2026-04-29T13:44:22",
+            "pnl": 69253.0,
+            "pnl_pct": 0.0693
+          },
+          {
+            "ts": "2026-04-29T13:45:23",
+            "pnl": 69230.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-29T13:46:26",
+            "pnl": 69462.0,
+            "pnl_pct": 0.0695
+          },
+          {
+            "ts": "2026-04-29T13:47:27",
+            "pnl": 69745.0,
+            "pnl_pct": 0.0697
+          },
+          {
+            "ts": "2026-04-29T13:48:29",
+            "pnl": 69507.0,
+            "pnl_pct": 0.0695
+          },
+          {
+            "ts": "2026-04-29T13:49:30",
+            "pnl": 69651.0,
+            "pnl_pct": 0.0697
+          },
+          {
+            "ts": "2026-04-29T13:50:31",
+            "pnl": 69779.0,
+            "pnl_pct": 0.0698
+          },
+          {
+            "ts": "2026-04-29T13:51:33",
+            "pnl": 69735.0,
+            "pnl_pct": 0.0697
+          },
+          {
+            "ts": "2026-04-29T13:52:34",
+            "pnl": 69729.0,
+            "pnl_pct": 0.0697
+          },
+          {
+            "ts": "2026-04-29T13:53:35",
+            "pnl": 69910.0,
+            "pnl_pct": 0.0699
+          },
+          {
+            "ts": "2026-04-29T13:54:37",
+            "pnl": 69759.0,
+            "pnl_pct": 0.0698
+          },
+          {
+            "ts": "2026-04-29T13:55:39",
+            "pnl": 69486.0,
+            "pnl_pct": 0.0695
+          },
+          {
+            "ts": "2026-04-29T13:56:41",
+            "pnl": 69456.0,
+            "pnl_pct": 0.0695
+          },
+          {
+            "ts": "2026-04-29T13:57:43",
+            "pnl": 68782.0,
+            "pnl_pct": 0.0688
+          },
+          {
+            "ts": "2026-04-29T13:58:44",
+            "pnl": 68558.0,
+            "pnl_pct": 0.0686
+          },
+          {
+            "ts": "2026-04-29T13:59:46",
+            "pnl": 69034.0,
+            "pnl_pct": 0.069
+          },
+          {
+            "ts": "2026-04-29T14:00:47",
+            "pnl": 69559.0,
+            "pnl_pct": 0.0696
+          },
+          {
+            "ts": "2026-04-29T14:01:49",
+            "pnl": 69517.0,
+            "pnl_pct": 0.0695
+          },
+          {
+            "ts": "2026-04-29T14:02:51",
+            "pnl": 69163.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-29T14:03:52",
+            "pnl": 69288.0,
+            "pnl_pct": 0.0693
+          },
+          {
+            "ts": "2026-04-29T14:04:54",
+            "pnl": 69289.0,
+            "pnl_pct": 0.0693
+          },
+          {
+            "ts": "2026-04-29T14:05:57",
+            "pnl": 69228.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-29T14:06:58",
+            "pnl": 69299.0,
+            "pnl_pct": 0.0693
+          },
+          {
+            "ts": "2026-04-29T14:08:00",
+            "pnl": 69392.0,
+            "pnl_pct": 0.0694
+          },
+          {
+            "ts": "2026-04-29T14:09:01",
+            "pnl": 68980.0,
+            "pnl_pct": 0.069
+          },
+          {
+            "ts": "2026-04-29T14:10:03",
+            "pnl": 69125.0,
+            "pnl_pct": 0.0691
+          },
+          {
+            "ts": "2026-04-29T14:11:05",
+            "pnl": 69120.0,
+            "pnl_pct": 0.0691
+          },
+          {
+            "ts": "2026-04-29T14:12:06",
+            "pnl": 69728.0,
+            "pnl_pct": 0.0697
+          },
+          {
+            "ts": "2026-04-29T14:13:08",
+            "pnl": 69424.0,
+            "pnl_pct": 0.0694
+          },
+          {
+            "ts": "2026-04-29T14:14:10",
+            "pnl": 69192.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-29T14:15:12",
+            "pnl": 69153.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-29T14:16:13",
+            "pnl": 68874.0,
+            "pnl_pct": 0.0689
+          },
+          {
+            "ts": "2026-04-29T14:17:15",
+            "pnl": 69165.0,
+            "pnl_pct": 0.0692
+          },
+          {
+            "ts": "2026-04-29T14:18:16",
+            "pnl": 69287.0,
+            "pnl_pct": 0.0693
+          },
+          {
+            "ts": "2026-04-29T14:19:18",
+            "pnl": 70334.0,
+            "pnl_pct": 0.0703
+          },
+          {
+            "ts": "2026-04-29T14:20:20",
+            "pnl": 70796.0,
+            "pnl_pct": 0.0708
+          },
+          {
+            "ts": "2026-04-29T14:21:21",
+            "pnl": 70441.0,
+            "pnl_pct": 0.0704
+          },
+          {
+            "ts": "2026-04-29T14:22:23",
+            "pnl": 70405.0,
+            "pnl_pct": 0.0704
+          },
+          {
+            "ts": "2026-04-29T14:23:26",
+            "pnl": 71123.0,
+            "pnl_pct": 0.0711
+          },
+          {
+            "ts": "2026-04-29T14:24:27",
+            "pnl": 71771.0,
+            "pnl_pct": 0.0718
+          },
+          {
+            "ts": "2026-04-29T14:25:29",
+            "pnl": 72134.0,
+            "pnl_pct": 0.0721
+          },
+          {
+            "ts": "2026-04-29T14:26:31",
+            "pnl": 71830.0,
+            "pnl_pct": 0.0718
+          },
+          {
+            "ts": "2026-04-29T14:27:32",
+            "pnl": 71704.0,
+            "pnl_pct": 0.0717
+          },
+          {
+            "ts": "2026-04-29T14:28:34",
+            "pnl": 71517.0,
+            "pnl_pct": 0.0715
+          },
+          {
+            "ts": "2026-04-29T14:29:36",
+            "pnl": 71211.0,
+            "pnl_pct": 0.0712
+          },
+          {
+            "ts": "2026-04-29T14:30:37",
+            "pnl": 71736.0,
+            "pnl_pct": 0.0717
+          },
+          {
+            "ts": "2026-04-29T14:31:39",
+            "pnl": 71559.0,
+            "pnl_pct": 0.0716
+          },
+          {
+            "ts": "2026-04-29T14:32:40",
+            "pnl": 71840.0,
+            "pnl_pct": 0.0718
+          },
+          {
+            "ts": "2026-04-29T14:33:41",
+            "pnl": 71671.0,
+            "pnl_pct": 0.0717
+          },
+          {
+            "ts": "2026-04-29T14:34:43",
+            "pnl": 71407.0,
+            "pnl_pct": 0.0714
+          },
+          {
+            "ts": "2026-04-29T14:35:45",
+            "pnl": 71624.0,
+            "pnl_pct": 0.0716
+          },
+          {
+            "ts": "2026-04-29T14:36:46",
+            "pnl": 71770.0,
+            "pnl_pct": 0.0718
+          },
+          {
+            "ts": "2026-04-29T14:37:48",
+            "pnl": 71392.0,
+            "pnl_pct": 0.0714
+          },
+          {
+            "ts": "2026-04-29T14:38:49",
+            "pnl": 71341.0,
+            "pnl_pct": 0.0713
+          },
+          {
+            "ts": "2026-04-29T14:39:51",
+            "pnl": 72318.0,
+            "pnl_pct": 0.0723
+          },
+          {
+            "ts": "2026-04-29T14:40:52",
+            "pnl": 72066.0,
+            "pnl_pct": 0.0721
+          },
+          {
+            "ts": "2026-04-29T14:41:54",
+            "pnl": 71825.0,
+            "pnl_pct": 0.0718
+          },
+          {
+            "ts": "2026-04-29T14:42:56",
+            "pnl": 72395.0,
+            "pnl_pct": 0.0724
+          },
+          {
+            "ts": "2026-04-29T14:43:57",
+            "pnl": 72157.0,
+            "pnl_pct": 0.0722
+          },
+          {
+            "ts": "2026-04-29T14:44:59",
+            "pnl": 72028.0,
+            "pnl_pct": 0.072
+          },
+          {
+            "ts": "2026-04-29T14:46:00",
+            "pnl": 72080.0,
+            "pnl_pct": 0.0721
+          },
+          {
+            "ts": "2026-04-29T14:47:02",
+            "pnl": 71937.0,
+            "pnl_pct": 0.0719
+          },
+          {
+            "ts": "2026-04-29T14:48:03",
+            "pnl": 71645.0,
+            "pnl_pct": 0.0716
+          },
+          {
+            "ts": "2026-04-29T14:50:55",
+            "pnl": 71409.0,
+            "pnl_pct": 0.0714
+          },
+          {
+            "ts": "2026-04-29T14:51:57",
+            "pnl": 71406.0,
+            "pnl_pct": 0.0714
+          },
+          {
+            "ts": "2026-04-29T14:52:58",
+            "pnl": 71774.0,
+            "pnl_pct": 0.0718
+          },
+          {
+            "ts": "2026-04-29T14:54:00",
+            "pnl": 72033.0,
+            "pnl_pct": 0.072
+          },
+          {
+            "ts": "2026-04-29T14:55:02",
+            "pnl": 71927.0,
+            "pnl_pct": 0.0719
+          },
+          {
+            "ts": "2026-04-29T14:56:04",
+            "pnl": 72096.0,
+            "pnl_pct": 0.0721
+          },
+          {
+            "ts": "2026-04-29T14:57:06",
+            "pnl": 72034.0,
+            "pnl_pct": 0.072
+          },
+          {
+            "ts": "2026-04-29T14:58:07",
+            "pnl": 72034.0,
+            "pnl_pct": 0.072
+          },
+          {
+            "ts": "2026-04-29T14:59:08",
+            "pnl": 71924.0,
+            "pnl_pct": 0.0719
+          },
+          {
+            "ts": "2026-04-29T20:57:41",
+            "pnl": 72282.0,
+            "pnl_pct": 0.0723
+          }
+        ],
+        "control": {
+          "pause_buying": false,
+          "force_clear_all": false,
+          "max_daily_loss": -0.02,
+          "dry_run": true
+        },
+        "health": {
+          "miniqmt_connected": true,
+          "last_heartbeat": "2026-04-29T20:57:41",
+          "errors_24h": 0
+        },
+        "watch_stocks": [
+          "600519.SH",
+          "688981.SH",
+          "300750.SZ",
+          "513100.SH",
+          "000001.SZ",
+          "002241.SZ",
+          "300059.SZ",
+          "300014.SZ"
+        ],
+        "_updated_at": "2026-05-03T10:09:52"
+      },
+      "resp_error": null
+    },
+    {
+      "id": "API-04",
+      "title": "读取模拟盘运行状态",
+      "method": "GET",
+      "path": "/api/live/sim/status",
+      "body": null,
+      "status": 200,
+      "elapsed_ms": 6,
+      "passed": true,
+      "resp_json_preview": {
+        "running": true,
+        "cycle_count": 0,
+        "last_cycle_at": "10:53:04 (非盘中, 跳过)",
+        "last_error": null,
+        "dry_run": true,
+        "watch_stocks": [
+          "600519.SH",
+          "688981.SH",
+          "300750.SZ",
+          "513100.SH",
+          "000001.SZ",
+          "002241.SZ",
+          "300059.SZ",
+          "300014.SZ"
+        ]
+      },
+      "resp_error": null
+    },
+    {
+      "id": "API-05",
+      "title": "策略注册表可拉取",
+      "method": "GET",
+      "path": "/api/live/strategies/registry",
+      "body": null,
+      "status": 200,
+      "elapsed_ms": 8,
+      "passed": true,
+      "resp_json_preview": {
+        "groups": {
+          "技术指标": [
+            {
+              "name": "macd_5min",
+              "label": "MACD·5分钟K线 (12/26/9·日内)",
+              "description": "基于 5 分钟收盘价的经典参数 12/26/9 (快线慢线指 K 线根数, 非日历日)。偏日内节奏。A 股现货 T+1: 当日买入次日才能卖, 若更关心中线波段可改用「MACD·日K线」。",
+              "scenario": "看盘内几分钟到数小时的涨跌节奏，希望信号跟得上分时波动、做短线参考时。",
+              "rules": "用 5 分钟 K 线收盘价计算 MACD(12/26/9)：DIF 从下向上穿过 DEA 为金叉（偏买入）；从上向下穿过为死叉（偏卖出）。K 线不足则保持观望。",
+              "example": "急跌后 DIF 再次上穿 DEA，可能对应一小段反弹；震荡市里交叉会较频繁，需结合风控。"
+            },
+            {
+              "name": "macd_1d",
+              "label": "MACD·日K线 (12/26/9·波段)",
+              "description": "基于日 K 收盘价的 12/26/9, 与常见软件「日线 MACD」一致。适合多日持仓与 T+1 下的波段决策; 信号比 5 分钟 MACD 稀疏。",
+              "scenario": "更做隔日、波段，不想被 5 分钟频繁交叉打扰；与 A 股 T+1「今日买明日卖」的节奏更接近时。",
+              "rules": "用日 K 收盘价算经典 MACD(12/26/9)，金叉 / 死叉含义与 5 分钟版相同，只是每根 K 代表一个交易日。",
+              "example": "连续回调后日线出现金叉，常作为波段关注信号之一（是否下单仍看资金与风控）。"
+            },
+            {
+              "name": "dual_ma_5min",
+              "label": "双均线 5min (5/20 EMA)",
+              "description": "5 分钟 K 线: 5EMA 上穿 20EMA 买入, 下穿卖出",
+              "scenario": "喜欢「快慢线交叉」这种直观规则，且希望比日线更快反应时。",
+              "rules": "在 5 分钟收盘价上计算 5 周期与 20 周期指数均线；快线上穿慢线 → 偏买；快线下穿慢线 → 偏卖。",
+              "example": "横盘后快线上穿慢线，可理解为短期均线重新站到长期均线上方，常当作转强信号之一。"
+            },
+            {
+              "name": "ma20_hold",
+              "label": "MA20 持股法 (日K 突破/跌破)",
+              "description": "日 K 线: 收盘向上突破 MA20 买入, 向下跌破 MA20 卖出 (站上持股、跌破离场)",
+              "scenario": "想用最简单的「20 日线」做波段过滤: 站上认为趋势转强可介入, 跌破则离场观望时。",
+              "rules": "用日 K 收盘价计算 MA20。前一日收盘 ≤ MA20 且当日收盘 > MA20 → 偏买；前一日收盘 ≥ MA20 且当日收盘 < MA20 → 偏卖；其余观望。",
+              "example": "整理后首日阳线收盘站上 MA20 触发买入；之后若回调收在 MA20 下方, 触发卖出离场。"
+            },
+            {
+              "name": "rsi_reversal",
+              "label": "RSI 反转 (14·30/70 穿越)",
+              "description": "日 K RSI(14) 上穿 30 买入, 下穿 70 卖出 (经典 RSI + 穿越确认)",
+              "scenario": "震荡市 / 反转性强的票（银行、公用事业、部分大盘蓝筹），不追趋势, 抓「跌透了反弹」「涨过头回落」的边界。",
+              "rules": "日 K 收盘算 RSI(14)。RSI 从 ≤30 上穿 30 -> 买（超卖反弹确认）；从 ≥70 下穿 70 -> 卖（超买回落确认）；其他时间观望。比裸 <30 / >70 信号更稳, 避免在强趋势里被反复打脸。",
+              "example": "平安银行 RSI 跌到 28, 次日反弹收 32 -> 触发买入；后续涨到 RSI 73, 次日回落收 68 -> 触发卖出。"
+            },
+            {
+              "name": "boll_revert",
+              "label": "布林带均值回归 (20·2σ)",
+              "description": "日 K 布林带(20, 2σ) 触下轨买、触上轨卖 + 跌破中轨止盈",
+              "scenario": "波动有规律的票, 价格围绕中线均值上下震荡, 想做「触下轨吃货, 触上轨止盈」的均值回归操作。",
+              "rules": "日 K 收盘价计算 MA20 与 ±2σ 三条线。收盘 < 下轨 -> 买; 收盘 > 上轨 -> 卖; 持仓时收盘从中轨上方跌破中轨 -> 卖 (止盈, 防回吐)。波动率扩张到强趋势时容易追涨杀跌, 需配合风控。",
+              "example": "纳指 ETF 价格触下轨 1.65 触发买入; 反弹到 1.78 突破上轨 -> 卖出止盈。"
+            },
+            {
+              "name": "bias_revert",
+              "label": "乖离率均值回归 (BIAS·20)",
+              "description": "日 K 乖离率 < -6% 买入 (超跌), > 3% 卖出 (超涨)",
+              "scenario": "跟随 20 日均线节奏运行的票, 想做「跌得离均线太远 -> 反弹补涨」「涨得离均线太远 -> 回调收口」的中期均值回归。",
+              "rules": "BIAS = (收盘 - MA20) / MA20。BIAS < -6% -> 偏买 (超跌反弹); BIAS > 3% -> 偏卖 (涨过头, 注意不对称: 上涨节奏比下跌温和)。趋势单边市 (持续创新高 / 新低) 容易钝化。",
+              "example": "贵州茅台日 K 收盘 1450, MA20 在 1545, BIAS = -6.15% -> 触发买入; 涨到 BIAS = 3.5% -> 卖出。"
+            }
+          ],
+          "量化选股": [
+            {
+              "name": "multi_factor_top",
+              "label": "多因子轻量 (动量+RSI+乖离)",
+              "description": "日线 MOM_1M + RSI_14 + BIAS_20 合成 alpha, > 0.3 买, < -0.3 卖",
+              "scenario": "单只股票也想用「动量 + 超买超卖 + 乖离」综合打分，而不是只看一条均线时。",
+              "rules": "在日 K 上算三类因子并归一后取平均得到 alpha；alpha 高于阈值偏买入，低于负阈值偏卖出；中间区间观望。",
+              "example": "alpha 从负区间一举升到阈值之上，表示多因子同时转强，可能触发买入侧信号。"
+            }
+          ],
+          "龙头动量": [
+            {
+              "name": "dragon_picker",
+              "label": "龙头首板战法 (5 法则简化)",
+              "description": "当日涨幅+量比+价位综合打分, 龙头分 >= 1.5 买入, 跌破日内回撤线卖出",
+              "scenario": "关注当日强势、放量上攻的短线博弈（单票版龙头思路），愿意承担较大波动时。",
+              "rules": "综合当日涨幅、量比、股价区间等打分；满足涨幅、量比、价位且总分够高时偏买；当日大跌或从高点明显回撤时偏卖。",
+              "example": "当日涨幅已超过约 5%、量比显著放大、股价在约 30 元下方且综合分达标，可能触发买入侧信号。"
+            }
+          ],
+          "趋势跟随": [
+            {
+              "name": "turtle_donchian",
+              "label": "海龟唐奇安通道 (20入/10出)",
+              "description": "日 K 突破 20 日新高买入, 跌破 10 日新低卖出 (海龟唐奇安简化版, 不含 ATR 加仓)",
+              "scenario": "趋势性强的标的: 科技成长 (中芯/宁德), 宽基 ETF, 跨境 ETF (纳指 ETF), 想等趋势确认再上车 / 跌破就走人时。",
+              "rules": "收盘 > 过去 20 个交易日最高价 (不含今日) -> 买; 收盘 < 过去 10 个交易日最低价 (不含今日) -> 卖。趋势市赚大段, 震荡市频繁假突破被打脸 (需要止损 + 选标的)。",
+              "example": "中芯国际经过整理, 收盘突破前 20 日最高的 102.5 -> 买入; 后续高位震荡, 跌破前 10 日最低 95.2 -> 卖出离场。"
+            }
+          ],
+          "震荡网格": [
+            {
+              "name": "grid_classic",
+              "label": "经典网格 (60 日区间 8 格)",
+              "description": "过去 60 日 high/low 切 8 格, 价格在底部 2 格买, 顶部 2 格卖 (适合震荡市)",
+              "scenario": "判断该股在一段时期内主要在箱体内震荡，想做「低位多吸、高位分批减」时。",
+              "rules": "取约 60 个交易日最高价与最低价划成 8 格；现价落在最下两格偏买、最上两格偏卖；冲出区间上下沿另有止损/止盈类处理。",
+              "example": "长期在箱体内运行时，价格回到区间下沿附近可能出现低吸类信号；单边趋势市则容易反复打脸。"
+            }
+          ]
+        },
+        "flat": [
+          {
+            "name": "macd_5min",
+            "label": "MACD·5分钟K线 (12/26/9·日内)",
+            "group": "技术指标",
+            "description": "基于 5 分钟收盘价的经典参数 12/26/9 (快线慢线指 K 线根数, 非日历日)。偏日内节奏。A 股现货 T+1: 当日买入次日才能卖, 若更关心中线波段可改用「MACD·日K线」。",
+            "scenario": "看盘内几分钟到数小时的涨跌节奏，希望信号跟得上分时波动、做短线参考时。",
+            "rules": "用 5 分钟 K 线收盘价计算 MACD(12/26/9)：DIF 从下向上穿过 DEA 为金叉（偏买入）；从上向下穿过为死叉（偏卖出）。K 线不足则保持观望。",
+            "example": "急跌后 DIF 再次上穿 DEA，可能对应一小段反弹；震荡市里交叉会较频繁，需结合风控。"
+          },
+          {
+            "name": "macd_1d",
+            "label": "MACD·日K线 (12/26/9·波段)",
+            "group": "技术指标",
+            "description": "基于日 K 收盘价的 12/26/9, 与常见软件「日线 MACD」一致。适合多日持仓与 T+1 下的波段决策; 信号比 5 分钟 MACD 稀疏。",
+            "scenario": "更做隔日、波段，不想被 5 分钟频繁交叉打扰；与 A 股 T+1「今日买明日卖」的节奏更接近时。",
+            "rules": "用日 K 收盘价算经典 MACD(12/26/9)，金叉 / 死叉含义与 5 分钟版相同，只是每根 K 代表一个交易日。",
+            "example": "连续回调后日线出现金叉，常作为波段关注信号之一（是否下单仍看资金与风控）。"
+          },
+          {
+            "name": "dual_ma_5min",
+            "label": "双均线 5min (5/20 EMA)",
+            "group": "技术指标",
+            "description": "5 分钟 K 线: 5EMA 上穿 20EMA 买入, 下穿卖出",
+            "scenario": "喜欢「快慢线交叉」这种直观规则，且希望比日线更快反应时。",
+            "rules": "在 5 分钟收盘价上计算 5 周期与 20 周期指数均线；快线上穿慢线 → 偏买；快线下穿慢线 → 偏卖。",
+            "example": "横盘后快线上穿慢线，可理解为短期均线重新站到长期均线上方，常当作转强信号之一。"
+          },
+          {
+            "name": "ma20_hold",
+            "label": "MA20 持股法 (日K 突破/跌破)",
+            "group": "技术指标",
+            "description": "日 K 线: 收盘向上突破 MA20 买入, 向下跌破 MA20 卖出 (站上持股、跌破离场)",
+            "scenario": "想用最简单的「20 日线」做波段过滤: 站上认为趋势转强可介入, 跌破则离场观望时。",
+            "rules": "用日 K 收盘价计算 MA20。前一日收盘 ≤ MA20 且当日收盘 > MA20 → 偏买；前一日收盘 ≥ MA20 且当日收盘 < MA20 → 偏卖；其余观望。",
+            "example": "整理后首日阳线收盘站上 MA20 触发买入；之后若回调收在 MA20 下方, 触发卖出离场。"
+          },
+          {
+            "name": "multi_factor_top",
+            "label": "多因子轻量 (动量+RSI+乖离)",
+            "group": "量化选股",
+            "description": "日线 MOM_1M + RSI_14 + BIAS_20 合成 alpha, > 0.3 买, < -0.3 卖",
+            "scenario": "单只股票也想用「动量 + 超买超卖 + 乖离」综合打分，而不是只看一条均线时。",
+            "rules": "在日 K 上算三类因子并归一后取平均得到 alpha；alpha 高于阈值偏买入，低于负阈值偏卖出；中间区间观望。",
+            "example": "alpha 从负区间一举升到阈值之上，表示多因子同时转强，可能触发买入侧信号。"
+          },
+          {
+            "name": "dragon_picker",
+            "label": "龙头首板战法 (5 法则简化)",
+            "group": "龙头动量",
+            "description": "当日涨幅+量比+价位综合打分, 龙头分 >= 1.5 买入, 跌破日内回撤线卖出",
+            "scenario": "关注当日强势、放量上攻的短线博弈（单票版龙头思路），愿意承担较大波动时。",
+            "rules": "综合当日涨幅、量比、股价区间等打分；满足涨幅、量比、价位且总分够高时偏买；当日大跌或从高点明显回撤时偏卖。",
+            "example": "当日涨幅已超过约 5%、量比显著放大、股价在约 30 元下方且综合分达标，可能触发买入侧信号。"
+          },
+          {
+            "name": "rsi_reversal",
+            "label": "RSI 反转 (14·30/70 穿越)",
+            "group": "技术指标",
+            "description": "日 K RSI(14) 上穿 30 买入, 下穿 70 卖出 (经典 RSI + 穿越确认)",
+            "scenario": "震荡市 / 反转性强的票（银行、公用事业、部分大盘蓝筹），不追趋势, 抓「跌透了反弹」「涨过头回落」的边界。",
+            "rules": "日 K 收盘算 RSI(14)。RSI 从 ≤30 上穿 30 -> 买（超卖反弹确认）；从 ≥70 下穿 70 -> 卖（超买回落确认）；其他时间观望。比裸 <30 / >70 信号更稳, 避免在强趋势里被反复打脸。",
+            "example": "平安银行 RSI 跌到 28, 次日反弹收 32 -> 触发买入；后续涨到 RSI 73, 次日回落收 68 -> 触发卖出。"
+          },
+          {
+            "name": "boll_revert",
+            "label": "布林带均值回归 (20·2σ)",
+            "group": "技术指标",
+            "description": "日 K 布林带(20, 2σ) 触下轨买、触上轨卖 + 跌破中轨止盈",
+            "scenario": "波动有规律的票, 价格围绕中线均值上下震荡, 想做「触下轨吃货, 触上轨止盈」的均值回归操作。",
+            "rules": "日 K 收盘价计算 MA20 与 ±2σ 三条线。收盘 < 下轨 -> 买; 收盘 > 上轨 -> 卖; 持仓时收盘从中轨上方跌破中轨 -> 卖 (止盈, 防回吐)。波动率扩张到强趋势时容易追涨杀跌, 需配合风控。",
+            "example": "纳指 ETF 价格触下轨 1.65 触发买入; 反弹到 1.78 突破上轨 -> 卖出止盈。"
+          },
+          {
+            "name": "bias_revert",
+            "label": "乖离率均值回归 (BIAS·20)",
+            "group": "技术指标",
+            "description": "日 K 乖离率 < -6% 买入 (超跌), > 3% 卖出 (超涨)",
+            "scenario": "跟随 20 日均线节奏运行的票, 想做「跌得离均线太远 -> 反弹补涨」「涨得离均线太远 -> 回调收口」的中期均值回归。",
+            "rules": "BIAS = (收盘 - MA20) / MA20。BIAS < -6% -> 偏买 (超跌反弹); BIAS > 3% -> 偏卖 (涨过头, 注意不对称: 上涨节奏比下跌温和)。趋势单边市 (持续创新高 / 新低) 容易钝化。",
+            "example": "贵州茅台日 K 收盘 1450, MA20 在 1545, BIAS = -6.15% -> 触发买入; 涨到 BIAS = 3.5% -> 卖出。"
+          },
+          {
+            "name": "turtle_donchian",
+            "label": "海龟唐奇安通道 (20入/10出)",
+            "group": "趋势跟随",
+            "description": "日 K 突破 20 日新高买入, 跌破 10 日新低卖出 (海龟唐奇安简化版, 不含 ATR 加仓)",
+            "scenario": "趋势性强的标的: 科技成长 (中芯/宁德), 宽基 ETF, 跨境 ETF (纳指 ETF), 想等趋势确认再上车 / 跌破就走人时。",
+            "rules": "收盘 > 过去 20 个交易日最高价 (不含今日) -> 买; 收盘 < 过去 10 个交易日最低价 (不含今日) -> 卖。趋势市赚大段, 震荡市频繁假突破被打脸 (需要止损 + 选标的)。",
+            "example": "中芯国际经过整理, 收盘突破前 20 日最高的 102.5 -> 买入; 后续高位震荡, 跌破前 10 日最低 95.2 -> 卖出离场。"
+          },
+          {
+            "name": "grid_classic",
+            "label": "经典网格 (60 日区间 8 格)",
+            "group": "震荡网格",
+            "description": "过去 60 日 high/low 切 8 格, 价格在底部 2 格买, 顶部 2 格卖 (适合震荡市)",
+            "scenario": "判断该股在一段时期内主要在箱体内震荡，想做「低位多吸、高位分批减」时。",
+            "rules": "取约 60 个交易日最高价与最低价划成 8 格；现价落在最下两格偏买、最上两格偏卖；冲出区间上下沿另有止损/止盈类处理。",
+            "example": "长期在箱体内运行时，价格回到区间下沿附近可能出现低吸类信号；单边趋势市则容易反复打脸。"
+          }
+        ]
+      },
+      "resp_error": null
+    },
+    {
+      "id": "API-06",
+      "title": "回测 ping（可反映 mysql 可用性）",
+      "method": "GET",
+      "path": "/api/backtest/ping",
+      "body": null,
+      "status": 200,
+      "elapsed_ms": 38,
+      "passed": true,
+      "resp_json_preview": {
+        "ok": true,
+        "module": "backtest",
+        "mysql_available": false,
+        "strategies": [
+          "macd_5min",
+          "macd_1d",
+          "dual_ma_5min",
+          "ma20_hold",
+          "multi_factor_top",
+          "dragon_picker",
+          "rsi_reversal",
+          "boll_revert",
+          "bias_revert",
+          "turtle_donchian",
+          "grid_classic"
+        ],
+        "hint": "POST /api/backtest/run {code, strategy, start, end} 单回测; POST /api/backtest/recommend {code, start, end} 推荐策略"
+      },
+      "resp_error": null
+    },
+    {
+      "id": "API-07",
+      "title": "回测策略列表可拉取",
+      "method": "GET",
+      "path": "/api/backtest/strategies",
+      "body": null,
+      "status": 200,
+      "elapsed_ms": 9,
+      "passed": true,
+      "resp_json_preview": {
+        "ok": true,
+        "groups": {
+          "技术指标": [
+            {
+              "name": "macd_5min",
+              "label": "MACD·5分钟K线 (12/26/9·日内)",
+              "description": "基于 5 分钟收盘价的经典参数 12/26/9 (快线慢线指 K 线根数, 非日历日)。偏日内节奏。A 股现货 T+1: 当日买入次日才能卖, 若更关心中线波段可改用「MACD·日K线」。",
+              "scenario": "看盘内几分钟到数小时的涨跌节奏，希望信号跟得上分时波动、做短线参考时。",
+              "rules": "用 5 分钟 K 线收盘价计算 MACD(12/26/9)：DIF 从下向上穿过 DEA 为金叉（偏买入）；从上向下穿过为死叉（偏卖出）。K 线不足则保持观望。",
+              "example": "急跌后 DIF 再次上穿 DEA，可能对应一小段反弹；震荡市里交叉会较频繁，需结合风控。"
+            },
+            {
+              "name": "macd_1d",
+              "label": "MACD·日K线 (12/26/9·波段)",
+              "description": "基于日 K 收盘价的 12/26/9, 与常见软件「日线 MACD」一致。适合多日持仓与 T+1 下的波段决策; 信号比 5 分钟 MACD 稀疏。",
+              "scenario": "更做隔日、波段，不想被 5 分钟频繁交叉打扰；与 A 股 T+1「今日买明日卖」的节奏更接近时。",
+              "rules": "用日 K 收盘价算经典 MACD(12/26/9)，金叉 / 死叉含义与 5 分钟版相同，只是每根 K 代表一个交易日。",
+              "example": "连续回调后日线出现金叉，常作为波段关注信号之一（是否下单仍看资金与风控）。"
+            },
+            {
+              "name": "dual_ma_5min",
+              "label": "双均线 5min (5/20 EMA)",
+              "description": "5 分钟 K 线: 5EMA 上穿 20EMA 买入, 下穿卖出",
+              "scenario": "喜欢「快慢线交叉」这种直观规则，且希望比日线更快反应时。",
+              "rules": "在 5 分钟收盘价上计算 5 周期与 20 周期指数均线；快线上穿慢线 → 偏买；快线下穿慢线 → 偏卖。",
+              "example": "横盘后快线上穿慢线，可理解为短期均线重新站到长期均线上方，常当作转强信号之一。"
+            },
+            {
+              "name": "ma20_hold",
+              "label": "MA20 持股法 (日K 突破/跌破)",
+              "description": "日 K 线: 收盘向上突破 MA20 买入, 向下跌破 MA20 卖出 (站上持股、跌破离场)",
+              "scenario": "想用最简单的「20 日线」做波段过滤: 站上认为趋势转强可介入, 跌破则离场观望时。",
+              "rules": "用日 K 收盘价计算 MA20。前一日收盘 ≤ MA20 且当日收盘 > MA20 → 偏买；前一日收盘 ≥ MA20 且当日收盘 < MA20 → 偏卖；其余观望。",
+              "example": "整理后首日阳线收盘站上 MA20 触发买入；之后若回调收在 MA20 下方, 触发卖出离场。"
+            },
+            {
+              "name": "rsi_reversal",
+              "label": "RSI 反转 (14·30/70 穿越)",
+              "description": "日 K RSI(14) 上穿 30 买入, 下穿 70 卖出 (经典 RSI + 穿越确认)",
+              "scenario": "震荡市 / 反转性强的票（银行、公用事业、部分大盘蓝筹），不追趋势, 抓「跌透了反弹」「涨过头回落」的边界。",
+              "rules": "日 K 收盘算 RSI(14)。RSI 从 ≤30 上穿 30 -> 买（超卖反弹确认）；从 ≥70 下穿 70 -> 卖（超买回落确认）；其他时间观望。比裸 <30 / >70 信号更稳, 避免在强趋势里被反复打脸。",
+              "example": "平安银行 RSI 跌到 28, 次日反弹收 32 -> 触发买入；后续涨到 RSI 73, 次日回落收 68 -> 触发卖出。"
+            },
+            {
+              "name": "boll_revert",
+              "label": "布林带均值回归 (20·2σ)",
+              "description": "日 K 布林带(20, 2σ) 触下轨买、触上轨卖 + 跌破中轨止盈",
+              "scenario": "波动有规律的票, 价格围绕中线均值上下震荡, 想做「触下轨吃货, 触上轨止盈」的均值回归操作。",
+              "rules": "日 K 收盘价计算 MA20 与 ±2σ 三条线。收盘 < 下轨 -> 买; 收盘 > 上轨 -> 卖; 持仓时收盘从中轨上方跌破中轨 -> 卖 (止盈, 防回吐)。波动率扩张到强趋势时容易追涨杀跌, 需配合风控。",
+              "example": "纳指 ETF 价格触下轨 1.65 触发买入; 反弹到 1.78 突破上轨 -> 卖出止盈。"
+            },
+            {
+              "name": "bias_revert",
+              "label": "乖离率均值回归 (BIAS·20)",
+              "description": "日 K 乖离率 < -6% 买入 (超跌), > 3% 卖出 (超涨)",
+              "scenario": "跟随 20 日均线节奏运行的票, 想做「跌得离均线太远 -> 反弹补涨」「涨得离均线太远 -> 回调收口」的中期均值回归。",
+              "rules": "BIAS = (收盘 - MA20) / MA20。BIAS < -6% -> 偏买 (超跌反弹); BIAS > 3% -> 偏卖 (涨过头, 注意不对称: 上涨节奏比下跌温和)。趋势单边市 (持续创新高 / 新低) 容易钝化。",
+              "example": "贵州茅台日 K 收盘 1450, MA20 在 1545, BIAS = -6.15% -> 触发买入; 涨到 BIAS = 3.5% -> 卖出。"
+            }
+          ],
+          "量化选股": [
+            {
+              "name": "multi_factor_top",
+              "label": "多因子轻量 (动量+RSI+乖离)",
+              "description": "日线 MOM_1M + RSI_14 + BIAS_20 合成 alpha, > 0.3 买, < -0.3 卖",
+              "scenario": "单只股票也想用「动量 + 超买超卖 + 乖离」综合打分，而不是只看一条均线时。",
+              "rules": "在日 K 上算三类因子并归一后取平均得到 alpha；alpha 高于阈值偏买入，低于负阈值偏卖出；中间区间观望。",
+              "example": "alpha 从负区间一举升到阈值之上，表示多因子同时转强，可能触发买入侧信号。"
+            }
+          ],
+          "龙头动量": [
+            {
+              "name": "dragon_picker",
+              "label": "龙头首板战法 (5 法则简化)",
+              "description": "当日涨幅+量比+价位综合打分, 龙头分 >= 1.5 买入, 跌破日内回撤线卖出",
+              "scenario": "关注当日强势、放量上攻的短线博弈（单票版龙头思路），愿意承担较大波动时。",
+              "rules": "综合当日涨幅、量比、股价区间等打分；满足涨幅、量比、价位且总分够高时偏买；当日大跌或从高点明显回撤时偏卖。",
+              "example": "当日涨幅已超过约 5%、量比显著放大、股价在约 30 元下方且综合分达标，可能触发买入侧信号。"
+            }
+          ],
+          "趋势跟随": [
+            {
+              "name": "turtle_donchian",
+              "label": "海龟唐奇安通道 (20入/10出)",
+              "description": "日 K 突破 20 日新高买入, 跌破 10 日新低卖出 (海龟唐奇安简化版, 不含 ATR 加仓)",
+              "scenario": "趋势性强的标的: 科技成长 (中芯/宁德), 宽基 ETF, 跨境 ETF (纳指 ETF), 想等趋势确认再上车 / 跌破就走人时。",
+              "rules": "收盘 > 过去 20 个交易日最高价 (不含今日) -> 买; 收盘 < 过去 10 个交易日最低价 (不含今日) -> 卖。趋势市赚大段, 震荡市频繁假突破被打脸 (需要止损 + 选标的)。",
+              "example": "中芯国际经过整理, 收盘突破前 20 日最高的 102.5 -> 买入; 后续高位震荡, 跌破前 10 日最低 95.2 -> 卖出离场。"
+            }
+          ],
+          "震荡网格": [
+            {
+              "name": "grid_classic",
+              "label": "经典网格 (60 日区间 8 格)",
+              "description": "过去 60 日 high/low 切 8 格, 价格在底部 2 格买, 顶部 2 格卖 (适合震荡市)",
+              "scenario": "判断该股在一段时期内主要在箱体内震荡，想做「低位多吸、高位分批减」时。",
+              "rules": "取约 60 个交易日最高价与最低价划成 8 格；现价落在最下两格偏买、最上两格偏卖；冲出区间上下沿另有止损/止盈类处理。",
+              "example": "长期在箱体内运行时，价格回到区间下沿附近可能出现低吸类信号；单边趋势市则容易反复打脸。"
+            }
+          ]
+        },
+        "list": [
+          {
+            "name": "macd_5min",
+            "label": "MACD·5分钟K线 (12/26/9·日内)",
+            "group": "技术指标",
+            "description": "基于 5 分钟收盘价的经典参数 12/26/9 (快线慢线指 K 线根数, 非日历日)。偏日内节奏。A 股现货 T+1: 当日买入次日才能卖, 若更关心中线波段可改用「MACD·日K线」。",
+            "scenario": "看盘内几分钟到数小时的涨跌节奏，希望信号跟得上分时波动、做短线参考时。",
+            "rules": "用 5 分钟 K 线收盘价计算 MACD(12/26/9)：DIF 从下向上穿过 DEA 为金叉（偏买入）；从上向下穿过为死叉（偏卖出）。K 线不足则保持观望。",
+            "example": "急跌后 DIF 再次上穿 DEA，可能对应一小段反弹；震荡市里交叉会较频繁，需结合风控。"
+          },
+          {
+            "name": "macd_1d",
+            "label": "MACD·日K线 (12/26/9·波段)",
+            "group": "技术指标",
+            "description": "基于日 K 收盘价的 12/26/9, 与常见软件「日线 MACD」一致。适合多日持仓与 T+1 下的波段决策; 信号比 5 分钟 MACD 稀疏。",
+            "scenario": "更做隔日、波段，不想被 5 分钟频繁交叉打扰；与 A 股 T+1「今日买明日卖」的节奏更接近时。",
+            "rules": "用日 K 收盘价算经典 MACD(12/26/9)，金叉 / 死叉含义与 5 分钟版相同，只是每根 K 代表一个交易日。",
+            "example": "连续回调后日线出现金叉，常作为波段关注信号之一（是否下单仍看资金与风控）。"
+          },
+          {
+            "name": "dual_ma_5min",
+            "label": "双均线 5min (5/20 EMA)",
+            "group": "技术指标",
+            "description": "5 分钟 K 线: 5EMA 上穿 20EMA 买入, 下穿卖出",
+            "scenario": "喜欢「快慢线交叉」这种直观规则，且希望比日线更快反应时。",
+            "rules": "在 5 分钟收盘价上计算 5 周期与 20 周期指数均线；快线上穿慢线 → 偏买；快线下穿慢线 → 偏卖。",
+            "example": "横盘后快线上穿慢线，可理解为短期均线重新站到长期均线上方，常当作转强信号之一。"
+          },
+          {
+            "name": "ma20_hold",
+            "label": "MA20 持股法 (日K 突破/跌破)",
+            "group": "技术指标",
+            "description": "日 K 线: 收盘向上突破 MA20 买入, 向下跌破 MA20 卖出 (站上持股、跌破离场)",
+            "scenario": "想用最简单的「20 日线」做波段过滤: 站上认为趋势转强可介入, 跌破则离场观望时。",
+            "rules": "用日 K 收盘价计算 MA20。前一日收盘 ≤ MA20 且当日收盘 > MA20 → 偏买；前一日收盘 ≥ MA20 且当日收盘 < MA20 → 偏卖；其余观望。",
+            "example": "整理后首日阳线收盘站上 MA20 触发买入；之后若回调收在 MA20 下方, 触发卖出离场。"
+          },
+          {
+            "name": "multi_factor_top",
+            "label": "多因子轻量 (动量+RSI+乖离)",
+            "group": "量化选股",
+            "description": "日线 MOM_1M + RSI_14 + BIAS_20 合成 alpha, > 0.3 买, < -0.3 卖",
+            "scenario": "单只股票也想用「动量 + 超买超卖 + 乖离」综合打分，而不是只看一条均线时。",
+            "rules": "在日 K 上算三类因子并归一后取平均得到 alpha；alpha 高于阈值偏买入，低于负阈值偏卖出；中间区间观望。",
+            "example": "alpha 从负区间一举升到阈值之上，表示多因子同时转强，可能触发买入侧信号。"
+          },
+          {
+            "name": "dragon_picker",
+            "label": "龙头首板战法 (5 法则简化)",
+            "group": "龙头动量",
+            "description": "当日涨幅+量比+价位综合打分, 龙头分 >= 1.5 买入, 跌破日内回撤线卖出",
+            "scenario": "关注当日强势、放量上攻的短线博弈（单票版龙头思路），愿意承担较大波动时。",
+            "rules": "综合当日涨幅、量比、股价区间等打分；满足涨幅、量比、价位且总分够高时偏买；当日大跌或从高点明显回撤时偏卖。",
+            "example": "当日涨幅已超过约 5%、量比显著放大、股价在约 30 元下方且综合分达标，可能触发买入侧信号。"
+          },
+          {
+            "name": "rsi_reversal",
+            "label": "RSI 反转 (14·30/70 穿越)",
+            "group": "技术指标",
+            "description": "日 K RSI(14) 上穿 30 买入, 下穿 70 卖出 (经典 RSI + 穿越确认)",
+            "scenario": "震荡市 / 反转性强的票（银行、公用事业、部分大盘蓝筹），不追趋势, 抓「跌透了反弹」「涨过头回落」的边界。",
+            "rules": "日 K 收盘算 RSI(14)。RSI 从 ≤30 上穿 30 -> 买（超卖反弹确认）；从 ≥70 下穿 70 -> 卖（超买回落确认）；其他时间观望。比裸 <30 / >70 信号更稳, 避免在强趋势里被反复打脸。",
+            "example": "平安银行 RSI 跌到 28, 次日反弹收 32 -> 触发买入；后续涨到 RSI 73, 次日回落收 68 -> 触发卖出。"
+          },
+          {
+            "name": "boll_revert",
+            "label": "布林带均值回归 (20·2σ)",
+            "group": "技术指标",
+            "description": "日 K 布林带(20, 2σ) 触下轨买、触上轨卖 + 跌破中轨止盈",
+            "scenario": "波动有规律的票, 价格围绕中线均值上下震荡, 想做「触下轨吃货, 触上轨止盈」的均值回归操作。",
+            "rules": "日 K 收盘价计算 MA20 与 ±2σ 三条线。收盘 < 下轨 -> 买; 收盘 > 上轨 -> 卖; 持仓时收盘从中轨上方跌破中轨 -> 卖 (止盈, 防回吐)。波动率扩张到强趋势时容易追涨杀跌, 需配合风控。",
+            "example": "纳指 ETF 价格触下轨 1.65 触发买入; 反弹到 1.78 突破上轨 -> 卖出止盈。"
+          },
+          {
+            "name": "bias_revert",
+            "label": "乖离率均值回归 (BIAS·20)",
+            "group": "技术指标",
+            "description": "日 K 乖离率 < -6% 买入 (超跌), > 3% 卖出 (超涨)",
+            "scenario": "跟随 20 日均线节奏运行的票, 想做「跌得离均线太远 -> 反弹补涨」「涨得离均线太远 -> 回调收口」的中期均值回归。",
+            "rules": "BIAS = (收盘 - MA20) / MA20。BIAS < -6% -> 偏买 (超跌反弹); BIAS > 3% -> 偏卖 (涨过头, 注意不对称: 上涨节奏比下跌温和)。趋势单边市 (持续创新高 / 新低) 容易钝化。",
+            "example": "贵州茅台日 K 收盘 1450, MA20 在 1545, BIAS = -6.15% -> 触发买入; 涨到 BIAS = 3.5% -> 卖出。"
+          },
+          {
+            "name": "turtle_donchian",
+            "label": "海龟唐奇安通道 (20入/10出)",
+            "group": "趋势跟随",
+            "description": "日 K 突破 20 日新高买入, 跌破 10 日新低卖出 (海龟唐奇安简化版, 不含 ATR 加仓)",
+            "scenario": "趋势性强的标的: 科技成长 (中芯/宁德), 宽基 ETF, 跨境 ETF (纳指 ETF), 想等趋势确认再上车 / 跌破就走人时。",
+            "rules": "收盘 > 过去 20 个交易日最高价 (不含今日) -> 买; 收盘 < 过去 10 个交易日最低价 (不含今日) -> 卖。趋势市赚大段, 震荡市频繁假突破被打脸 (需要止损 + 选标的)。",
+            "example": "中芯国际经过整理, 收盘突破前 20 日最高的 102.5 -> 买入; 后续高位震荡, 跌破前 10 日最低 95.2 -> 卖出离场。"
+          },
+          {
+            "name": "grid_classic",
+            "label": "经典网格 (60 日区间 8 格)",
+            "group": "震荡网格",
+            "description": "过去 60 日 high/low 切 8 格, 价格在底部 2 格买, 顶部 2 格卖 (适合震荡市)",
+            "scenario": "判断该股在一段时期内主要在箱体内震荡，想做「低位多吸、高位分批减」时。",
+            "rules": "取约 60 个交易日最高价与最低价划成 8 格；现价落在最下两格偏买、最上两格偏卖；冲出区间上下沿另有止损/止盈类处理。",
+            "example": "长期在箱体内运行时，价格回到区间下沿附近可能出现低吸类信号；单边趋势市则容易反复打脸。"
+          }
+        ]
+      },
+      "resp_error": null
+    },
+    {
+      "id": "API-08",
+      "title": "Live 设置状态：非法 status 应返回 ok=false",
+      "method": "POST",
+      "path": "/api/live/status",
+      "body": {
+        "status": "BAD"
+      },
+      "status": 200,
+      "elapsed_ms": 14,
+      "passed": true,
+      "resp_json_preview": {
+        "ok": false,
+        "message": "status 必须是 RUNNING/PAUSED/HALTED"
+      },
+      "resp_error": null
+    },
+    {
+      "id": "API-09",
+      "title": "Live 控制字段：缺 field 应返回 ok=false",
+      "method": "POST",
+      "path": "/api/live/control",
+      "body": {
+        "value": true
+      },
+      "status": 200,
+      "elapsed_ms": 7,
+      "passed": true,
+      "resp_json_preview": {
+        "ok": false,
+        "message": "field 不能为空"
+      },
+      "resp_error": null
+    },
+    {
+      "id": "API-10",
+      "title": "回测 run：空参数应返回 ok=false",
+      "method": "POST",
+      "path": "/api/backtest/run",
+      "body": {},
+      "status": 200,
+      "elapsed_ms": 14,
+      "passed": true,
+      "resp_json_preview": {
+        "ok": false,
+        "message": "code 不能为空 (例: 600519.SH)"
+      },
+      "resp_error": null
+    }
+  ],
+  "bugs": []
+}
