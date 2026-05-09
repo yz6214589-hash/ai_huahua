@@ -11,15 +11,20 @@ export default function Data() {
   const [sp, setSp] = useSearchParams()
   const [dataset, setDataset] = useState<DatasetName>((sp.get('dataset') as DatasetName) || 'trade_stock_daily')
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  const [pageSize, setPageSize] = useState(20)
   const [rows, setRows] = useState<PagedRows<Record<string, unknown>> | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const dsDef = useMemo(() => DATASETS.find((d) => d.key === dataset)!, [dataset])
+  const dsDef = useMemo(() => DATASETS.find((d) => d.key === dataset) || null, [dataset])
   const [filterValues, setFilterValues] = useState<Record<string, string>>({})
 
   useEffect(() => {
+    if (!dsDef) {
+      setErr('数据集不存在，请从左侧重新选择')
+      setFilterValues({})
+      return
+    }
     const next: Record<string, string> = {}
     for (const f of dsDef.filters) {
       const v = sp.get(f.key)
@@ -30,7 +35,30 @@ export default function Data() {
     setFilterValues(next)
   }, [dataset])
 
+  const validateDateFilters = (values: Record<string, string>) => {
+    if (!dsDef) return { ok: false, message: '数据集不存在，请从左侧重新选择' } as const
+    const dateKeys = new Set(dsDef.filters.filter((f) => (f.placeholder || '').includes('YYYY-MM-DD')).map((f) => f.key))
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/
+    for (const [k, v0] of Object.entries(values)) {
+      if (!dateKeys.has(k)) continue
+      const v = (v0 || '').trim()
+      if (!v) continue
+      if (v.includes(',')) {
+        const [a, b] = v.split(',', 2).map((x) => x.trim())
+        if ((a && !dateRe.test(a)) || (b && !dateRe.test(b))) return { ok: false, message: '日期格式错误，请使用 YYYY-MM-DD,YYYY-MM-DD' } as const
+        continue
+      }
+      if (!dateRe.test(v)) return { ok: false, message: '日期格式错误，请使用 YYYY-MM-DD' } as const
+    }
+    return { ok: true } as const
+  }
+
   const load = async () => {
+    const check = validateDateFilters(filterValues)
+    if (!check.ok) {
+      setErr(check.message)
+      return
+    }
     setLoading(true)
     setErr(null)
     try {
@@ -61,12 +89,22 @@ export default function Data() {
   }, [dataset, filterValues])
 
   useEffect(() => {
+    if (!dsDef) return
     load()
   }, [dataset, page, pageSize])
 
   const exportData = async (format: 'csv' | 'json') => {
     setErr(null)
     try {
+      const check = validateDateFilters(filterValues)
+      if (!check.ok) {
+        setErr(check.message)
+        return
+      }
+      if (rows && typeof rows.total === 'number' && rows.total > 10000) {
+        setErr('数据量较大，请先缩小筛选范围后再导出')
+        return
+      }
       const body = { dataset, format, filters: filterValues, limit: 5000 }
       if (format === 'json') {
         const res = await postJson<unknown>('/api/export', body)
@@ -78,7 +116,12 @@ export default function Data() {
         a.click()
         URL.revokeObjectURL(url)
       } else {
-        const res = await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        const apiKey = (import.meta as any)?.env?.VITE_AI_QUANT_API_KEY as string | undefined
+        const res = await fetch('/api/export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(apiKey ? { 'X-API-Key': String(apiKey) } : {}) },
+          body: JSON.stringify(body),
+        })
         if (!res.ok) throw new Error(await res.text())
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
@@ -106,16 +149,18 @@ export default function Data() {
         />
 
         <div className="mt-4">
-          <FiltersPanel
-            filters={dsDef.filters}
-            values={filterValues}
-            onChange={setFilterValues}
-            onApply={() => {
-              setPage(1)
-              load()
-            }}
-            onClear={() => setFilterValues({})}
-          />
+          {dsDef ? (
+            <FiltersPanel
+              filters={dsDef.filters}
+              values={filterValues}
+              onChange={setFilterValues}
+              onApply={() => {
+                setPage(1)
+                load()
+              }}
+              onClear={() => setFilterValues({})}
+            />
+          ) : null}
         </div>
       </div>
 
@@ -126,6 +171,7 @@ export default function Data() {
           error={err}
           page={page}
           pageSize={pageSize}
+          hasFilters={Object.values(filterValues).some((v) => (v || '').trim())}
           onPageSize={(n) => {
             setPageSize(n)
             setPage(1)

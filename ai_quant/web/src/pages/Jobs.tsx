@@ -377,7 +377,7 @@ export default function Jobs() {
                       {history.length === 0 ? (
                         <tr>
                           <td className="px-4 py-6 text-sm text-zinc-500" colSpan={4}>
-                            暂无运行记录
+                            暂无运行记录，建议先在左侧点击“运行一次”触发采集任务
                           </td>
                         </tr>
                       ) : (
@@ -454,8 +454,8 @@ export default function Jobs() {
                     </div>
                   </div>
 
-                  {selected.message ? (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{selected.message}</div>
+                  {selected.userMessage || selected.message ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{selected.userMessage || selected.message}</div>
                   ) : null}
 
                   <div>

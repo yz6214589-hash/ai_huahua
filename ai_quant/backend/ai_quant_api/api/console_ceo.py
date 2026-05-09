@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ai_quant_api.services.ceo.integration import get_overview, get_status, trigger_morning
 
@@ -21,4 +21,8 @@ def console_overview() -> dict[str, object]:
 
 @router.post("/morning/trigger")
 def console_trigger_morning(body: dict[str, Any]) -> dict[str, Any]:
-    return trigger_morning(body)
+    try:
+        return trigger_morning(body)
+    except Exception as exc:
+        msg = str(exc).strip() or f"{type(exc).__name__}"
+        raise HTTPException(status_code=500, detail=msg)

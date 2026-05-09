@@ -1,0 +1,12 @@
+.git
+.gitignore
+.DS_Store
+
+ai_quant/venv
+.ai_quant
+
+ai_quant/web/node_modules
+ai_quant/web/test-results
+
+**/__pycache__
+**/*.pyc

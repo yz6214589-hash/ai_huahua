@@ -1,0 +1,32 @@
+@startuml
+!include _style.puml
+
+title 信息架构：用户旅程（User Journey）
+
+actor "投研/交易用户" as user
+rectangle "Web 前端" as web <<UI>> #ECFDF5
+rectangle "Backend API" as api <<API>> #EFF6FF
+database "MySQL" as mysql <<DB>> #EFF6FF
+folder ".ai_quant" as rt <<RUNTIME>> #FFF7ED
+
+user --> web : 进入系统
+user --> web : 搜索/选择股票
+web --> api : GET /api/stocks?q=...\nGET /api/watchlist
+api --> mysql : trade_stock_master/daily/watchlist
+api --> web : 返回 code+name 列表
+
+user --> web : 创建研报任务（模型/股票）
+web --> api : POST /api/reports/tasks
+api --> rt : 写入 reports_worker.log\n排队执行
+api --> web : 返回 task_id
+
+user --> web : 查看任务状态
+web --> api : GET /api/reports/tasks?limit=...
+api --> web : waiting/running/success/failed
+
+user --> web : 查看研报
+web --> api : GET /api/reports/tasks/{id}/view
+api --> rt : 读取/生成 report_outputs/{id}.md
+api --> web : 返回 Markdown/HTML
+
+@enduml

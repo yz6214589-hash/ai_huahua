@@ -1,0 +1,63 @@
+@startuml
+!include _style.puml
+
+title AI Quant 组件视图（Component View）
+
+rectangle "Web 前端\n(React)" as web <<UI>> #ECFDF5
+rectangle "Streamlit\n(Chat UI)" as st <<UI>> #ECFDF5
+
+package "Backend (FastAPI)" <<API>> #EFF6FF {
+  component "API Router\nai_quant_api/api" as router <<API>>
+
+  package "Reports" <<SVC>> #EEF2FF {
+    component "Reports API\n/api/reports/*" as reports_api <<API>>
+    component "Reports Worker\n(queue+thread)" as reports_worker <<SVC>>
+    component "Report Store\n(in-memory)" as report_store <<SVC>>
+    component "RAG Service\n(SQLite+FAISS)" as rag <<SVC>>
+    component "CASE 五步法脚本\nfive_step_analysis.py" as five_step <<SVC>>
+  }
+
+  package "Agent" <<SVC>> #EEF2FF {
+    component "Agent API\n/api/agent/*" as agent_api <<API>>
+    component "LangGraph Graphs\nmorning_brief_graph" as graphs <<SVC>>
+  }
+
+  package "Data" <<SVC>> #EEF2FF {
+    component "Data API\n/api/data/*" as data_api <<API>>
+    component "Stock Search\n/api/stocks" as stocks_api <<API>>
+  }
+
+  component "MySQL Client\n(PyMySQL)" as mysql_client <<SVC>>
+}
+
+database "MySQL\nhuahua_trade" as mysql <<DB>> #EFF6FF
+database "SQLite\nreports_rag/documents.db" as sqlite <<DB>> #EFF6FF
+rectangle "FAISS\nreports_rag/vector_store" as faiss <<DB>> #EFF6FF
+folder ".ai_quant" as rt <<RUNTIME>> #FFF7ED
+
+web --> router : REST /api/*
+st --> agent_api : POST /api/agent/run
+
+router --> reports_api
+router --> agent_api
+router --> data_api
+router --> stocks_api
+
+reports_api --> report_store : create/list/delete
+reports_api --> reports_worker : enqueue(task_id)
+reports_worker --> report_store : update status/markdown
+reports_worker --> five_step : use_llm=1 时调用
+reports_worker --> rt : reports_worker.log\nreport_outputs/<task_id>.md
+
+reports_api --> rag : /rag/status|ingest|query
+rag --> sqlite
+rag --> faiss
+rag --> rt : reports_rag/*
+
+data_api --> mysql_client
+stocks_api --> mysql_client
+agent_api --> graphs
+graphs --> mysql_client : 读取行情/状态/指标
+mysql_client --> mysql
+
+@enduml

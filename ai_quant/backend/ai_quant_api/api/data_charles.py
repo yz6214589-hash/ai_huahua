@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 import io
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,19 +10,20 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
+from ai_quant_api.db import connect, load_mysql_config, query_dict
 from ai_quant_api.services.charles.integration import get_job_store_dir
 
 router = APIRouter(prefix="/api", tags=["data"])
 
 
+def _contains_injection(v: str) -> bool:
+    s = str(v or "")
+    bad = (";", "--", "/*", "*/")
+    return any(x in s for x in bad)
+
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[4]
-
-
-def _ensure_charles_import_path() -> None:
-    p = str(_project_root() / "charles" / "api")
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 
 def _now_iso() -> str:
@@ -55,18 +55,7 @@ def _is_missing_table_error(exc: Exception) -> bool:
 
 
 def _connect_and_query():
-    _ensure_charles_import_path()
-    from charles_api.config import load_settings  # type: ignore
-    from charles_api.db import MySQLConfig, connect, query_dict  # type: ignore
-
-    settings = load_settings()
-    cfg = MySQLConfig(
-        host=settings.mysql_host,
-        port=settings.mysql_port,
-        user=settings.mysql_user,
-        password=settings.mysql_password,
-        database=settings.mysql_db,
-    )
+    cfg = load_mysql_config()
     conn = connect(cfg)
     return conn, query_dict
 
@@ -99,6 +88,8 @@ def data_get(request: Request, dataset: str, page: int = 1, pageSize: int = 50) 
     for k, v in request.query_params.items():
         if k in ("page", "pageSize"):
             continue
+        if isinstance(v, str) and _contains_injection(v):
+            raise HTTPException(status_code=400, detail="非法输入")
         filters[k] = v
 
     where = []
@@ -169,8 +160,12 @@ def export_data(body: dict[str, Any]) -> Response:
     for k, v in filters.items():
         if k not in allowed or v in (None, ""):
             continue
+        if isinstance(v, str) and _contains_injection(v):
+            raise HTTPException(status_code=400, detail="非法输入")
         if k == "stock_code" and isinstance(v, str) and "," in v:
             codes = [p.strip() for p in v.split(",") if p.strip()]
+            if not codes:
+                continue
             if not codes:
                 continue
             ph = ",".join(["%s"] * len(codes))

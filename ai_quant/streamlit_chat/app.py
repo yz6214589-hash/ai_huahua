@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+try:
+    from dotenv import find_dotenv, load_dotenv
+
+    load_dotenv(find_dotenv(usecwd=True), override=False)
+except Exception:
+    pass
+
 import streamlit as st
 
 from lib.api_client import run_agent

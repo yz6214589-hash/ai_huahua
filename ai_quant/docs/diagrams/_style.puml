@@ -1,0 +1,49 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "PingFang SC"
+skinparam defaultFontSize 14
+skinparam Shadowing false
+
+skinparam ArrowColor #4B5563
+skinparam ArrowThickness 1
+skinparam LineColor #4B5563
+skinparam ClassBorderColor #111827
+skinparam ClassBackgroundColor #F9FAFB
+skinparam NoteBackgroundColor #FFF7ED
+skinparam NoteBorderColor #FB923C
+
+skinparam RectangleBorderColor #111827
+skinparam RectangleBackgroundColor #F9FAFB
+
+skinparam PackageBorderColor #111827
+skinparam PackageBackgroundColor #EEF2FF
+
+skinparam ComponentBorderColor #111827
+skinparam ComponentBackgroundColor #ECFDF5
+
+skinparam DatabaseBorderColor #111827
+skinparam DatabaseBackgroundColor #EFF6FF
+
+skinparam CloudBorderColor #111827
+skinparam CloudBackgroundColor #F5F3FF
+
+!define COLOR_API #2563EB
+!define COLOR_UI #16A34A
+!define COLOR_DATA #7C3AED
+!define COLOR_SEC #DC2626
+!define COLOR_RUNTIME #F59E0B
+
+legend right
+|= 记号 |= 含义 |
+| <<UI>> | 前端 UI 组件/页面 |
+| <<API>> | 后端 API/路由层 |
+| <<SVC>> | 服务/业务逻辑 |
+| <<DB>> | 数据库/持久化 |
+| <<RUNTIME>> | 运行时目录/产物（`.ai_quant`） |
+| <<SEC>> | 安全边界/鉴权点 |
+| #16A34A / #2563EB / #7C3AED / #F59E0B / #DC2626 | UI / API / 数据 / 运行时 / 安全 |
+| 实线箭头 --> | 同步调用/依赖 |
+| 虚线箭头 ..> | 弱依赖/可选调用（例如工具/外部能力） |
+| 数据流 --> DB | 读写数据/持久化 |
+endlegend
+@enduml

@@ -1,0 +1,46 @@
+[2026-05-07 19:24:33] [reports] _generate_report_markdown enter model=qwen-max stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-07 19:24:33] [reports] use_llm candidates=['/Users/apple/Documents/quant/REPORT_INDEX_DIR', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_db']
+[2026-05-07 19:24:33] [reports] use_llm selected_index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store
+[2026-05-07 19:38:11] [reports] _generate_report_markdown enter model=qwen-max stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-07 19:38:11] [reports] use_llm candidates=['/Users/apple/Documents/quant/REPORT_INDEX_DIR', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_db']
+[2026-05-07 19:38:11] [reports] use_llm selected_index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store
+[2026-05-07 19:38:11] [reports] calling run_five_step_analysis index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store output_dir=/Users/apple/Documents/quant/REPORT
+[2026-05-07 23:55:47] [reports] _generate_report_markdown enter model=qwen-max stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-07 23:55:47] [reports] use_llm candidates=['/Users/apple/Documents/quant/REPORT_INDEX_DIR', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_db']
+[2026-05-07 23:55:47] [reports] use_llm selected_index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store
+[2026-05-07 23:58:06] [reports] _generate_report_markdown enter model=qwen-max stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-07 23:58:06] [reports] use_llm candidates=['/Users/apple/Documents/quant/REPORT_INDEX_DIR', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_db']
+[2026-05-07 23:58:06] [reports] use_llm selected_index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store
+[2026-05-07 23:58:07] [reports] calling run_five_step_analysis index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store output_dir=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs
+[2026-05-08 00:02:25] [reports] _generate_report_markdown enter model=qwen-max stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-08 00:02:25] [reports] use_llm candidates=['/Users/apple/Documents/quant/REPORT_INDEX_DIR', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_db']
+[2026-05-08 00:02:25] [reports] use_llm selected_index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store
+[2026-05-08 00:02:26] [reports] calling run_five_step_analysis index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store output_dir=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs
+[2026-05-09 17:02:36] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=True
+[2026-05-09 17:02:36] [reports] use_llm candidates=['/Users/apple/Documents/quant/REPORT_INDEX_DIR', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_db']
+[2026-05-09 17:02:36] [reports] use_llm selected_index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store
+[2026-05-09 17:02:37] [reports] calling run_five_step_analysis index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store output_dir=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs
+[2026-05-09 17:19:17] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=True
+[2026-05-09 17:19:17] [reports] use_llm candidates=['/Users/apple/Documents/quant/REPORT_INDEX_DIR', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_db']
+[2026-05-09 17:19:17] [reports] use_llm selected_index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store
+[2026-05-09 17:19:17] [reports] calling run_five_step_analysis index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store output_dir=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs
+[2026-05-09 17:19:41] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=True
+[2026-05-09 17:19:41] [reports] use_llm candidates=['/Users/apple/Documents/quant/REPORT_INDEX_DIR', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_db']
+[2026-05-09 17:19:41] [reports] use_llm selected_index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store
+[2026-05-09 17:19:42] [reports] calling run_five_step_analysis index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store output_dir=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs
+[2026-05-09 17:23:35] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=True
+[2026-05-09 17:23:35] [reports] use_llm candidates=['/Users/apple/Documents/quant/REPORT_INDEX_DIR', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store', '/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_db']
+[2026-05-09 17:23:35] [reports] use_llm selected_index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store
+[2026-05-09 17:23:35] [reports] calling run_five_step_analysis index_dir=/Users/apple/Desktop/ai_huahua/CASE-智能研报生成/data/vector_store output_dir=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs
+[2026-05-09 17:25:00] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=0
+[2026-05-09 17:25:00] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs/accf52896a134603b741f65a15e45966.md
+[2026-05-09 17:43:19] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=0
+[2026-05-09 17:43:20] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs/7f1d546e26fe4225b08aa235214c2dda.md
+[2026-05-09 19:02:04] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=0
+[2026-05-09 19:02:04] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs/7171c7718ff745138d01407bc008ff2e.md
+[2026-05-09 19:03:15] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=0
+[2026-05-09 19:03:15] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs/2857a49359024802b40433340b20eded.md
+[2026-05-09 19:09:47] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=0
+[2026-05-09 19:09:47] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/.ai_quant/report_outputs/6c078aa9d12047c0ac70b8e87f5b3ce3.md
+[2026-05-09 20:28:46] [reports] _generate_report_markdown enter model=qwen-max stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-09 21:00:56] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=True

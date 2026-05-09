@@ -1,46 +1,50 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
+from datetime import datetime, timezone
+
+from ai_quant_api.services.ethan.models import ExecutionTask, ExecutionTaskCreate
+from ai_quant_api.services.ethan.store import InMemoryStore
 
 _STORE = None
-
-
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[5]
-
-
-def _ensure_ethan_import_path() -> None:
-    p = str(_project_root() / "ethan" / "backend")
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 
 def _get_store():
     global _STORE
     if _STORE is not None:
         return _STORE
-    _ensure_ethan_import_path()
-    from ethan_api.storage import InMemoryStore  # type: ignore
-
     _STORE = InMemoryStore()
     return _STORE
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def get_status() -> dict[str, Any]:
-    return {"source": "ethan", "status": "ready", "features": ["tasks", "sim", "trading"]}
+    return {"source": "ethan", "status": "ready", "features": ["tasks"], "mode": "embedded"}
 
 
 def create_execution_task(payload: dict[str, Any]) -> dict[str, Any]:
-    _ensure_ethan_import_path()
-    from ethan_api.execution.service import create_task  # type: ignore
-    from ethan_api.models import ExecutionTaskCreate  # type: ignore
-
     req = ExecutionTaskCreate(**payload)
     adv = float(req.adv or 2_000_000)
-    task = create_task(req, adv=adv)
+    task = ExecutionTask(
+        id=uuid4().hex,
+        symbol=req.symbol,
+        side=req.side,
+        total_qty=req.total_qty,
+        num_steps=req.num_steps,
+        strategy=req.strategy,
+        rl_model_path=req.rl_model_path,
+        impact_eta=req.impact_eta,
+        impact_gamma=req.impact_gamma,
+        adv=adv,
+        constraints=req.constraints,
+        status="draft",
+        created_at=_now_iso(),
+    )
     store = _get_store()
     store.put_task(task)
     return task.model_dump()

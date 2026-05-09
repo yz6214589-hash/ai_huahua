@@ -49,6 +49,12 @@ export default function Dashboard() {
   const executionStatus = overview?.execution_status
   const riskStatus = overview?.risk_status
   const morning = overview?.morning
+  const emptyData = useMemo(() => {
+    const s = overview?.data_latest
+    if (!s) return false
+    const cnts = [s.trade_stock_daily.count, s.trade_stock_financial.count, s.trade_stock_news.count, s.trade_calendar_event.count]
+    return runs.length === 0 && cnts.every((x) => Number(x || 0) <= 0)
+  }, [overview, runs.length])
 
   return (
     <div className="space-y-6">
@@ -66,6 +72,21 @@ export default function Dashboard() {
 
       {err ? (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>
+      ) : null}
+
+      {emptyData ? (
+        <Card>
+          <CardHeader title="新手引导" />
+          <CardBody className="space-y-2 text-sm text-zinc-700">
+            <div>1. 前往任务页运行采集任务，生成基础行情/财务/新闻数据</div>
+            <div>
+              2. 前往数据页确认数据入库与查询：<Link to="/data" className="text-zinc-900 underline">数据与交付</Link>
+            </div>
+            <div>
+              3. 前往研报页生成智能研报：<Link to="/reports" className="text-zinc-900 underline">智能研报</Link>
+            </div>
+          </CardBody>
+        </Card>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">

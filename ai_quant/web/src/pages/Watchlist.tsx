@@ -242,6 +242,12 @@ export default function Watchlist() {
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const v = q.trim()
+                    if (v && results.length === 0 && !searching) setSearchErr('股票不存在')
+                  }
+                }}
                 placeholder="按代码/名称搜索，例如 600 或 贵州"
                 className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none transition focus:border-zinc-400"
               />

@@ -24,6 +24,7 @@ export interface JobRunResult {
   itemsProcessed: number
   failedItems: string[]
   message?: string
+  userMessage?: string
 }
 
 export interface JobSchedule {
@@ -163,11 +164,14 @@ export interface ReportTask {
   model: ReportModel
   stock_codes: string[]
   stock_names: string[]
+  use_rag?: boolean
   status: ReportTaskStatus
   created_at: string
   started_at?: string | null
   finished_at?: string | null
   error_message?: string | null
+  error_location?: string | null
+  report_path?: string | null
 }
 
 export interface SentimentRun {
@@ -248,3 +252,111 @@ export interface ConsoleOverview {
   }
 }
 
+export type TradeSignal = 'BUY' | 'SELL'
+
+export interface AnalysisSignalSnapshot {
+  close: number | null
+  ma20: number | null
+  rsi14: number | null
+  macd_hist: number | null
+  boll_upper: number | null
+  boll_mid: number | null
+  boll_lower: number | null
+  [key: string]: unknown
+}
+
+export interface AnalysisSignalItem {
+  trade_date: string
+  signal: TradeSignal
+  score: number
+  reasons: string[]
+  snapshot: AnalysisSignalSnapshot
+}
+
+export interface AnalysisSignalsResponse {
+  stock_code: string
+  signals: AnalysisSignalItem[]
+}
+
+export interface AnalysisStocksSampleResponse {
+  codes: string[]
+}
+
+export type RiskDirection = 'buy' | 'sell'
+
+export interface RiskApproveRequest {
+  order: {
+    stock_code: string
+    direction: RiskDirection
+    amount: number
+    price: number
+    quantity: number
+  }
+  portfolio: {
+    total_asset: number
+    prices: Record<string, number>
+    atr: Record<string, number>
+  }
+  context: {
+    news_text: string
+  }
+}
+
+export type RiskDecision = 'APPROVE' | 'WARN' | 'REJECT'
+
+export interface RiskCheckItem {
+  decision: RiskDecision
+  reason: string
+  rule_name: string
+  max_position_pct: number
+  timestamp: string
+}
+
+export interface RiskApproveResponse {
+  decision: RiskDecision
+  reason: string
+  rule_name: string
+  max_position_pct: number
+  timestamp: string
+  suggested_amount: number
+  suggested_quantity: number
+  checks: RiskCheckItem[]
+}
+
+export interface RiskAuditItem {
+  timestamp: string
+  stock_code: string
+  direction: string
+  amount: number
+  price: number
+  quantity: number
+  decision: string
+  reason: string
+  rule_name: string
+  max_position_pct: number
+}
+
+export interface RiskAuditResponse {
+  items: RiskAuditItem[]
+}
+
+export interface MorningTriggerRequest {
+  industry_level?: 1 | 2
+  top_n_industries?: number
+  top_n_stocks?: number
+  lookback_days?: number
+  sample_stocks?: number
+  end_date?: string
+}
+
+export interface MorningTriggerResponse {
+  ok: boolean
+  workflow: string
+  result: {
+    report_html: string
+    report_md: string
+    messages: unknown[]
+    picked_stocks: unknown[]
+    industry_rank: unknown[]
+  }
+}

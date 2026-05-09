@@ -1,56 +1,97 @@
 from __future__ import annotations
 
+import json
 import os
-import sys
+import re
+import urllib.parse
+import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
+
+from ai_quant_api.db import connect, load_mysql_config, query_dict
 
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[5]
 
 
-def _charles_api_path() -> Path:
-    return _project_root() / "charles" / "api"
-
-
-def _ensure_charles_import_path() -> None:
-    p = str(_charles_api_path())
-    if p not in sys.path:
-        sys.path.insert(0, p)
-
-
 def get_job_store_dir() -> str:
     env = os.getenv("AI_QUANT_CHARLES_JOB_STORE_DIR", "").strip()
     if env:
         return env
-    return str(_project_root() / "charles" / ".charles" / "job_runs")
+    return str(_project_root() / "ai_quant" / ".ai_quant" / "job_runs")
 
 
 def list_job_runs(domain: str | None, limit: int) -> list[dict[str, Any]]:
     n = max(1, min(limit, 200))
-    _ensure_charles_import_path()
-    from charles_api.job_store import list_runs  # type: ignore
-    from charles_api.models import JobDomain  # type: ignore
+    return _list_runs_from_dir(get_job_store_dir(), domain, n)
 
-    d = JobDomain(domain) if domain else None
-    return list_runs(get_job_store_dir(), d, n)
+
+def write_job_run(domain: str, payload: dict[str, Any]) -> dict[str, Any]:
+    root = Path(get_job_store_dir())
+    root.mkdir(parents=True, exist_ok=True)
+
+    run_id = str(payload.get("runId") or "").strip() or uuid4().hex
+    started_at = str(payload.get("startedAt") or "").strip() or datetime.now().isoformat(timespec="seconds")
+    status = str(payload.get("status") or "running").strip()
+    raw_message = payload.get("message")
+    user_message = None
+    if isinstance(raw_message, str):
+        s = raw_message.strip()
+        if s:
+            one = s.splitlines()[0].strip()
+            if len(one) > 200:
+                one = one[:200]
+            user_message = one
+
+    record: dict[str, Any] = {
+        "runId": run_id,
+        "domain": domain,
+        "startedAt": started_at,
+        "finishedAt": payload.get("finishedAt"),
+        "status": status,
+        "dataSourceFinal": payload.get("dataSourceFinal") or "unknown",
+        "fallbackChain": payload.get("fallbackChain") if isinstance(payload.get("fallbackChain"), list) else [],
+        "rowsWritten": int(payload.get("rowsWritten") or 0),
+        "itemsProcessed": int(payload.get("itemsProcessed") or 0),
+        "failedItems": payload.get("failedItems") if isinstance(payload.get("failedItems"), list) else [],
+        "message": raw_message,
+        "userMessage": user_message,
+    }
+
+    tmp = root / f".{run_id}.json.tmp"
+    out = root / f"{run_id}.json"
+    tmp.write_text(json.dumps(record, ensure_ascii=False, default=str), encoding="utf-8")
+    tmp.replace(out)
+    return record
+
+
+def _list_runs_from_dir(dir_path: str, domain: str | None, limit: int) -> list[dict[str, Any]]:
+    root = Path(dir_path)
+    if not root.exists() or not root.is_dir():
+        return []
+    items: list[tuple[float, dict[str, Any]]] = []
+    for p in root.glob("*.json"):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if domain and str(data.get("domain") or "") != domain:
+            continue
+        try:
+            mtime = p.stat().st_mtime
+        except Exception:
+            mtime = 0.0
+        items.append((mtime, data if isinstance(data, dict) else {}))
+    items.sort(key=lambda x: x[0], reverse=True)
+    return [x[1] for x in items[:limit]]
 
 
 def get_summary() -> dict[str, dict[str, Any]]:
-    _ensure_charles_import_path()
-    from charles_api.config import load_settings  # type: ignore
-    from charles_api.db import MySQLConfig, connect, query_dict  # type: ignore
-
-    settings = load_settings()
-    cfg = MySQLConfig(
-        host=settings.mysql_host,
-        port=settings.mysql_port,
-        user=settings.mysql_user,
-        password=settings.mysql_password,
-        database=settings.mysql_db,
-    )
     try:
+        cfg = load_mysql_config()
         conn = connect(cfg)
     except Exception:
         return _empty_summary()
@@ -93,6 +134,136 @@ def get_watchlist() -> dict[str, Any]:
         conn.close()
 
 
+def _normalize_stock_code(code: str) -> str:
+    return str(code or "").strip().upper()
+
+
+def _stock_exists(conn: Any, query_dict_func: Any, code: str) -> bool:
+    c = _normalize_stock_code(code)
+    if not c:
+        return False
+    rows = query_dict_func(conn, "SELECT 1 AS x FROM trade_stock_master WHERE stock_code=%s LIMIT 1", (c,))
+    if rows:
+        return True
+    rows2 = query_dict_func(conn, "SELECT 1 AS x FROM trade_stock_daily WHERE stock_code=%s LIMIT 1", (c,))
+    return bool(rows2)
+
+
+def add_watchlist_item(stock_code: str) -> dict[str, Any]:
+    code = _normalize_stock_code(stock_code)
+    conn, query_dict_func = _get_conn_and_query()
+    if conn is None or query_dict_func is None:
+        return {"ok": False, "message": "数据库未配置或不可用"}
+    try:
+        if not _stock_exists(conn, query_dict_func, code):
+            return {"ok": False, "message": "股票不存在"}
+        next_order = query_dict_func(conn, "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM trade_watchlist")
+        sort_order = int((next_order or [{}])[0].get("n") or 1)
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                INSERT INTO trade_watchlist(stock_code, pinned, sort_order, created_at, updated_at)
+                VALUES (%s, %s, %s, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE
+                  updated_at=NOW()
+                """,
+                (code, 0, sort_order),
+            )
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            return {"ok": True}
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
+def delete_watchlist_item(stock_code: str) -> dict[str, Any]:
+    code = _normalize_stock_code(stock_code)
+    conn, query_dict_func = _get_conn_and_query()
+    if conn is None or query_dict_func is None:
+        return {"ok": False, "message": "数据库未配置或不可用"}
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute("DELETE FROM trade_watchlist WHERE stock_code=%s", (code,))
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            return {"ok": True}
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
+def pin_watchlist_item(stock_code: str, pinned: bool) -> dict[str, Any]:
+    code = _normalize_stock_code(stock_code)
+    conn, query_dict_func = _get_conn_and_query()
+    if conn is None or query_dict_func is None:
+        return {"ok": False, "message": "数据库未配置或不可用"}
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute("UPDATE trade_watchlist SET pinned=%s, updated_at=NOW() WHERE stock_code=%s", (1 if pinned else 0, code))
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            return {"ok": True}
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
+def reorder_watchlist(codes: list[str]) -> dict[str, Any]:
+    ordered = []
+    seen: set[str] = set()
+    for c in codes or []:
+        code = _normalize_stock_code(str(c or ""))
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        ordered.append(code)
+    if not ordered:
+        return {"ok": False, "message": "codes 不能为空"}
+
+    conn, query_dict_func = _get_conn_and_query()
+    if conn is None or query_dict_func is None:
+        return {"ok": False, "message": "数据库未配置或不可用"}
+    try:
+        cur = conn.cursor()
+        try:
+            vals = [(i + 1, code) for i, code in enumerate(ordered)]
+            cur.executemany("UPDATE trade_watchlist SET sort_order=%s, updated_at=NOW() WHERE stock_code=%s", vals)
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            return {"ok": True}
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+
 def search_stocks(q: str, limit: int) -> dict[str, Any]:
     text = q.strip()
     n = max(1, min(limit, 50))
@@ -102,8 +273,11 @@ def search_stocks(q: str, limit: int) -> dict[str, Any]:
     if conn is None or query_dict_func is None:
         return {"items": []}
     try:
-        like = f"%{text}%"
-        rows = query_dict_func(
+        upper = text.upper()
+        is_code_like = any(ch.isdigit() for ch in upper) or "." in upper
+        code_like = f"{upper}%" if is_code_like else f"%{text}%"
+        name_like = f"%{text}%"
+        rows_master = query_dict_func(
             conn,
             """
             SELECT stock_code AS code, stock_name AS name
@@ -112,32 +286,153 @@ def search_stocks(q: str, limit: int) -> dict[str, Any]:
             ORDER BY stock_code
             LIMIT %s
             """,
-            (like, like, n),
+            (code_like, name_like, n),
         )
-        return {"items": rows}
+        rows_daily = query_dict_func(
+            conn,
+            """
+            SELECT stock_code AS code, MAX(stock_name) AS name
+            FROM trade_stock_daily
+            WHERE (stock_code LIKE %s OR stock_name LIKE %s)
+              AND stock_name IS NOT NULL
+              AND stock_name <> ''
+            GROUP BY stock_code
+            ORDER BY stock_code
+            LIMIT %s
+            """,
+            (code_like, name_like, n),
+        )
+
+        daily_name_by_code: dict[str, str] = {}
+        daily_ordered: list[dict[str, Any]] = []
+        for r in rows_daily or []:
+            code = str(r.get("code") or "").strip()
+            if not code:
+                continue
+            name = str(r.get("name") or "").strip()
+            if code not in daily_name_by_code:
+                daily_ordered.append({"code": code, "name": name or None})
+            if name:
+                daily_name_by_code[code] = name
+
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for r in rows_master or []:
+            code = str(r.get("code") or "").strip()
+            if not code or code in seen:
+                continue
+            name = str(r.get("name") or "").strip()
+            if not name:
+                name = daily_name_by_code.get(code, "")
+            out.append({"code": code, "name": name or None})
+            seen.add(code)
+            if len(out) >= n:
+                return {"items": out}
+
+        for r in daily_ordered:
+            code = str(r.get("code") or "").strip()
+            if not code or code in seen:
+                continue
+            out.append({"code": code, "name": r.get("name")})
+            seen.add(code)
+            if len(out) >= n:
+                break
+
+        return {"items": out}
     except Exception:
         return {"items": []}
     finally:
         conn.close()
 
 
-def _get_conn_and_query() -> tuple[Any, Any]:
-    _ensure_charles_import_path()
-    try:
-        from charles_api.config import load_settings  # type: ignore
-        from charles_api.db import MySQLConfig, connect, query_dict  # type: ignore
-    except Exception:
-        return None, None
+def _sina_suggest(keyword: str, limit: int) -> list[dict[str, str]]:
+    k = str(keyword or "").strip()
+    n = max(1, min(int(limit or 0), 50))
+    if not k:
+        return []
 
-    settings = load_settings()
-    cfg = MySQLConfig(
-        host=settings.mysql_host,
-        port=settings.mysql_port,
-        user=settings.mysql_user,
-        password=settings.mysql_password,
-        database=settings.mysql_db,
+    url = (
+        "http://suggest3.sinajs.cn/suggest/type=11,12,13,14,15&key="
+        + urllib.parse.quote(k)
+        + "&name=suggestdata"
     )
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    raw = b""
+    with urllib.request.urlopen(req, timeout=1.5) as resp:
+        raw = resp.read() or b""
+
     try:
+        text = raw.decode("gbk", errors="ignore")
+    except Exception:
+        text = raw.decode("utf-8", errors="ignore")
+
+    m = re.search(r"\"(.*)\"", text)
+    payload = (m.group(1) if m else "").strip()
+    if not payload:
+        return []
+
+    seen: set[str] = set()
+    out: list[dict[str, str]] = []
+    for part in payload.split(";"):
+        fields = [x.strip() for x in (part or "").split(",")]
+        if len(fields) < 5:
+            continue
+        market = fields[3] or fields[0]
+        code6 = fields[2] or (market[-6:] if len(market) >= 6 else "")
+        name = fields[4] or ""
+        if not code6 or len(code6) != 6:
+            continue
+        full = None
+        if str(market).startswith("sh"):
+            full = f"{code6}.SH"
+        elif str(market).startswith("sz"):
+            full = f"{code6}.SZ"
+        if not full or full in seen:
+            continue
+        seen.add(full)
+        out.append({"code": full, "name": name})
+        if len(out) >= n:
+            break
+    return out
+
+
+def _upsert_stock_master(conn: Any, items: list[dict[str, str]]) -> None:
+    vals: list[tuple[str, str, str]] = []
+    for it in items:
+        code = str(it.get("code") or "").strip()
+        name = str(it.get("name") or "").strip()
+        if not code:
+            continue
+        vals.append((code, name, "sina"))
+    if not vals:
+        return
+    cur = conn.cursor()
+    try:
+        cur.executemany(
+            """
+            INSERT INTO trade_stock_master(stock_code, stock_name, source, updated_at)
+            VALUES (%s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE
+              stock_name=VALUES(stock_name),
+              source=VALUES(source),
+              updated_at=VALUES(updated_at)
+            """,
+            vals,
+        )
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+
+
+def _get_conn_and_query() -> tuple[Any, Any]:
+    try:
+        cfg = load_mysql_config()
         conn = connect(cfg)
     except Exception:
         return None, None

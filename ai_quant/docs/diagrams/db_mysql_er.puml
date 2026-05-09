@@ -1,0 +1,128 @@
+@startuml
+!include _style.puml
+
+title 数据库：MySQL 逻辑/物理模型（huahua_trade）
+
+hide circle
+skinparam linetype ortho
+
+entity "trade_stock_master" as stock_master <<DB>> {
+  * stock_code : varchar(16) <<PK>>
+  --
+  stock_name : varchar(128)
+  source : varchar(32)
+  updated_at : datetime
+}
+
+entity "trade_watchlist" as watchlist <<DB>> {
+  * stock_code : varchar(16) <<PK>>
+  --
+  created_at : datetime
+}
+
+entity "trade_stock_daily" as stock_daily <<DB>> {
+  * stock_code : varchar(16) <<PK>>
+  * trade_date : date <<PK>>
+  --
+  close_price : double
+  volume : bigint
+  rsi14 : double
+  ma20 : double
+  stock_name : varchar(128)
+  --
+  idx_trade_date(trade_date)
+}
+
+entity "trade_stock_financial" as stock_fin <<DB>> {
+  * stock_code : varchar(16) <<PK>>
+  * report_date : date <<PK>>
+  --
+  data_source : varchar(32)
+  payload_json : json
+  --
+  idx_report_date(report_date)
+}
+
+entity "trade_stock_news" as stock_news <<DB>> {
+  * stock_code : varchar(16) <<PK>>
+  * published_at : datetime <<PK>>
+  --
+  news_type : varchar(32)
+  title : varchar(255)
+  content : text
+  --
+  idx_published_at(published_at)
+}
+
+entity "trade_report_consensus" as report_consensus <<DB>> {
+  * stock_code : varchar(16) <<PK>>
+  * broker : varchar(128) <<PK>>
+  * report_date : date <<PK>>
+  --
+  rating : varchar(64)
+  target_price : double
+  --
+  idx_report_date(report_date)
+}
+
+entity "trade_stock_status" as stock_status <<DB>> {
+  * stock_code : varchar(16) <<PK>>
+  --
+  sector_1 : varchar(128)
+  sector_2 : varchar(128)
+  updated_at : datetime
+  --
+  idx_sector_1(sector_1)
+  idx_sector_2(sector_2)
+}
+
+entity "trade_sector_daily" as sector_daily <<DB>> {
+  * sector_name : varchar(128) <<PK>>
+  * sector_level : int <<PK>>
+  * trade_date : date <<PK>>
+  --
+  close_idx : double
+  total_amount : double
+  --
+  idx_trade_date(trade_date)
+}
+
+entity "trade_macro_indicator" as macro_indicator <<DB>> {
+  * indicator_date : date <<PK>>
+  * indicator_name : varchar(128) <<PK>>
+  --
+  indicator_value : double
+  source : varchar(32)
+}
+
+entity "trade_rate_daily" as rate_daily <<DB>> {
+  * rate_date : date <<PK>>
+  * rate_name : varchar(128) <<PK>>
+  --
+  rate_value : double
+}
+
+entity "trade_calendar_event" as calendar_event <<DB>> {
+  * event_date : date <<PK>>
+  * country : varchar(64) <<PK>>
+  * importance : varchar(32) <<PK>>
+  * source : varchar(32) <<PK>>
+  --
+  title : varchar(255)
+  payload_json : json
+  --
+  idx_event_date(event_date)
+}
+
+watchlist }o--|| stock_master : stock_code
+stock_daily }o--|| stock_master : stock_code
+stock_fin }o--|| stock_master : stock_code
+stock_news }o--|| stock_master : stock_code
+report_consensus }o--|| stock_master : stock_code
+stock_status }o--|| stock_master : stock_code
+
+note right of stock_master
+物理建表与索引定义见 docker/mysql/init.sql\n该 ER 图用于交底与评审，便于对齐 API 查询字段
+end note
+
+@enduml

@@ -1,0 +1,43 @@
+scalar DateTime
+
+enum ReportTaskStatus {
+  waiting
+  running
+  success
+  failed
+}
+
+type Stock {
+  code: String!
+  name: String
+}
+
+type ReportTask {
+  taskId: ID!
+  model: String!
+  stockCodes: [String!]!
+  stockNames: [String!]!
+  status: ReportTaskStatus!
+  createdAt: DateTime!
+  startedAt: DateTime
+  finishedAt: DateTime
+  errorMessage: String
+  reportMarkdown: String
+}
+
+input ReportTaskCreateInput {
+  model: String!
+  stockCodes: [String!]!
+}
+
+type Query {
+  health: Boolean!
+  stocks(q: String!, limit: Int = 20): [Stock!]!
+  reportTasks(limit: Int = 100, q: String = "", createdStart: String = "", createdEnd: String = ""): [ReportTask!]!
+  reportTask(taskId: ID!): ReportTask
+}
+
+type Mutation {
+  createReportTask(input: ReportTaskCreateInput!): ReportTask!
+  deleteReportTask(taskId: ID!): Boolean!
+}

@@ -1,0 +1,440 @@
+[2026-05-09 21:31:04] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=0
+[2026-05-09 21:31:04] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/e99983b5ff9a4f7fa8d240f84e81306b.md
+[2026-05-09 21:31:08] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1
+[2026-05-09 21:31:08] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/bb1be6deaee94daa8eb507f575fdcb75.md
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600501 stock_name=600501 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600502 stock_name=600502 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600503 stock_name=600503 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600504 stock_name=600504 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600505 stock_name=600505 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600506 stock_name=600506 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600507 stock_name=600507 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600508 stock_name=600508 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600509 stock_name=600509 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600510 stock_name=600510 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600511 stock_name=600511 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600512 stock_name=600512 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600513 stock_name=600513 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600514 stock_name=600514 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600515 stock_name=600515 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600516 stock_name=600516 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600517 stock_name=600517 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600518 stock_name=600518 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=0
+[2026-05-09 21:32:14] [reports] _generate_report_markdown enter model=qwen-max stock_code=600520 stock_name=600520 use_llm=0
+[2026-05-09 21:32:14] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/a512cf875d114d69b06fdbaf3fbe334b.md
+[2026-05-09 21:33:29] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=0
+[2026-05-09 21:33:29] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/32fd8f5f7ba047b3b831e6aa64c8e156.md
+[2026-05-09 21:33:33] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1
+[2026-05-09 21:33:33] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/0a3ba96b936a4366835e45a554eb2fa9.md
+[2026-05-09 21:34:19] [reports] _generate_report_markdown enter model=qwen-max stock_code=600501 stock_name=600501 use_llm=0
+[2026-05-09 21:34:19] [reports] _generate_report_markdown enter model=qwen-max stock_code=600502 stock_name=600502 use_llm=0
+[2026-05-09 21:34:19] [reports] _generate_report_markdown enter model=qwen-max stock_code=600503 stock_name=600503 use_llm=0
+[2026-05-09 21:34:19] [reports] _generate_report_markdown enter model=qwen-max stock_code=600504 stock_name=600504 use_llm=0
+[2026-05-09 21:34:19] [reports] _generate_report_markdown enter model=qwen-max stock_code=600505 stock_name=600505 use_llm=0
+[2026-05-09 21:34:19] [reports] _generate_report_markdown enter model=qwen-max stock_code=600506 stock_name=600506 use_llm=0
+[2026-05-09 21:34:19] [reports] _generate_report_markdown enter model=qwen-max stock_code=600507 stock_name=600507 use_llm=0
+[2026-05-09 21:34:19] [reports] _generate_report_markdown enter model=qwen-max stock_code=600508 stock_name=600508 use_llm=0
+[2026-05-09 21:34:20] [reports] _generate_report_markdown enter model=qwen-max stock_code=600509 stock_name=600509 use_llm=0
+[2026-05-09 21:34:20] [reports] _generate_report_markdown enter model=qwen-max stock_code=600510 stock_name=600510 use_llm=0
+[2026-05-09 21:34:20] [reports] _generate_report_markdown enter model=qwen-max stock_code=600511 stock_name=600511 use_llm=0
+[2026-05-09 21:34:20] [reports] _generate_report_markdown enter model=qwen-max stock_code=600512 stock_name=600512 use_llm=0
+[2026-05-09 21:34:20] [reports] _generate_report_markdown enter model=qwen-max stock_code=600513 stock_name=600513 use_llm=0
+[2026-05-09 21:34:20] [reports] _generate_report_markdown enter model=qwen-max stock_code=600514 stock_name=600514 use_llm=0
+[2026-05-09 21:34:20] [reports] _generate_report_markdown enter model=qwen-max stock_code=600515 stock_name=600515 use_llm=0
+[2026-05-09 21:34:20] [reports] _generate_report_markdown enter model=qwen-max stock_code=600516 stock_name=600516 use_llm=0
+[2026-05-09 21:34:21] [reports] _generate_report_markdown enter model=qwen-max stock_code=600517 stock_name=600517 use_llm=0
+[2026-05-09 21:34:21] [reports] _generate_report_markdown enter model=qwen-max stock_code=600518 stock_name=600518 use_llm=0
+[2026-05-09 21:34:21] [reports] _generate_report_markdown enter model=qwen-max stock_code=600519 stock_name=600519 use_llm=0
+[2026-05-09 21:34:21] [reports] _generate_report_markdown enter model=qwen-max stock_code=600520 stock_name=600520 use_llm=0
+[2026-05-09 21:34:21] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/f6fd36a40a364ef1b29fec4c8e74e5cb.md
+[2026-05-09 21:58:51] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/2aeb0ac0b6c646f39e994595e35a1e60.md
+[2026-05-09 21:58:54] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1
+[2026-05-09 21:58:54] [reports] task_failed task_id=b4bbf8a26da44679ab601119b34f999c case scripts not found: /Users/apple/Desktop/ai_huahua/ai_quant/CASE-智能研报生成/skills/write-report/scripts
+[2026-05-09 21:58:54] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 317, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 238, in _generate_report_markdown
+    raise RuntimeError(f"case scripts not found: {scripts_dir}")
+RuntimeError: case scripts not found: /Users/apple/Desktop/ai_huahua/ai_quant/CASE-智能研报生成/skills/write-report/scripts
+
+[2026-05-09 22:00:01] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/9c7affcfa9254a42800191101ecaf99b.md
+[2026-05-09 22:00:04] [reports] task_failed task_id=67c29f5dcc274de98aa57a499fcd9952 boom
+[2026-05-09 22:00:04] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 317, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 118, in flappy
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 22:00:04] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/67c29f5dcc274de98aa57a499fcd9952.md
+[2026-05-09 22:00:40] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/1ec1c20d855f4d4183ac81705c057488.md
+[2026-05-09 22:00:44] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1
+[2026-05-09 22:00:44] [reports] task_failed task_id=51a1c48a1bc340f3a7ff9c01d6c388a3 case scripts not found: /Users/apple/Desktop/ai_huahua/ai_quant/CASE-智能研报生成/skills/write-report/scripts
+[2026-05-09 22:00:44] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 317, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 238, in _generate_report_markdown
+    raise RuntimeError(f"case scripts not found: {scripts_dir}")
+RuntimeError: case scripts not found: /Users/apple/Desktop/ai_huahua/ai_quant/CASE-智能研报生成/skills/write-report/scripts
+
+[2026-05-09 22:01:52] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/845021d2a5264e308d6a954b60dfaee9.md
+[2026-05-09 22:01:55] [reports] task_failed task_id=8dfaef0aaad94676b54b2d160ae2f454 boom
+[2026-05-09 22:01:55] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 317, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 119, in flappy
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 22:01:55] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/8dfaef0aaad94676b54b2d160ae2f454.md
+[2026-05-09 22:12:49] [reports] _generate_report_markdown enter model=qwen-max stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-09 22:12:49] [reports] task_failed task_id=202e91f9204f4fc386c14b05097e2548 case scripts not found: /Users/apple/Desktop/ai_huahua/ai_quant/CASE-智能研报生成/skills/write-report/scripts
+[2026-05-09 22:12:49] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 317, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 238, in _generate_report_markdown
+    raise RuntimeError(f"case scripts not found: {scripts_dir}")
+RuntimeError: case scripts not found: /Users/apple/Desktop/ai_huahua/ai_quant/CASE-智能研报生成/skills/write-report/scripts
+
+[2026-05-09 22:20:19] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/119d8f126e0e4d66bc34fe8687d40f29.md
+[2026-05-09 22:20:23] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1
+[2026-05-09 22:20:23] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 22:20:56] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/438833105cd746658b8da60a3321cfd6.md
+[2026-05-09 22:21:32] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/09389e3f50c2469ca0089ed71cfc8b33.md
+[2026-05-09 22:21:36] [reports] task_failed task_id=e58ad51fd8984a6aad3c1c75faa3403b boom
+[2026-05-09 22:21:36] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 404, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 119, in flappy
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 22:21:36] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/e58ad51fd8984a6aad3c1c75faa3403b.md
+[2026-05-09 22:24:08] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/47252f4e1ba54cd099d2e16c86bbfb56.md
+[2026-05-09 22:24:12] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1
+[2026-05-09 22:24:13] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 22:24:13] [reports] task_failed task_id=93905f9844bb401a9375b14f4c9173c8 missing env: DASHSCOPE_API_KEY
+[2026-05-09 22:24:13] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 411, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 388, in _generate_report_markdown
+    text = _dashscope_generate(model_name=model_name, api_key=api_key, system_prompt=system_prompt, user_prompt=user_prompt)
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 53, in <lambda>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 53, in <genexpr>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+RuntimeError: missing env: DASHSCOPE_API_KEY
+
+[2026-05-09 22:25:22] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/529e54fa21f349cdaabc26e56ee8e306.md
+[2026-05-09 22:25:25] [reports] task_failed task_id=4d46741943064ac89c8b0c590d7e0f97 boom
+[2026-05-09 22:25:25] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 411, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 120, in flappy
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 22:25:25] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/4d46741943064ac89c8b0c590d7e0f97.md
+[2026-05-09 22:26:26] [reports] _generate_report_markdown enter model=qwen-max stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-09 22:26:27] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 22:27:26] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/33f1c471a3a34d3b827f59531173d49a.md
+[2026-05-09 22:28:37] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/e77e6fc0936f499aad9073e8bbe9d98e.md
+[2026-05-09 22:28:41] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1
+[2026-05-09 22:28:41] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 22:28:41] [reports] task_failed task_id=9701f4a295a9412b89ac0ba5f8a7cb5c missing env: DASHSCOPE_API_KEY
+[2026-05-09 22:28:41] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 437, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 414, in _generate_report_markdown
+    text = _dashscope_generate(model_name=model_name, api_key=api_key, system_prompt=system_prompt, user_prompt=user_prompt)
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 53, in <lambda>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 53, in <genexpr>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+RuntimeError: missing env: DASHSCOPE_API_KEY
+
+[2026-05-09 22:29:51] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/e14e84972e3643ddb7e4c66af2d8725b.md
+[2026-05-09 22:29:54] [reports] task_failed task_id=9ff13d828cdf46478d81059522e249a9 boom
+[2026-05-09 22:29:54] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 437, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 120, in flappy
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 22:29:54] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/9ff13d828cdf46478d81059522e249a9.md
+[2026-05-09 22:45:53] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/95ffd0a294444dacbea0343efbf1d16c.md
+[2026-05-09 22:45:57] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1
+[2026-05-09 22:45:57] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 22:45:57] [reports] task_failed task_id=ced8b34a32e64c9c8846f9004193c0c5 missing env: DASHSCOPE_API_KEY
+[2026-05-09 22:45:57] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 437, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 414, in _generate_report_markdown
+    text = _dashscope_generate(model_name=model_name, api_key=api_key, system_prompt=system_prompt, user_prompt=user_prompt)
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 57, in <lambda>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 57, in <genexpr>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+RuntimeError: missing env: DASHSCOPE_API_KEY
+
+[2026-05-09 22:47:03] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/f8c5cdb6441a4835b35afc2c45a33716.md
+[2026-05-09 22:47:06] [reports] task_failed task_id=d3ec275acc5247e1942a84664ac89c77 boom
+[2026-05-09 22:47:06] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 437, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 128, in flappy
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 22:47:06] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/d3ec275acc5247e1942a84664ac89c77.md
+[2026-05-09 22:50:56] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/202e91f9204f4fc386c14b05097e2548.md
+[2026-05-09 22:59:30] [reports] _generate_report_markdown enter model=qwen-max stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-09 22:59:30] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 23:00:46] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/202e91f9204f4fc386c14b05097e2548.md
+[2026-05-09 23:11:30] [reports] _generate_report_markdown enter model=qwen-max stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-09 23:11:30] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 23:12:31] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/1b27d182cd1b4a509dd18caab98b589c.md
+[2026-05-09 23:14:33] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-09 23:14:33] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 23:14:55] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/8dfaef0aaad94676b54b2d160ae2f454.md
+[2026-05-09 23:18:10] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=True
+[2026-05-09 23:18:10] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 23:18:30] [reports] report_saved file=/Users/apple/Desktop/ai_huahua/ai_quant/.ai_quant/report_outputs/f69a4ee246aa4a639d8efa830f460fd3.md
+[2026-05-09 23:35:43] [reports] task_failed task_id=5ccdcc768a8a4348a3d3434c51341695 test_reports_can_disable_rag_per_task.<locals>.gen() missing 1 required positional argument: 'use_rag'
+[2026-05-09 23:35:43] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 509, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name))
+TypeError: test_reports_can_disable_rag_per_task.<locals>.gen() missing 1 required positional argument: 'use_rag'
+
+[2026-05-09 23:37:53] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-6/test_reports_can_disable_rag_p0/out/4c37ef1075d546aea47eed6f24ca442f.md
+[2026-05-09 23:38:09] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-7/test_reports_saves_markdown_to0/out/4151d3843b9a4313a354f4f67bc3d277.md
+[2026-05-09 23:38:25] [reports] task_failed task_id=4c3aa99b388b4bad872d680217222cdb boom
+[2026-05-09 23:38:25] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 252, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 23:38:45] [reports] task_failed task_id=8458edcc661349189adcda01193a369c test_reports_task_crud_and_view.<locals>.<lambda>() got an unexpected keyword argument 'use_rag'
+[2026-05-09 23:38:45] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+TypeError: test_reports_task_crud_and_view.<locals>.<lambda>() got an unexpected keyword argument 'use_rag'
+
+[2026-05-09 23:38:50] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1 use_rag=True
+[2026-05-09 23:38:50] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 23:38:50] [reports] task_failed task_id=fcf842ede01f40cc8cf2c1f97875b614 missing env: DASHSCOPE_API_KEY
+[2026-05-09 23:38:50] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 473, in _generate_report_markdown
+    text = _dashscope_generate(model_name=model_name, api_key=api_key, system_prompt=system_prompt, user_prompt=user_prompt)
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 57, in <lambda>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 57, in <genexpr>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+RuntimeError: missing env: DASHSCOPE_API_KEY
+
+[2026-05-09 23:39:57] [reports] task_failed task_id=1e2248ea370b432ebf3d982cb9baa945 test_reports_minmax_many_stocks.<locals>.<lambda>() got an unexpected keyword argument 'use_rag'
+[2026-05-09 23:39:57] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+TypeError: test_reports_minmax_many_stocks.<locals>.<lambda>() got an unexpected keyword argument 'use_rag'
+
+[2026-05-09 23:40:04] [reports] task_failed task_id=12f3078bc8cd4356b78033a324a3026b test_reports_retry_failed_then_success.<locals>.flappy() got an unexpected keyword argument 'use_rag'
+[2026-05-09 23:40:04] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+TypeError: test_reports_retry_failed_then_success.<locals>.flappy() got an unexpected keyword argument 'use_rag'
+
+[2026-05-09 23:40:04] [reports] task_failed task_id=12f3078bc8cd4356b78033a324a3026b test_reports_retry_failed_then_success.<locals>.flappy() got an unexpected keyword argument 'use_rag'
+[2026-05-09 23:40:04] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+TypeError: test_reports_retry_failed_then_success.<locals>.flappy() got an unexpected keyword argument 'use_rag'
+
+[2026-05-09 23:40:09] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-9/test_reports_can_disable_rag_p0/out/db09124055824677b8974d79ca384557.md
+[2026-05-09 23:40:13] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-9/test_reports_saves_markdown_to0/out/63dd1d1857a04e269cfd90c8cb6f2c25.md
+[2026-05-09 23:40:17] [reports] task_failed task_id=e4858cad271b4adb8cf63f1708d25ec9 boom
+[2026-05-09 23:40:17] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 252, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 23:40:55] [reports] task_failed task_id=c65a78b347dc40039a28b9434fbffff5 [Errno 1] Operation not permitted: '/Users/apple/Documents/quant'
+[2026-05-09 23:40:55] Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1175, in mkdir
+    self._accessor.mkdir(self, mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/apple/Documents/quant/REPORT'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 517, in _process_task
+    out_dir.mkdir(parents=True, exist_ok=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1179, in mkdir
+    self.parent.mkdir(parents=True, exist_ok=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1175, in mkdir
+    self._accessor.mkdir(self, mode)
+PermissionError: [Errno 1] Operation not permitted: '/Users/apple/Documents/quant'
+
+[2026-05-09 23:41:00] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1 use_rag=True
+[2026-05-09 23:41:01] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 23:41:01] [reports] task_failed task_id=c9758c87dbc14ae296a0297a6d99b347 missing env: DASHSCOPE_API_KEY
+[2026-05-09 23:41:01] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 473, in _generate_report_markdown
+    text = _dashscope_generate(model_name=model_name, api_key=api_key, system_prompt=system_prompt, user_prompt=user_prompt)
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 57, in <lambda>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 57, in <genexpr>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+RuntimeError: missing env: DASHSCOPE_API_KEY
+
+[2026-05-09 23:41:13] [reports] task_failed task_id=3dd291c970f3487c9e473f24b5dae284 [Errno 1] Operation not permitted: '/Users/apple/Documents/quant'
+[2026-05-09 23:41:13] Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1175, in mkdir
+    self._accessor.mkdir(self, mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/apple/Documents/quant/REPORT'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 517, in _process_task
+    out_dir.mkdir(parents=True, exist_ok=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1179, in mkdir
+    self.parent.mkdir(parents=True, exist_ok=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1175, in mkdir
+    self._accessor.mkdir(self, mode)
+PermissionError: [Errno 1] Operation not permitted: '/Users/apple/Documents/quant'
+
+[2026-05-09 23:41:19] [reports] task_failed task_id=6be000ec889145d585d208ab17b98250 boom
+[2026-05-09 23:41:19] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 128, in flappy
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 23:41:19] [reports] task_failed task_id=6be000ec889145d585d208ab17b98250 [Errno 1] Operation not permitted: '/Users/apple/Documents/quant'
+[2026-05-09 23:41:19] Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1175, in mkdir
+    self._accessor.mkdir(self, mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/apple/Documents/quant/REPORT'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 517, in _process_task
+    out_dir.mkdir(parents=True, exist_ok=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1179, in mkdir
+    self.parent.mkdir(parents=True, exist_ok=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1175, in mkdir
+    self._accessor.mkdir(self, mode)
+PermissionError: [Errno 1] Operation not permitted: '/Users/apple/Documents/quant'
+
+[2026-05-09 23:41:24] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-10/test_reports_can_disable_rag_p0/out/38c45c9bf16f4fd0a45f0d05424a6701.md
+[2026-05-09 23:41:27] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-10/test_reports_saves_markdown_to0/out/803347c0d82c4628940e1aab1d583a73.md
+[2026-05-09 23:41:31] [reports] task_failed task_id=7245f561c95342838154528975a45028 boom
+[2026-05-09 23:41:31] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 252, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 23:42:14] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-11/test_reports_task_crud_and_vie0/out/6b205b734b9a474a98ed467d06227d55.md
+[2026-05-09 23:42:18] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1 use_rag=True
+[2026-05-09 23:42:18] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 23:42:18] [reports] task_failed task_id=6bb2a4971a43406688d3f5e7c6792ff8 missing env: DASHSCOPE_API_KEY
+[2026-05-09 23:42:18] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 473, in _generate_report_markdown
+    text = _dashscope_generate(model_name=model_name, api_key=api_key, system_prompt=system_prompt, user_prompt=user_prompt)
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 58, in <lambda>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 58, in <genexpr>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+RuntimeError: missing env: DASHSCOPE_API_KEY
+
+[2026-05-09 23:43:25] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-11/test_reports_minmax_many_stock0/out/05641bfcec364f1cba6b0d501dde2890.md
+[2026-05-09 23:43:29] [reports] task_failed task_id=43e22c9939e54f10b22f4edc8cee83dd boom
+[2026-05-09 23:43:29] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 131, in flappy
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 23:43:29] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-11/test_reports_retry_failed_then0/out/43e22c9939e54f10b22f4edc8cee83dd.md
+[2026-05-09 23:43:32] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-11/test_reports_can_disable_rag_p0/out/f2b16d03faa442558477613f2ae14764.md
+[2026-05-09 23:43:36] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-11/test_reports_saves_markdown_to0/out/bb3a148211104c3bb5922aea2ad9b9ae.md
+[2026-05-09 23:43:39] [reports] task_failed task_id=5e22d101f485402ab49037ee9288f574 boom
+[2026-05-09 23:43:39] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 255, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 23:52:12] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-12/test_reports_task_crud_and_vie0/out/d2fe799e2d144dc8be3352b8338b0b33.md
+[2026-05-09 23:52:15] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=1 use_rag=True
+[2026-05-09 23:52:15] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-09 23:52:15] [reports] task_failed task_id=947d177ae6d7406a9175ec368e2aae03 missing env: DASHSCOPE_API_KEY
+[2026-05-09 23:52:15] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 473, in _generate_report_markdown
+    text = _dashscope_generate(model_name=model_name, api_key=api_key, system_prompt=system_prompt, user_prompt=user_prompt)
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 60, in <lambda>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 60, in <genexpr>
+    monkeypatch.setattr(reports_api, "_dashscope_generate", lambda **_: (_ for _ in ()).throw(RuntimeError("missing env: DASHSCOPE_API_KEY")))
+RuntimeError: missing env: DASHSCOPE_API_KEY
+
+[2026-05-09 23:53:22] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-12/test_reports_minmax_many_stock0/out/08866ab66a5648039f8a0f1f0b886d70.md
+[2026-05-09 23:53:25] [reports] task_failed task_id=0d9278137da442fd9f0247ff51fe1a60 boom
+[2026-05-09 23:53:25] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 135, in flappy
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-09 23:53:25] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-12/test_reports_retry_failed_then0/out/0d9278137da442fd9f0247ff51fe1a60.md
+[2026-05-09 23:53:29] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-12/test_reports_can_disable_rag_p0/out/8b767db1b31840ebbd69d5c12fda5bce.md
+[2026-05-09 23:53:32] [reports] report_saved file=/private/var/folders/h9/nzg_d6bx39j6w7s7y80_xfs80000gp/T/pytest-of-apple/pytest-12/test_reports_saves_markdown_to0/out/6b1d97e190a449e297414782920a0722.md
+[2026-05-09 23:53:35] [reports] task_failed task_id=efcaa247fe0e4c8e9a64557377e61376 boom
+[2026-05-09 23:53:35] Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 512, in _process_task
+    parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/tests/test_reports_api.py", line 262, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+
+[2026-05-10 00:16:08] [reports] _generate_report_markdown enter model=deepseek stock_code=002410.SZ stock_name=002410.SZ use_llm=True use_rag=False
+[2026-05-10 00:16:08] [reports] mysql snapshot failed (1146, "Table 'huahua_trade.trade_stock_financial' doesn't exist")
+[2026-05-10 00:16:34] [reports] task_failed task_id=f4a5e63e2fd3429bb89e5a19a80b216c [Errno 1] Operation not permitted: '/Users/apple/Documents/quant'
+[2026-05-10 00:16:34] Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1175, in mkdir
+    self._accessor.mkdir(self, mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/apple/Documents/quant/REPORT'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/apple/Desktop/ai_huahua/ai_quant/backend/ai_quant_api/api/reports.py", line 517, in _process_task
+    out_dir.mkdir(parents=True, exist_ok=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1179, in mkdir
+    self.parent.mkdir(parents=True, exist_ok=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/pathlib.py", line 1175, in mkdir
+    self._accessor.mkdir(self, mode)
+PermissionError: [Errno 1] Operation not permitted: '/Users/apple/Documents/quant'
+

@@ -100,7 +100,7 @@ export default function Sentiment() {
 
   useEffect(() => {
     loadEvents(latestRun?.run_id)
-  }, [latestRun?.run_id, filterQ, filterEventType])
+  }, [latestRun?.run_id, latestRun?.status, latestRun?.finished_at, filterQ, filterEventType])
 
   useEffect(() => {
     let alive = true
@@ -442,7 +442,7 @@ export default function Sentiment() {
                     {events.length === 0 ? (
                       <tr>
                         <td className="px-3 py-6 text-sm text-zinc-500" colSpan={11}>
-                          暂无事件
+                          暂无舆情数据
                         </td>
                       </tr>
                     ) : (

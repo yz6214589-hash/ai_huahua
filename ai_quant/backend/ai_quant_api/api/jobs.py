@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from ai_quant_api.services.charles.integration import list_job_runs
+from ai_quant_api.services.charles.integration import list_job_runs, write_job_run
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -44,7 +44,48 @@ def _validate_cron(expr: str) -> None:
 
 @router.get("/runs")
 def list_runs(limit: int = 10, domain: str | None = None) -> dict[str, object]:
-    return {"runs": list_job_runs(domain=domain, limit=limit)}
+    runs = list_job_runs(domain=domain, limit=limit)
+    timeout_s = 900
+    try:
+        timeout_s = max(30, int(str(__import__("os").getenv("AI_QUANT_JOB_RUN_TIMEOUT_SECONDS", "900")).strip() or "900"))
+    except Exception:
+        timeout_s = 900
+
+    now = datetime.now()
+    out: list[dict[str, Any]] = []
+    for r in runs:
+        it = dict(r or {})
+        status = str(it.get("status") or "")
+        started = str(it.get("startedAt") or "").strip()
+        finished = str(it.get("finishedAt") or "").strip()
+        if status == "running" and started and not finished:
+            try:
+                started_dt = datetime.fromisoformat(started[:19])
+            except Exception:
+                started_dt = None
+            if started_dt is not None:
+                age = (now - started_dt).total_seconds()
+                if age > timeout_s:
+                    it["status"] = "failed"
+                    if not str(it.get("message") or "").strip():
+                        it["message"] = "任务长时间未更新，已标记为失败"
+                    if not str(it.get("userMessage") or "").strip():
+                        it["userMessage"] = "任务长时间未更新，已标记为失败"
+                    it["finishedAt"] = _now_iso()
+        out.append(it)
+    return {"runs": out}
+
+
+@router.post("/runs")
+def write_run(body: dict[str, Any]) -> dict[str, Any]:
+    domain = str(body.get("domain") or "").strip()
+    if domain not in _KNOWN_JOB_DOMAINS:
+        raise HTTPException(status_code=400, detail="unknown domain")
+    try:
+        run = write_job_run(domain=domain, payload=body)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"run": run}
 
 
 @router.get("/schedules")
