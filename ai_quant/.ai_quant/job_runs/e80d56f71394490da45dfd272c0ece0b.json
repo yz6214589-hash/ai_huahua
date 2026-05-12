@@ -1,0 +1,1 @@
+{"runId": "e80d56f71394490da45dfd272c0ece0b", "domain": "stock_daily", "startedAt": "2026-05-10T21:40:55", "finishedAt": "2026-05-10T21:41:06", "status": "success", "dataSourceFinal": "akshare", "fallbackChain": ["akshare"], "rowsWritten": 0, "itemsProcessed": 1, "failedItems": [], "message": null, "userMessage": null}

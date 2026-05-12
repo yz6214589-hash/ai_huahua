@@ -1,0 +1,6 @@
+[2026-05-11 14:12:02] [test_levels] [INFO] INFO 消息
+[2026-05-11 14:12:02] [test_levels] [WARNING] WARNING 消息
+[2026-05-11 14:12:02] [test_levels] [ERROR] ERROR 消息
+[2026-05-11 14:12:59] [test_levels] [INFO] INFO 消息
+[2026-05-11 14:12:59] [test_levels] [WARNING] WARNING 消息
+[2026-05-11 14:12:59] [test_levels] [ERROR] ERROR 消息

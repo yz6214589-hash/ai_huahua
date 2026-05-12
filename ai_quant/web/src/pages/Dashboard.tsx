@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchJson } from '@/api/client'
 import type { ConsoleOverview } from '@/api/types'
 import { Card, CardBody, CardHeader } from '@/components/Card'
-import { DataSourceBadge, JobStatusBadge } from '@/components/StatusBadge'
-import { ArrowRight, RefreshCcw } from 'lucide-react'
+import { RefreshCcw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 function formatDate(v: unknown) {
@@ -45,17 +44,6 @@ export default function Dashboard() {
     ]
   }, [overview])
 
-  const runs = overview?.recent_jobs || []
-  const executionStatus = overview?.execution_status
-  const riskStatus = overview?.risk_status
-  const morning = overview?.morning
-  const emptyData = useMemo(() => {
-    const s = overview?.data_latest
-    if (!s) return false
-    const cnts = [s.trade_stock_daily.count, s.trade_stock_financial.count, s.trade_stock_news.count, s.trade_calendar_event.count]
-    return runs.length === 0 && cnts.every((x) => Number(x || 0) <= 0)
-  }, [overview, runs.length])
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -74,21 +62,6 @@ export default function Dashboard() {
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>
       ) : null}
 
-      {emptyData ? (
-        <Card>
-          <CardHeader title="新手引导" />
-          <CardBody className="space-y-2 text-sm text-zinc-700">
-            <div>1. 前往任务页运行采集任务，生成基础行情/财务/新闻数据</div>
-            <div>
-              2. 前往数据页确认数据入库与查询：<Link to="/data" className="text-zinc-900 underline">数据与交付</Link>
-            </div>
-            <div>
-              3. 前往研报页生成智能研报：<Link to="/reports" className="text-zinc-900 underline">智能研报</Link>
-            </div>
-          </CardBody>
-        </Card>
-      ) : null}
-
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {kpis.map((k) => (
           <Card key={k.label}>
@@ -101,70 +74,42 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader
-            title="最近任务运行"
-            right={
-              <Link to="/jobs" className="inline-flex items-center gap-1 text-xs text-zinc-600 hover:text-zinc-900">
-                查看全部 <ArrowRight className="h-3 w-3" />
-              </Link>
-            }
-          />
-          <CardBody className="p-0">
-            <div className="max-h-[420px] overflow-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 bg-white">
-                  <tr className="border-b border-zinc-100 text-xs text-zinc-500">
-                    <th className="px-4 py-2">domain</th>
-                    <th className="px-4 py-2">status</th>
-                    <th className="px-4 py-2">source</th>
-                    <th className="px-4 py-2">rows</th>
-                    <th className="px-4 py-2">started</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {runs.length === 0 ? (
-                    <tr>
-                      <td className="px-4 py-6 text-sm text-zinc-500" colSpan={5}>
-                        暂无运行记录
-                      </td>
-                    </tr>
-                  ) : (
-                    runs.map((r) => (
-                      <tr key={r.runId} className="border-b border-zinc-50">
-                        <td className="px-4 py-2 font-medium text-zinc-900">{r.domain}</td>
-                        <td className="px-4 py-2">
-                          <JobStatusBadge status={r.status} />
-                        </td>
-                        <td className="px-4 py-2">
-                          <DataSourceBadge source={r.dataSourceFinal} />
-                        </td>
-                        <td className="px-4 py-2 text-zinc-700">{r.rowsWritten.toLocaleString()}</td>
-                        <td className="px-4 py-2 text-xs text-zinc-500">{formatDate(r.startedAt)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader title="跨模块状态总览" />
-          <CardBody>
-            <div className="space-y-2 text-sm text-zinc-700">
-              <div>执行状态：{executionStatus?.status || 'unknown'}</div>
-              <div>执行能力：{(executionStatus?.features || []).join(' / ') || '—'}</div>
-              <div>风控状态：{String(riskStatus?.status || 'unknown')}</div>
-              <div>风控能力：{Array.isArray(riskStatus?.features) ? riskStatus.features.join(' / ') : '—'}</div>
-              <div>晨会运行次数：{morning?.run_count ?? 0}</div>
-              <div>最近晨会时间：{formatDate(morning?.last_run?.created_at)}</div>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader title="使用说明" />
+        <CardBody className="space-y-3 text-sm text-zinc-700">
+          <div className="text-zinc-900">
+            这是一个面向量化研究与交易执行的统一前端入口。你可以从左侧导航进入不同模块，在每个模块内完成数据获取、分析与执行。
+          </div>
+          <div className="space-y-2">
+            <div className="font-semibold text-zinc-900">推荐流程</div>
+            <ol className="list-decimal space-y-1 pl-5">
+              <li>
+                先跑采集任务，确保基础数据齐全：<Link to="/jobs" className="text-zinc-900 underline">采集任务</Link>
+              </li>
+              <li>
+                在数据页验证入库与查询：<Link to="/data" className="text-zinc-900 underline">数据与交付</Link>
+              </li>
+              <li>
+                结合研报与舆情形成观点：<Link to="/reports" className="text-zinc-900 underline">智能研报</Link>、{' '}
+                <Link to="/sentiment" className="text-zinc-900 underline">舆情监控</Link>
+              </li>
+              <li>
+                进入策略与风控，再执行交易：<Link to="/strategy" className="text-zinc-900 underline">策略分析</Link>、{' '}
+                <Link to="/risk" className="text-zinc-900 underline">风控中心</Link>、{' '}
+                <Link to="/execution" className="text-zinc-900 underline">交易终端</Link>
+              </li>
+            </ol>
+          </div>
+          <div className="space-y-2">
+            <div className="font-semibold text-zinc-900">常用操作</div>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>顶部搜索框可输入股票代码/名称进行跳转与筛选。</li>
+              <li>页面内股票下拉搜索支持单选/多选与滚动加载。</li>
+              <li>右下角“AI 投资助手”用于快速问答与辅助分析。</li>
+            </ul>
+          </div>
+        </CardBody>
+      </Card>
     </div>
   )
 }

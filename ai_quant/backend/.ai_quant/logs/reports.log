@@ -1,0 +1,6 @@
+[2026-05-11 14:13:58] [reports] [INFO] reports 模块日志测试
+[2026-05-11 14:50:26] [reports] [INFO] 任务创建
+[2026-05-11 14:50:26] [reports] [WARNING] LLM 未启用
+[2026-05-11 14:50:26] [reports] [ERROR] 任务执行失败
+[2026-05-11 15:59:00] [reports] [INFO] reports 模块日志测试
+[2026-05-11 15:59:26] [reports] [INFO] reports 模块日志测试

@@ -1,10 +1,10 @@
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { cn } from '@/lib/utils'
-import { useEffect, useMemo, useState } from 'react'
+import { StockPicker } from '@/components/StockPicker'
+import { useEffect, useState } from 'react'
 import { fetchJson } from '@/api/client'
 import type { AnalysisSignalsResponse, AnalysisStocksSampleResponse, StockSearchItem } from '@/api/types'
-import { Plus, RefreshCcw, Search } from 'lucide-react'
+import { RefreshCcw } from 'lucide-react'
 
 type StrategyStatus = {
   source: string
@@ -15,9 +15,6 @@ type StrategyStatus = {
 export default function Strategy() {
   const [data, setData] = useState<StrategyStatus | null>(null)
   const [sampleCodes, setSampleCodes] = useState<string[]>([])
-  const [stockQuery, setStockQuery] = useState('')
-  const [stockResults, setStockResults] = useState<StockSearchItem[]>([])
-  const [stockSearching, setStockSearching] = useState(false)
   const [selected, setSelected] = useState<StockSearchItem | null>(null)
   const [start, setStart] = useState(() => {
     const d = new Date()
@@ -35,49 +32,11 @@ export default function Strategy() {
       .catch(() => setData(null))
   }, [])
 
-  const selectedCode = selected?.code || ''
-  const selectedName = selected?.name || ''
-
-  const selectedLabel = useMemo(() => {
-    if (!selected) return '未选择'
-    return `${selected.code}${selected.name ? ` ${selected.name}` : ''}`
-  }, [selected])
-
   useEffect(() => {
     fetchJson<AnalysisStocksSampleResponse>('/api/analysis/stocks/sample?limit=50')
       .then((r) => setSampleCodes(r.codes || []))
       .catch(() => setSampleCodes([]))
   }, [])
-
-  useEffect(() => {
-    let alive = true
-    const t = window.setTimeout(async () => {
-      const v = stockQuery.trim()
-      if (!v) {
-        setStockResults([])
-        setStockSearching(false)
-        return
-      }
-      const ctrl = new AbortController()
-      const tt = window.setTimeout(() => ctrl.abort(), 5000)
-      try {
-        setStockSearching(true)
-        const r = await fetchJson<{ items: StockSearchItem[] }>(`/api/stocks?q=${encodeURIComponent(v)}&limit=20`, { signal: ctrl.signal })
-        if (!alive) return
-        setStockResults(r.items || [])
-      } catch {
-        if (!alive) return
-        setStockResults([])
-      } finally {
-        window.clearTimeout(tt)
-        if (alive) setStockSearching(false)
-      }
-    }, 200)
-    return () => {
-      alive = false
-      window.clearTimeout(t)
-    }
-  }, [stockQuery])
 
   const loadSignals = async () => {
     const code = selected?.code?.trim()
@@ -127,7 +86,9 @@ export default function Strategy() {
             <div className="rounded-lg border border-zinc-200 bg-white p-3">
               <div className="text-xs text-zinc-500">当前选择</div>
               <div className="mt-1 flex items-center justify-between gap-2">
-                <div className="min-w-0 truncate text-sm font-semibold text-zinc-900">{selectedLabel}</div>
+                <div className="min-w-0 truncate text-sm font-semibold text-zinc-900">
+                  {selected ? `${selected.code}${selected.name ? ` ${selected.name}` : ''}` : '未选择'}
+                </div>
                 <button
                   type="button"
                   onClick={() => setSelected(null)}
@@ -140,42 +101,14 @@ export default function Strategy() {
 
             <div>
               <div className="text-xs text-zinc-500">选择股票</div>
-              <div className="relative mt-1">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
-                <input
-                  value={stockQuery}
-                  onChange={(e) => setStockQuery(e.target.value)}
-                  placeholder="搜索股票代码/名称"
-                  className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none transition focus:border-zinc-400"
-                />
-              </div>
-
-              {stockResults.length > 0 ? (
-                <div className="mt-2 space-y-2">
-                  {stockResults.map((it) => (
-                    <div key={it.code} className="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-zinc-900">{it.code}</div>
-                        <div className="truncate text-xs text-zinc-500">{it.name || '—'}</div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelected(it)
-                          setStockQuery('')
-                          setStockResults([])
-                        }}
-                        className={cn('inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50')}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        选择
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : stockSearching ? (
-                <div className="mt-2 text-xs text-zinc-500">搜索中…</div>
-              ) : sampleCodes.length > 0 && !selected ? (
+              <StockPicker
+                mode="single"
+                value={selected}
+                onChange={(v) => setSelected((v as StockSearchItem) || null)}
+                placeholder="搜索股票代码或名称"
+                className="mt-1"
+              />
+              {sampleCodes.length > 0 && !selected ? (
                 <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-3">
                   <div className="text-xs text-zinc-500">示例代码</div>
                   <div className="mt-2 flex flex-wrap gap-2">

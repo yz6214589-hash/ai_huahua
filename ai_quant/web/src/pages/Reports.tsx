@@ -1,19 +1,29 @@
+/**
+ * 智能研报页面组件
+ * 提供 AI 研报生成任务的创建、管理和查看功能
+ * 支持多股票选择、模型选择、RAG 开关和报告查看
+ */
+
 import { fetchJson, fetchText, postJson } from '@/api/client'
-import type { ReportModel, ReportTask, StockSearchItem } from '@/api/types'
+import type { ReportModel, ReportTask } from '@/api/types'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { cn } from '@/lib/utils'
-import { ChevronDown, ExternalLink, Plus, RefreshCcw, Search, Trash2, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { StockPicker } from '@/components/StockPicker'
+import type { StockSearchItem } from '@/api/types'
+import { ExternalLink, Plus, RefreshCcw, Trash2, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+// 格式化日期时间字符串，处理 ISO 格式为可读格式
 function fmtDateTime(v: string | null | undefined) {
   if (!v) return '—'
   const s = String(v)
+  // 如果字符串超过 10 个字符，提取日期时间部分并替换 T 为空格
   return s.length > 10 ? s.slice(0, 19).replace('T', ' ') : s
 }
 
+// 根据任务状态返回中文标签
 function statusLabel(s: ReportTask['status']) {
   if (s === 'waiting') return '等待'
   if (s === 'running') return '运行中'
@@ -22,55 +32,49 @@ function statusLabel(s: ReportTask['status']) {
   return s
 }
 
+// 状态徽章组件，根据状态显示不同颜色的标签
 function StatusBadge({ status }: { status: ReportTask['status'] }) {
   const tone = status === 'success' ? 'green' : status === 'failed' ? 'red' : status === 'running' ? 'amber' : 'zinc'
   return <Badge tone={tone}>{statusLabel(status)}</Badge>
 }
 
-const RECENT_KEY = 'ai_quant_recent_report_stocks'
-
+// 智能研报主组件
 export default function Reports() {
-  const [model, setModel] = useState<ReportModel>('qwen-max')
-  const [useRag, setUseRag] = useState(true)
-  const [q, setQ] = useState('')
-  const [stockQuery, setStockQuery] = useState('')
-  const [stockResults, setStockResults] = useState<StockSearchItem[]>([])
-  const [stockSearching, setStockSearching] = useState(false)
-  const [stockSearchErr, setStockSearchErr] = useState<string | null>(null)
-  const [selectedStocks, setSelectedStocks] = useState<StockSearchItem[]>([])
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [recentStocks, setRecentStocks] = useState<StockSearchItem[]>([])
-  const [tasks, setTasks] = useState<ReportTask[]>([])
-  const [createdStart, setCreatedStart] = useState('')
-  const [createdEnd, setCreatedEnd] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [retrying, setRetrying] = useState<string | null>(null)
-  const [toastMsg, setToastMsg] = useState<string | null>(null)
-  const [viewerTask, setViewerTask] = useState<ReportTask | null>(null)
-  const [viewerMd, setViewerMd] = useState('')
-  const [viewerLoading, setViewerLoading] = useState(false)
+  // 状态定义
+  const [model, setModel] = useState<ReportModel>('qwen-max')      // 选择的 AI 模型
+  const [useRag, setUseRag] = useState(true)                       // 是否启用 RAG
+  const [q, setQ] = useState('')                                  // 任务列表筛选关键词
+  const [selectedStocks, setSelectedStocks] = useState<StockSearchItem[]>([]) // 已选择的股票
+  const [tasks, setTasks] = useState<ReportTask[]>([])           // 任务列表
+  const [createdStart, setCreatedStart] = useState('')            // 创建时间筛选起始
+  const [createdEnd, setCreatedEnd] = useState('')                // 创建时间筛选结束
+  const [loading, setLoading] = useState(false)                  // 是否正在加载任务列表
+  const [err, setErr] = useState<string | null>(null)            // 错误信息
+  const [creating, setCreating] = useState(false)                // 是否正在创建任务
+  const [retrying, setRetrying] = useState<string | null>(null)  // 正在重试的任务 ID
+  const [toastMsg, setToastMsg] = useState<string | null>(null)  // 提示消息
+  const [viewerTask, setViewerTask] = useState<ReportTask | null>(null)   // 当前查看的任务
+  const [viewerMd, setViewerMd] = useState('')                    // 报告 Markdown 内容
+  const [viewerLoading, setViewerLoading] = useState(false)      // 报告是否正在加载
 
-  const pickerRef = useRef<HTMLDivElement | null>(null)
-  const stockCacheRef = useRef<Map<string, StockSearchItem[]>>(new Map())
-
-  const selectedCodes = useMemo(() => new Set(selectedStocks.map((s) => s.code)), [selectedStocks])
-
+  // 显示提示消息，自动 2.2 秒后消失
   const showToast = (msg: string) => {
     setToastMsg(msg)
     window.setTimeout(() => setToastMsg(null), 2200)
   }
 
+  // 加载任务列表
   const loadTasks = async (opts?: { silent?: boolean }) => {
     setLoading(true)
     if (!opts?.silent) setErr(null)
     try {
+      // 构建查询参数
       const params = new URLSearchParams()
       params.set('limit', '50')
       if (q.trim()) params.set('q', q.trim())
       if (createdStart) params.set('created_start', createdStart)
       if (createdEnd) params.set('created_end', createdEnd)
+      // 获取任务列表
       const r = await fetchJson<{ tasks: ReportTask[] }>(`/api/reports/tasks?${params.toString()}`)
       setTasks(r.tasks || [])
     } catch (e) {
@@ -80,6 +84,7 @@ export default function Reports() {
     }
   }
 
+  // 组件挂载时加载任务列表，并设置 3 秒轮询刷新
   useEffect(() => {
     loadTasks()
     const t = window.setInterval(() => {
@@ -88,97 +93,7 @@ export default function Reports() {
     return () => window.clearInterval(t)
   }, [q, createdStart, createdEnd])
 
-  useEffect(() => {
-    let alive = true
-    const t = window.setTimeout(async () => {
-      const v = stockQuery.trim()
-      if (!v) {
-        setStockResults([])
-        setStockSearchErr(null)
-        return
-      }
-      const cached = stockCacheRef.current.get(v)
-      if (cached) {
-        setStockResults(cached)
-        setStockSearchErr(null)
-        return
-      }
-      const ctrl = new AbortController()
-      const tt = window.setTimeout(() => ctrl.abort(), 1200)
-      try {
-        setStockSearching(true)
-        setStockSearchErr(null)
-        const r = await fetchJson<{ items: StockSearchItem[] }>(`/api/stocks?q=${encodeURIComponent(v)}&limit=20`, { signal: ctrl.signal })
-        if (!alive) return
-        const items = (r.items || []).filter((x) => x && x.code)
-        stockCacheRef.current.set(v, items)
-        setStockResults(items)
-      } catch {
-        if (!alive) return
-        setStockResults([])
-        setStockSearchErr('搜索超时或失败')
-      } finally {
-        window.clearTimeout(tt)
-        if (alive) setStockSearching(false)
-      }
-    }, 150)
-    return () => {
-      alive = false
-      window.clearTimeout(t)
-    }
-  }, [stockQuery])
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(RECENT_KEY)
-      if (!raw) return
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed)) {
-        const items = parsed.filter((x) => x && typeof x.code === 'string').slice(0, 20)
-        setRecentStocks(items)
-      }
-    } catch {
-      setRecentStocks([])
-    }
-  }, [])
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const el = pickerRef.current
-      if (!el) return
-      if (e.target instanceof Node && !el.contains(e.target)) setPickerOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPickerOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [])
-
-  const rememberRecent = (it: StockSearchItem) => {
-    const next = [it, ...recentStocks.filter((x) => x.code !== it.code)].slice(0, 20)
-    setRecentStocks(next)
-    try {
-      localStorage.setItem(RECENT_KEY, JSON.stringify(next))
-    } catch {
-      return
-    }
-  }
-
-  const addStock = (it: StockSearchItem) => {
-    if (selectedCodes.has(it.code)) return
-    setSelectedStocks((prev) => [...prev, it])
-    rememberRecent(it)
-  }
-
-  const removeStock = (code: string) => {
-    setSelectedStocks((prev) => prev.filter((x) => x.code !== code))
-  }
-
+  // 创建研报任务
   const createTask = async () => {
     if (selectedStocks.length === 0) {
       setErr('请选择至少一只股票')
@@ -193,7 +108,6 @@ export default function Reports() {
         use_rag: useRag,
       })
       setSelectedStocks([])
-      setStockQuery('')
       await loadTasks()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -202,6 +116,7 @@ export default function Reports() {
     }
   }
 
+  // 删除任务
   const delTask = async (taskId: string) => {
     setErr(null)
     try {
@@ -212,6 +127,7 @@ export default function Reports() {
     }
   }
 
+  // 重试失败的任务
   const retryTask = async (taskId: string) => {
     setErr(null)
     setRetrying(taskId)
@@ -225,7 +141,9 @@ export default function Reports() {
     }
   }
 
+  // 查看任务生成的报告
   const viewTask = async (t: ReportTask) => {
+    // 检查任务状态
     if (t.status === 'failed') {
       showToast(`任务失败：${t.error_message || '未知错误'}`)
       return
@@ -235,6 +153,7 @@ export default function Reports() {
       return
     }
 
+    // 打开报告查看器并加载内容
     setViewerTask(t)
     setViewerLoading(true)
     setViewerMd('')
@@ -250,20 +169,25 @@ export default function Reports() {
     }
   }
 
+  // 页面主布局：左侧任务创建区 + 右侧任务列表
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+      {/* 顶部提示消息 */}
       {toastMsg ? (
         <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow">
           {toastMsg}
         </div>
       ) : null}
 
+      {/* 左侧：任务创建表单 */}
       <div className="lg:col-span-2">
         <Card>
           <CardHeader title="智能研报" />
           <CardBody>
+            {/* 错误提示 */}
             {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{err}</div> : null}
 
+            {/* AI 模型选择 */}
             <label className="block">
               <div className="text-xs text-zinc-500">模型</div>
               <select
@@ -276,6 +200,7 @@ export default function Reports() {
               </select>
             </label>
 
+            {/* RAG 开关 */}
             <label className="mt-3 inline-flex items-center gap-2 text-sm text-zinc-700">
               <input
                 type="checkbox"
@@ -286,142 +211,19 @@ export default function Reports() {
               启用 RAG
             </label>
 
+            {/* 股票选择器 */}
             <div className="mt-3">
               <div className="text-xs text-zinc-500">选择股票（多选）</div>
-              <div ref={pickerRef} className="relative mt-1">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
-                <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-zinc-400" />
-                <input
-                  value={stockQuery}
-                  onChange={(e) => {
-                    setStockQuery(e.target.value)
-                    setPickerOpen(true)
-                  }}
-                  onFocus={() => setPickerOpen(true)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const first = stockResults[0]
-                      if (first && first.code) {
-                        addStock(first)
-                        setStockQuery('')
-                        setStockResults([])
-                        setStockSearchErr(null)
-                        setPickerOpen(false)
-                      }
-                    }
-                  }}
-                  placeholder="下拉选择 / 搜索股票代码或名称"
-                  className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-9 text-sm outline-none transition focus:border-zinc-400"
-                />
-
-                {pickerOpen ? (
-                  <div className="absolute z-50 mt-2 w-full rounded-lg border border-zinc-200 bg-white shadow-sm">
-                    <div className="flex items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2 text-xs text-zinc-500">
-                      <div>{stockQuery.trim() ? '搜索结果' : '最近使用'}</div>
-                      <button
-                        type="button"
-                        onClick={() => setPickerOpen(false)}
-                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
-                      >
-                        取消
-                      </button>
-                    </div>
-
-                    {stockQuery.trim() ? (
-                      <div className="max-h-72 overflow-auto p-2">
-                        {stockResults.length > 0 ? (
-                          <div className="space-y-2">
-                            {stockResults.map((it) => (
-                              <div key={it.code} className="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-semibold text-zinc-900">{it.code}</div>
-                                  <div className="truncate text-xs text-zinc-500">{it.name || '—'}</div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    addStock(it)
-                                    setStockQuery('')
-                                    setStockResults([])
-                                    setStockSearchErr(null)
-                                    setPickerOpen(false)
-                                  }}
-                                  disabled={selectedCodes.has(it.code)}
-                                  className={cn(
-                                    'inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50',
-                                    selectedCodes.has(it.code) ? 'opacity-60' : ''
-                                  )}
-                                >
-                                  <Plus className="h-3.5 w-3.5" />
-                                  选择
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : stockSearching ? (
-                          <div className="px-1 py-2 text-xs text-zinc-500">搜索中…</div>
-                        ) : stockSearchErr ? (
-                          <div className="px-1 py-2 text-xs text-red-600">{stockSearchErr}</div>
-                        ) : (
-                          <div className="px-1 py-2 text-xs text-zinc-500">无匹配结果</div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="max-h-72 overflow-auto p-2">
-                        {recentStocks.length === 0 ? (
-                          <div className="px-1 py-2 text-xs text-zinc-500">请输入股票代码或名称进行搜索</div>
-                        ) : (
-                          <div className="space-y-2">
-                            {recentStocks.map((it) => (
-                              <div key={it.code} className="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-semibold text-zinc-900">{it.code}</div>
-                                  <div className="truncate text-xs text-zinc-500">{it.name || '—'}</div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    addStock(it)
-                                    setPickerOpen(false)
-                                  }}
-                                  disabled={selectedCodes.has(it.code)}
-                                  className={cn(
-                                    'inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50',
-                                    selectedCodes.has(it.code) ? 'opacity-60' : ''
-                                  )}
-                                >
-                                  <Plus className="h-3.5 w-3.5" />
-                                  选择
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-
-              {selectedStocks.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {selectedStocks.map((s) => (
-                    <button
-                      key={s.code}
-                      type="button"
-                      onClick={() => removeStock(s.code)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
-                      title="点击移除"
-                    >
-                      <span className="font-semibold">{s.code}</span>
-                      <span className="text-zinc-500">{s.name || '—'}</span>
-                      <span className="text-zinc-400">×</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+              <StockPicker
+                mode="multiple"
+                value={selectedStocks}
+                onChange={(v) => setSelectedStocks((v as StockSearchItem[]) || [])}
+                placeholder="搜索股票代码或名称"
+                className="mt-1"
+              />
             </div>
 
+            {/* 创建任务按钮 */}
             <button
               type="button"
               disabled={creating}
@@ -435,6 +237,7 @@ export default function Reports() {
         </Card>
       </div>
 
+      {/* 右侧：任务列表 */}
       <div className="lg:col-span-3">
         <Card>
           <CardHeader
@@ -451,6 +254,7 @@ export default function Reports() {
             }
           />
           <CardBody>
+            {/* 筛选条件 */}
             <div className="flex flex-wrap items-end gap-3">
               <label className="block">
                 <div className="text-xs text-zinc-500">创建开始</div>
@@ -481,6 +285,7 @@ export default function Reports() {
               </label>
             </div>
 
+            {/* 任务表格 */}
             <div className="mt-3 overflow-auto rounded-lg border border-zinc-200 bg-white">
               <table className="w-full text-left text-sm">
                 <thead className="bg-zinc-50 text-xs text-zinc-500">
@@ -512,6 +317,7 @@ export default function Reports() {
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex items-center gap-2">
+                              {/* 查看按钮 */}
                               <button
                                 type="button"
                                 onClick={() => viewTask(t)}
@@ -520,6 +326,7 @@ export default function Reports() {
                                 <ExternalLink className="h-3.5 w-3.5" />
                                 查看
                               </button>
+                              {/* 失败任务显示重试按钮 */}
                               {t.status === 'failed' ? (
                                 <button
                                   type="button"
@@ -531,6 +338,7 @@ export default function Reports() {
                                   {retrying === t.task_id ? '重试中...' : '重试'}
                                 </button>
                               ) : null}
+                              {/* 删除按钮 */}
                               <button
                                 type="button"
                                 onClick={() => delTask(t.task_id)}
@@ -552,9 +360,11 @@ export default function Reports() {
         </Card>
       </div>
 
+      {/* 报告查看模态框 */}
       {viewerTask ? (
         <div className="fixed inset-0 z-40 bg-black/30 p-4">
           <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow">
+            {/* 模态框头部 */}
             <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-zinc-900">研报查看</div>
@@ -572,6 +382,7 @@ export default function Reports() {
                 关闭
               </button>
             </div>
+            {/* 模态框内容：Markdown 渲染 */}
             <div className="flex-1 overflow-auto px-4 py-4">
               {viewerLoading ? (
                 <div className="text-sm text-zinc-500">加载中...</div>

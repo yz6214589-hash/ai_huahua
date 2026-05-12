@@ -60,3 +60,26 @@ test('Chat 支持一键复制回答', async () => {
   expect(writeText).toHaveBeenCalledWith('hello world')
 })
 
+test('Chat 对对象结果显示友好文本', async () => {
+  const post = postJson as unknown as { mockImplementation: (fn: () => Promise<unknown>) => unknown }
+  post.mockImplementation(async () => ({
+    run_id: 'r2',
+    route: { target: 'assistant' },
+    result: { answer: '这是格式化后的回答', metadata: { model: 'qwen' } },
+  }))
+
+  render(
+    <MemoryRouter initialEntries={['/chat']}>
+      <Routes>
+        <Route path="/chat" element={<Chat />} />
+      </Routes>
+    </MemoryRouter>
+  )
+
+  act(() => {
+    fireEvent.change(screen.getByPlaceholderText('输入问题…'), { target: { value: '请回答' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+  })
+
+  expect(await screen.findByText('这是格式化后的回答')).toBeInTheDocument()
+})

@@ -2,10 +2,10 @@ import { fetchJson, postJson } from '@/api/client'
 import type { MacroLatest, SentimentEvent, SentimentRun, StockSearchItem } from '@/api/types'
 import { Badge } from '@/components/Badge'
 import { Card, CardBody, CardHeader } from '@/components/Card'
+import { StockPicker } from '@/components/StockPicker'
 import { Tabs } from '@/components/Tabs'
-import { cn } from '@/lib/utils'
-import { ExternalLink, PlayCircle, RefreshCcw, Search, Settings2, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { ExternalLink, PlayCircle, RefreshCcw, Settings2, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 function fmtDateTime(v: string | null | undefined) {
   if (!v) return '—'
@@ -30,13 +30,9 @@ export default function Sentiment() {
   const [schedule, setSchedule] = useState<{ enabled: boolean; cron: string; timezone: string } | null>(null)
   const [scheduleSaving, setScheduleSaving] = useState(false)
 
-  const [manualStockQuery, setManualStockQuery] = useState('')
-  const [manualStockResults, setManualStockResults] = useState<StockSearchItem[]>([])
   const [manualSelected, setManualSelected] = useState<StockSearchItem[]>([])
   const [manualDays, setManualDays] = useState(3)
   const [manualUseLlm, setManualUseLlm] = useState(false)
-  const [manualStockSearching, setManualStockSearching] = useState(false)
-  const [manualStockErr, setManualStockErr] = useState<string | null>(null)
 
   const [events, setEvents] = useState<SentimentEvent[]>([])
   const [runs, setRuns] = useState<SentimentRun[]>([])
@@ -48,8 +44,6 @@ export default function Sentiment() {
 
   const [macro, setMacro] = useState<MacroLatest | null>(null)
   const [macroLoading, setMacroLoading] = useState(false)
-
-  const selectedCodes = useMemo(() => new Set(manualSelected.map((s) => s.code)), [manualSelected])
 
   const loadSchedule = async () => {
     const r = await fetchJson<{ enabled: boolean; cron: string; timezone: string }>('/api/sentiment/schedule')
@@ -93,7 +87,9 @@ export default function Sentiment() {
     const t = window.setInterval(async () => {
       try {
         await loadRuns()
-      } catch {}
+      } catch {
+        // ignore
+      }
     }, 2000)
     return () => window.clearInterval(t)
   }, [])
@@ -101,38 +97,6 @@ export default function Sentiment() {
   useEffect(() => {
     loadEvents(latestRun?.run_id)
   }, [latestRun?.run_id, latestRun?.status, latestRun?.finished_at, filterQ, filterEventType])
-
-  useEffect(() => {
-    let alive = true
-    const t = window.setTimeout(async () => {
-      const v = manualStockQuery.trim()
-      if (!v) {
-        setManualStockResults([])
-        setManualStockErr(null)
-        return
-      }
-      const ctrl = new AbortController()
-      const tt = window.setTimeout(() => ctrl.abort(), 5000)
-      try {
-        setManualStockSearching(true)
-        setManualStockErr(null)
-        const r = await fetchJson<{ items: StockSearchItem[] }>(`/api/stocks?q=${encodeURIComponent(v)}&limit=20`, { signal: ctrl.signal })
-        if (!alive) return
-        setManualStockResults(r.items || [])
-      } catch {
-        if (!alive) return
-        setManualStockResults([])
-        setManualStockErr('搜索超时或失败')
-      } finally {
-        window.clearTimeout(tt)
-        if (alive) setManualStockSearching(false)
-      }
-    }, 200)
-    return () => {
-      alive = false
-      window.clearTimeout(t)
-    }
-  }, [manualStockQuery])
 
   const toggleSchedule = async () => {
     if (!schedule) return
@@ -158,19 +122,8 @@ export default function Sentiment() {
     }
   }
 
-  const addManualStock = (it: StockSearchItem) => {
-    if (selectedCodes.has(it.code)) return
-    setManualSelected((prev) => [...prev, it])
-  }
-
-  const removeManualStock = (code: string) => {
-    setManualSelected((prev) => prev.filter((x) => x.code !== code))
-  }
-
   const clearManual = () => {
     setManualSelected([])
-    setManualStockQuery('')
-    setManualStockResults([])
   }
 
   const runManual = async () => {
@@ -308,61 +261,12 @@ export default function Sentiment() {
                 }
               />
               <CardBody>
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
-                  <input
-                    value={manualStockQuery}
-                    onChange={(e) => setManualStockQuery(e.target.value)}
-                    placeholder="搜索股票代码/名称"
-                    className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none transition focus:border-zinc-400"
-                  />
-                </div>
-
-                {manualStockResults.length > 0 ? (
-                  <div className="mt-2 space-y-2">
-                    {manualStockResults.map((it) => (
-                      <div key={it.code} className="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-zinc-900">{it.code}</div>
-                          <div className="truncate text-xs text-zinc-500">{it.name || '—'}</div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => addManualStock(it)}
-                          disabled={selectedCodes.has(it.code)}
-                          className={cn(
-                            'inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50',
-                            selectedCodes.has(it.code) ? 'opacity-60' : ''
-                          )}
-                        >
-                          添加
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : manualStockSearching ? (
-                  <div className="mt-2 text-xs text-zinc-500">搜索中…</div>
-                ) : manualStockErr ? (
-                  <div className="mt-2 text-xs text-red-600">{manualStockErr}</div>
-                ) : null}
-
-                {manualSelected.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {manualSelected.map((s) => (
-                      <button
-                        key={s.code}
-                        type="button"
-                        onClick={() => removeManualStock(s.code)}
-                        className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50"
-                        title="点击移除"
-                      >
-                        <span className="font-semibold">{s.code}</span>
-                        <span className="text-zinc-500">{s.name || '—'}</span>
-                        <span className="text-zinc-400">×</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+                <StockPicker
+                  mode="multiple"
+                  value={manualSelected}
+                  onChange={(v) => setManualSelected((v as StockSearchItem[]) || [])}
+                  placeholder="搜索股票代码或名称"
+                />
 
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="block">

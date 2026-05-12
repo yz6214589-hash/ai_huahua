@@ -1,0 +1,1 @@
+{"runId": "b01730ff177b4a3ba20a3fd09d306677", "domain": "sentiment_monitor", "startedAt": "2026-05-11T00:31:17", "finishedAt": "2026-05-11T00:31:17", "status": "success", "dataSourceFinal": "file", "fallbackChain": ["file"], "rowsWritten": 0, "itemsProcessed": 0, "failedItems": [], "message": "自选股为空，无法扫描", "userMessage": "自选股为空，无法扫描"}

@@ -1,0 +1,38 @@
+[2026-05-11 14:13:58] [ai] [INFO] ai 模块日志测试
+[2026-05-11 15:59:00] [ai] [INFO] ai 模块日志测试
+[2026-05-11 15:59:26] [ai] [INFO] ai 模块日志测试
+[2026-05-12 17:14:20] [ai] [INFO] AI Agent 状态查询
+[2026-05-12 17:14:48] [ai] [INFO] AI Agent 工具列表查询
+[2026-05-12 17:15:08] [ai] [INFO] AI Agent 流式对话开始
+[2026-05-12 17:15:08] [ai] [INFO] AI Agent 对话开始
+[2026-05-12 17:15:08] [ai] [INFO] AI Agent 路由决策
+[2026-05-12 17:15:08] [ai] [INFO] AI Agent 对话完成
+[2026-05-12 17:15:08] [ai] [INFO] AI Agent 流式对话完成
+[2026-05-12 17:15:36] [ai] [INFO] AI Agent 流式对话开始
+[2026-05-12 17:15:36] [ai] [INFO] AI Agent 对话开始
+[2026-05-12 17:15:36] [ai] [INFO] AI Agent 路由决策
+[2026-05-12 17:15:36] [ai] [INFO] AI Agent 对话完成
+[2026-05-12 17:15:36] [ai] [INFO] AI Agent 流式对话完成
+[2026-05-12 17:28:00] [ai] [INFO] AI Agent 流式对话开始
+[2026-05-12 17:28:00] [ai] [INFO] AI Agent 对话开始
+[2026-05-12 17:28:00] [ai] [INFO] AI Agent 路由决策
+[2026-05-12 17:28:00] [ai] [INFO] AI Agent 对话完成
+[2026-05-12 17:28:00] [ai] [INFO] AI Agent 流式对话完成
+[2026-05-12 17:39:31] [ai] [INFO] AI Agent 状态查询
+[2026-05-12 17:39:43] [ai] [INFO] AI Agent 流式对话开始
+[2026-05-12 17:39:43] [ai] [INFO] AI Agent 流式对话完成
+[2026-05-12 17:43:19] [ai] [INFO] AI Agent 流式对话开始
+[2026-05-12 17:43:19] [ai] [INFO] AI Agent 流式对话完成
+[2026-05-12 17:44:52] [ai] [INFO] AI Agent 流式对话开始
+[2026-05-12 17:44:52] [ai] [INFO] AI Agent 流式对话完成
+[2026-05-12 17:50:34] [ai] [INFO] AI Agent 流式对话开始
+[2026-05-12 17:50:34] [ai] [INFO] AI Agent 流式对话完成
+[2026-05-12 17:50:47] [ai] [INFO] AI Agent 流式对话开始
+[2026-05-12 17:50:47] [ai] [INFO] AI Agent 流式对话完成
+[2026-05-12 17:51:00] [ai] [INFO] AI Agent 流式对话开始
+[2026-05-12 17:51:00] [ai] [INFO] AI Agent 流式对话完成
+[2026-05-12 17:51:01] [ai] [ERROR] 流式执行异常
+[2026-05-12 17:51:18] [ai] [INFO] AI Agent 状态查询
+[2026-05-12 20:36:43] [ai] [INFO] AI Agent status check
+[2026-05-12 20:36:43] [ai] [INFO] AI Agent tools query
+[2026-05-12 20:36:43] [ai] [INFO] AI Agent runs query

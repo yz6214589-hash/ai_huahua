@@ -62,3 +62,30 @@ test('Execution 创建任务失败时显示错误', async () => {
 
   expect(await screen.findByText('bad request')).toBeInTheDocument()
 })
+
+test('Execution 股票代码为空时阻止提交', async () => {
+  const fetchMock = fetchJson as unknown as { mockImplementation: (fn: (url: string) => Promise<unknown>) => unknown }
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url === '/api/execution/status') return { source: 'ethan', status: 'ready', features: ['tasks'] }
+    if (url === '/api/execution/tasks') return { items: [] }
+    return {}
+  })
+
+  const postMock = postJson as unknown as { mockImplementation: (fn: () => Promise<unknown>) => unknown }
+  postMock.mockImplementation(async () => ({ ok: true }))
+
+  render(
+    <MemoryRouter initialEntries={['/execution']}>
+      <Routes>
+        <Route path="/execution" element={<Execution />} />
+      </Routes>
+    </MemoryRouter>
+  )
+
+  await screen.findByText('执行监控')
+  act(() => {
+    fireEvent.click(screen.getByRole('button', { name: '创建任务' }))
+  })
+
+  expect(await screen.findByText('请填写股票代码')).toBeInTheDocument()
+})

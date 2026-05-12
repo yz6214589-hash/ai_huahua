@@ -1,0 +1,167 @@
+import { useState } from 'react'
+import { Card, CardBody, CardHeader } from '@/components/Card'
+import { Badge } from '@/components/Badge'
+import { ArrowUp, Flame } from 'lucide-react'
+
+interface LimitUpStock {
+  code: string
+  name: string
+  boardTime: string
+  sealAmount: number
+  sealAmountY: number
+  consecutiveBoards: number
+  floatCap: number
+  sector: string
+  status: 'limit_up' | 'limit_down' | 'break_limit_up' | 'break_limit_down'
+  firstBoardTime: string
+}
+
+const MOCK_LIMIT_UP: LimitUpStock[] = [
+  { code: '300864.SZ', name: '南大光电', boardTime: '09:32:15', sealAmount: 4820, sealAmountY: 4.82, consecutiveBoards: 5, floatCap: 35.2, sector: '光刻胶', status: 'limit_up', firstBoardTime: '09:32:15' },
+  { code: '688256.SH', name: '寒武纪', boardTime: '09:41:08', sealAmount: 12800, sealAmountY: 12.8, consecutiveBoards: 3, floatCap: 128.5, sector: 'AI芯片', status: 'limit_up', firstBoardTime: '09:41:08' },
+  { code: '002466.SZ', name: '天齐锂业', boardTime: '10:15:42', sealAmount: 6200, sealAmountY: 6.2, consecutiveBoards: 2, floatCap: 68.4, sector: '锂矿', status: 'limit_up', firstBoardTime: '10:15:42' },
+  { code: '002594.SZ', name: '比亚迪', boardTime: '13:28:05', sealAmount: 0, sealAmountY: 0, consecutiveBoards: 0, floatCap: 245.8, sector: '新能源车', status: 'break_limit_up', firstBoardTime: '09:52:00' },
+  { code: '600036.SH', name: '招商银行', boardTime: '—', sealAmount: 0, sealAmountY: 0, consecutiveBoards: 0, floatCap: 38.2, sector: '银行', status: 'break_limit_down', firstBoardTime: '—' },
+  { code: '002415.SZ', name: '海康威视', boardTime: '14:52:30', sealAmount: 2800, sealAmountY: 2.8, consecutiveBoards: 2, floatCap: 42.5, sector: 'AI安防', status: 'limit_up', firstBoardTime: '14:52:30' },
+  { code: '000858.SZ', name: '五粮液', boardTime: '—', sealAmount: 0, sealAmountY: 0, consecutiveBoards: 0, floatCap: 158.2, sector: '白酒', status: 'break_limit_down', firstBoardTime: '—' },
+]
+
+function fmtY(v: number) {
+  if (v >= 10000) return `${(v / 10000).toFixed(1)}亿`
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}千万`
+  return `${v.toFixed(0)}万`
+}
+
+function StatusBadge({ status }: { status: LimitUpStock['status'] }) {
+  const map: Record<typeof status, { label: string; tone: 'green' | 'red' | 'amber' }> = {
+    limit_up: { label: '涨停', tone: 'green' },
+    limit_down: { label: '跌停', tone: 'red' },
+    break_limit_up: { label: '炸板', tone: 'amber' },
+    break_limit_down: { label: '开板（跌）', tone: 'amber' },
+  }
+  const { label, tone } = map[status]
+  return <Badge tone={tone}>{label}</Badge>
+}
+
+function BoardTag({ n }: { n: number }) {
+  if (n === 0) return <span className="text-xs text-zinc-400">—</span>
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700">
+      <Flame className="h-3 w-3" />
+      {n}连板
+    </span>
+  )
+}
+
+export default function OpportunityLimitUp() {
+  const [view, setView] = useState<'all' | 'limit_up' | 'break'>('all')
+
+  const filtered = MOCK_LIMIT_UP.filter((s) => {
+    if (view === 'limit_up') return s.status === 'limit_up' || s.status === 'limit_down'
+    if (view === 'break') return s.status === 'break_limit_up' || s.status === 'break_limit_down'
+    return true
+  })
+
+  const limitUps = filtered.filter((s) => s.status === 'limit_up' || s.status === 'limit_down')
+  const breaks = filtered.filter((s) => s.status === 'break_limit_up' || s.status === 'break_limit_down')
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {(['all', 'limit_up', 'break'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setView(t)}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+              view === t
+                ? 'border-zinc-900 bg-zinc-900 text-white'
+                : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'
+            }`}
+          >
+            {t === 'all' ? '全部' : t === 'limit_up' ? '涨停/跌停' : '炸板'}
+          </button>
+        ))}
+      </div>
+
+      {limitUps.length > 0 && view !== 'break' && (
+        <Card>
+          <CardHeader
+            title={`涨停板（${limitUps.filter((s) => s.status === 'limit_up').length} 只）`}
+          />
+          <CardBody className="p-0">
+            <div className="overflow-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-zinc-50 text-xs text-zinc-500">
+                  <tr>
+                    <th className="px-3 py-2">股票</th>
+                    <th className="px-3 py-2">状态</th>
+                    <th className="px-3 py-2">连板</th>
+                    <th className="px-3 py-2">板块</th>
+                    <th className="px-3 py-2 text-right">涨停时间</th>
+                    <th className="px-3 py-2 text-right">封单量</th>
+                    <th className="px-3 py-2 text-right">封单金额</th>
+                    <th className="px-3 py-2 text-right">流通市值（亿）</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {limitUps.map((s) => (
+                    <tr key={s.code} className="border-t border-zinc-100 hover:bg-zinc-50">
+                      <td className="px-3 py-2">
+                        <div className="text-sm font-medium text-zinc-900">{s.code}</div>
+                        <div className="text-xs text-zinc-500">{s.name}</div>
+                      </td>
+                      <td className="px-3 py-2"><StatusBadge status={s.status} /></td>
+                      <td className="px-3 py-2"><BoardTag n={s.consecutiveBoards} /></td>
+                      <td className="px-3 py-2"><Badge tone="zinc">{s.sector}</Badge></td>
+                      <td className="px-3 py-2 text-right text-zinc-700">{s.boardTime}</td>
+                      <td className={`px-3 py-2 text-right font-medium ${s.sealAmount > 0 ? 'text-zinc-900' : 'text-zinc-400'}`}>
+                        {s.sealAmount > 0 ? fmtY(s.sealAmount) : '—'}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-medium ${s.sealAmountY > 0 ? 'text-red-600' : 'text-zinc-400'}`}>
+                        {s.sealAmountY > 0 ? `${s.sealAmountY}千万` : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right text-zinc-700">{s.floatCap.toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {breaks.length > 0 && view !== 'limit_up' && (
+        <Card>
+          <CardHeader title={`炸板（${breaks.length} 只）`} />
+          <CardBody className="p-0">
+            <div className="overflow-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-zinc-50 text-xs text-zinc-500">
+                  <tr>
+                    <th className="px-3 py-2">股票</th>
+                    <th className="px-3 py-2">状态</th>
+                    <th className="px-3 py-2">板块</th>
+                    <th className="px-3 py-2 text-right">流通市值（亿）</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {breaks.map((s) => (
+                    <tr key={s.code} className="border-t border-zinc-100 hover:bg-zinc-50">
+                      <td className="px-3 py-2">
+                        <div className="text-sm font-medium text-zinc-900">{s.code}</div>
+                        <div className="text-xs text-zinc-500">{s.name}</div>
+                      </td>
+                      <td className="px-3 py-2"><StatusBadge status={s.status} /></td>
+                      <td className="px-3 py-2"><Badge tone="zinc">{s.sector}</Badge></td>
+                      <td className="px-3 py-2 text-right text-zinc-700">{s.floatCap.toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+    </div>
+  )
+}

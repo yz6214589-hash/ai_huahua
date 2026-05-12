@@ -1,0 +1,1 @@
+{"task_id": "5e22d101f485402ab49037ee9288f574", "model": "deepseek", "stock_codes": ["002410.SZ"], "stock_names": ["002410.SZ"], "use_rag": true, "status": "failed", "created_at": "2026-05-09T23:43:39", "started_at": "2026-05-09T23:43:39", "finished_at": "2026-05-09T23:43:39", "error_message": "boom", "error_location": null, "report_path": null, "report_markdown": null}

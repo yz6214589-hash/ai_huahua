@@ -1,0 +1,1 @@
+{"runId": "64280cc1e73f4386be3fcb75c07c7b56", "domain": "report_consensus", "startedAt": "2026-05-11T12:32:54", "finishedAt": "2026-05-11T12:32:56", "status": "success", "dataSourceFinal": "akshare", "fallbackChain": ["akshare"], "rowsWritten": 0, "itemsProcessed": 1, "failedItems": [], "message": null, "userMessage": null}

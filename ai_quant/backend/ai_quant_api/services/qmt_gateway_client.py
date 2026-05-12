@@ -80,3 +80,40 @@ def request_json(
         raise RuntimeError(detail)
     except Exception as e:
         raise RuntimeError(f"{type(e).__name__}: {e}")
+
+
+def historical_kline(
+    stock_code: str,
+    period: str = "1d",
+    start_time: str = "",
+    end_time: str = "",
+    dividend_type: str = "front",
+    fill_data: bool = True,
+) -> dict[str, Any]:
+    """
+    调用腾讯云 QMT Gateway 获取股票历史 K 线数据。
+
+    Args:
+        stock_code: 股票代码，如 "600519.SH"
+        period: K 线周期，默认 "1d"
+        start_time: 开始日期，YYYYMMDD 格式
+        end_time: 结束日期，YYYYMMDD 格式，默认为空表示至今
+        dividend_type: 复权类型，"front"(前复权) / "back"(后复权) / "none"(不复权)
+        fill_data: 是否填充空值
+
+    Returns:
+        {"rows": [...], "columns": [...]}，其中 rows 每行包含 date/open/high/low/close/volume
+    """
+    return request_json(
+        "POST",
+        "/api/historical/kline",
+        body={
+            "stock_code": stock_code,
+            "period": period,
+            "start_time": start_time,
+            "end_time": end_time,
+            "dividend_type": dividend_type,
+            "fill_data": fill_data,
+        },
+        timeout_seconds=_env_timeout("AI_QUANT_QMT_GATEWAY_TIMEOUT", 60.0),
+    )
