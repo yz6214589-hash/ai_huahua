@@ -6,7 +6,14 @@ import urllib.request
 
 from fastapi.testclient import TestClient
 
-from ai_quant_api.app import create_app
+from app import create_app
+
+
+def _unwrap(resp):
+    body = resp.json()
+    if isinstance(body, dict) and "success" in body and "data" in body:
+        return body.get("data"), body
+    return body, body
 
 
 class _Resp:
@@ -32,8 +39,8 @@ def test_trading_state_proxy(monkeypatch) -> None:
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     client = TestClient(create_app())
-    resp = client.get("/api/trading/state")
+    resp = client.get("/api/v1/trading/state")
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["account_id"] == "test"
-
+    data, body = _unwrap(resp)
+    assert body.get("success") is True
+    assert data["account_id"] == "test"

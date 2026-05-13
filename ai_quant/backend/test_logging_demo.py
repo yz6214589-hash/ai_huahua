@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ai_quant_api.runtime.logging_service import get_logger, init_logging
+from runtime.logging_service import get_logger, init_logging
 
 def main():
     print("=" * 60)
@@ -58,7 +58,7 @@ def main():
     print("✓ 结构化日志测试完成")
 
     print("\n5. 测试敏感信息脱敏...")
-    from ai_quant_api.runtime.logging_service import sanitize, sanitize_dict
+    from runtime.logging_service import sanitize, sanitize_dict
 
     test_data = {
         "api_key": "sk-abcdefghijk123456",

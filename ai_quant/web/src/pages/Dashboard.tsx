@@ -84,14 +84,7 @@ export default function Dashboard() {
             <div className="font-semibold text-zinc-900">推荐流程</div>
             <ol className="list-decimal space-y-1 pl-5">
               <li>
-                先跑采集任务，确保基础数据齐全：<Link to="/jobs" className="text-zinc-900 underline">采集任务</Link>
-              </li>
-              <li>
-                在数据页验证入库与查询：<Link to="/data" className="text-zinc-900 underline">数据与交付</Link>
-              </li>
-              <li>
-                结合研报与舆情形成观点：<Link to="/reports" className="text-zinc-900 underline">智能研报</Link>、{' '}
-                <Link to="/sentiment" className="text-zinc-900 underline">舆情监控</Link>
+                结合研报形成观点：<Link to="/reports" className="text-zinc-900 underline">智能研报</Link>
               </li>
               <li>
                 进入策略与风控，再执行交易：<Link to="/strategy" className="text-zinc-900 underline">策略分析</Link>、{' '}
@@ -105,7 +98,7 @@ export default function Dashboard() {
             <ul className="list-disc space-y-1 pl-5">
               <li>顶部搜索框可输入股票代码/名称进行跳转与筛选。</li>
               <li>页面内股票下拉搜索支持单选/多选与滚动加载。</li>
-              <li>右下角“AI 投资助手”用于快速问答与辅助分析。</li>
+              <li>右下角"AI 投资助手"用于快速问答与辅助分析。</li>
             </ul>
           </div>
         </CardBody>
@@ -113,4 +106,3 @@ export default function Dashboard() {
     </div>
   )
 }
-

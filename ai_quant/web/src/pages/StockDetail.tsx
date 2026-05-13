@@ -11,7 +11,7 @@ import { Tabs } from '@/components/Tabs'
 import { cn } from '@/lib/utils'
 import type { EChartsOption } from 'echarts'
 import ReactECharts from 'echarts-for-react'
-import { ArrowLeft, ExternalLink, RefreshCcw, X } from 'lucide-react'
+import { ArrowLeft, ExternalLink, RefreshCcw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
@@ -223,14 +223,7 @@ export default function StockDetail() {
             <RefreshCcw className="h-4 w-4" />
             刷新
           </button>
-          <button
-            type="button"
-            onClick={() => navigate('/watchlist')}
-            className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
-          >
-            <X className="h-4 w-4" />
-            关闭
-          </button>
+
         </div>
       </div>
     </div>

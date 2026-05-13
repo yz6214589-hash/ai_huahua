@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from ai_quant_api.app import app
+from app import app
+
+
+def _unwrap(resp):
+    body = resp.json()
+    if isinstance(body, dict) and "success" in body and "data" in body:
+        return body.get("data"), body
+    return body, body
 
 
 def test_jobs_run_alias_exists() -> None:
     client = TestClient(app)
     resp = client.post(
-        "/api/jobs/run",
+        "/api/v1/jobs/run",
         json={
             "domain": "stock_daily",
             "mode": "test",
@@ -16,52 +23,61 @@ def test_jobs_run_alias_exists() -> None:
         },
     )
     assert resp.status_code == 200
-    body = resp.json()
-    assert isinstance(body.get("result"), dict)
-    assert body["result"].get("runId")
+    data, body = _unwrap(resp)
+    assert body.get("success") is True
+    assert isinstance(data.get("result"), dict)
+    assert data["result"].get("runId")
 
 
 def test_console_morning_error_is_sanitized(monkeypatch) -> None:
-    import ai_quant_api.api.console_ceo as console_ceo
+    import api.console_ceo as console_ceo
 
     def _raise_raw(_: dict) -> dict:
         raise RuntimeError("Table 'trade_stock_daily' doesn't exist")
 
     monkeypatch.setattr(console_ceo, "trigger_morning", _raise_raw)
     client = TestClient(app)
-    resp = client.post("/api/console/morning/trigger", json={})
+    resp = client.post("/api/v1/console/morning/trigger", json={})
     assert resp.status_code == 500
-    detail = str((resp.json() or {}).get("detail") or "")
-    assert "table" not in detail.lower()
-    assert "数据库" in detail
+    _, body = _unwrap(resp)
+    message = str(body.get("message") or "")
+    assert "table" not in message.lower()
+    assert "数据库" in message
 
 
 def test_sentiment_routes_exist_and_run() -> None:
     client = TestClient(app)
-    schedule = client.get("/api/sentiment/schedule")
+    schedule = client.get("/api/v1/sentiment/schedule")
     assert schedule.status_code == 200
-    sch = schedule.json()
+    sch, sch_body = _unwrap(schedule)
+    assert sch_body.get("success") is True
     assert "enabled" in sch
     assert "cron" in sch
     assert "timezone" in sch
 
-    run = client.post("/api/sentiment/runs", json={"days": 3, "use_llm": False})
+    run = client.post("/api/v1/sentiment/runs", json={"days": 3, "use_llm": False})
     assert run.status_code == 200
-    run_body = run.json()
-    assert isinstance(run_body.get("run"), dict)
-    run_id = str(run_body["run"].get("run_id") or "")
+    run_data, run_body = _unwrap(run)
+    assert run_body.get("success") is True
+    assert isinstance(run_data.get("run"), dict)
+    run_id = str(run_data["run"].get("run_id") or "")
     assert run_id
 
-    runs = client.get("/api/sentiment/runs?limit=5")
+    runs = client.get("/api/v1/sentiment/runs?limit=5")
     assert runs.status_code == 200
-    assert isinstance((runs.json() or {}).get("runs"), list)
+    runs_data, runs_body = _unwrap(runs)
+    assert runs_body.get("success") is True
+    assert isinstance((runs_data or {}).get("runs"), list)
 
-    events = client.get(f"/api/sentiment/events?run_id={run_id}&limit=20")
+    events = client.get(f"/api/v1/sentiment/events?run_id={run_id}&limit=20")
     assert events.status_code == 200
-    assert isinstance((events.json() or {}).get("events"), list)
+    events_data, events_body = _unwrap(events)
+    assert events_body.get("success") is True
+    assert isinstance((events_data or {}).get("events"), list)
 
-    macro = client.get("/api/macro/latest")
+    macro = client.get("/api/v1/macro/latest")
     assert macro.status_code == 200
-    body = macro.json()
-    assert isinstance(body.get("indicators"), list)
-    assert isinstance(body.get("composite"), dict)
+    macro_data, macro_body = _unwrap(macro)
+    assert macro_body.get("success") is True
+    assert isinstance(macro_data.get("indicators"), list)
+    assert isinstance(macro_data.get("composite"), dict)

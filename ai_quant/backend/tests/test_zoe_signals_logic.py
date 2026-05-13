@@ -1,4 +1,4 @@
-from ai_quant_api.services.zoe.tech_signals import generate_signals
+from modules.analysis.tech_signals import generate_signals
 
 
 def test_generate_signals_trend_buy_cross_ma20() -> None:

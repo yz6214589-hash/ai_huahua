@@ -14,7 +14,7 @@ def test_logging_service():
     """测试日志服务核心功能"""
     print("\n1. 测试日志服务核心功能...")
 
-    from ai_quant_api.runtime.logging_service import get_logger, init_logging, sanitize, sanitize_dict
+    from runtime.logging_service import get_logger, init_logging, sanitize, sanitize_dict
 
     init_logging()
 
@@ -39,7 +39,7 @@ def test_all_modules():
     """测试所有业务模块的日志"""
     print("\n2. 测试所有业务模块...")
 
-    from ai_quant_api.runtime.logging_service import get_logger
+    from runtime.logging_service import get_logger
 
     modules = [
         'dashboard', 'reports', 'data', 'jobs', 'sentiment',
@@ -59,7 +59,7 @@ def test_http_logging():
     print("\n3. 测试 HTTP 日志中间件...")
 
     from fastapi.testclient import TestClient
-    from ai_quant_api.app import create_app
+    from app import create_app
 
     app = create_app()
     client = TestClient(app)
@@ -78,7 +78,7 @@ def test_logs_api():
     print("\n4. 测试日志查询 API...")
 
     from fastapi.testclient import TestClient
-    from ai_quant_api.app import create_app
+    from app import create_app
 
     app = create_app()
     client = TestClient(app)
@@ -128,8 +128,8 @@ def test_log_rotation():
     """测试日志轮转配置"""
     print("\n6. 测试日志轮转配置...")
 
-    from ai_quant_api.runtime.logging_service import get_logger
-    from ai_quant_api.config import get_logging_settings
+    from runtime.logging_service import get_logger
+    from config import get_logging_settings
 
     config = get_logging_settings()
     assert config.max_bytes == 10485760  # 10MB

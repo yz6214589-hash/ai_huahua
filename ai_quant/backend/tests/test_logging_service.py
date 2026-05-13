@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ai_quant_api.runtime.logging_service import (
+from runtime.logging_service import (
     get_logger,
     sanitize,
     sanitize_dict,

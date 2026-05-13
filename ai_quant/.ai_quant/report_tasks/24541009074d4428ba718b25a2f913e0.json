@@ -1,0 +1,1 @@
+{"task_id": "24541009074d4428ba718b25a2f913e0", "model": "qwen-max", "stock_codes": ["600519.SH"], "stock_names": ["贵州茅台"], "use_rag": true, "status": "failed", "created_at": "2026-05-12T22:42:37", "started_at": "2026-05-12T22:42:07", "finished_at": "2026-05-12T22:42:38", "error_message": "研报生成超时，请稍后重试", "error_location": null, "report_path": null, "report_markdown": null}

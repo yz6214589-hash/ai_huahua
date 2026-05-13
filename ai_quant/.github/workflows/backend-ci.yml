@@ -1,0 +1,28 @@
+name: backend-ci
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      - name: Run tests with coverage gate
+        working-directory: backend
+        run: |
+          pytest --cov=ai_quant_api.app --cov=ai_quant_api.common --cov=ai_quant_api.runtime.job_store --cov=ai_quant_api.runtime.logging_service --cov=ai_quant_api.api.health --cov=ai_quant_api.api.console_ceo --cov=ai_quant_api.api.risk_kris --cov=ai_quant_api.api.execution_ethan --cov=ai_quant_api.api.sentiment --cov-report=term-missing --cov-fail-under=80

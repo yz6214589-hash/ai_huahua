@@ -10,9 +10,6 @@ from lib.api_client import (
     add_message,
     create_conversation,
     delete_conversation,
-    get_agent_runs,
-    get_status,
-    get_tools,
     get_conversation,
     list_conversations,
     stream_agent,
@@ -22,15 +19,20 @@ from lib.theme import apply_theme
 st.set_page_config(page_title="AI 投资助手", page_icon="A", layout="wide", initial_sidebar_state="collapsed")
 apply_theme()
 
+RECOMMENDED_QUESTIONS = [
+    "请生成今日晨会简报",
+    "帮我分析贵州茅台的投资价值",
+    "最近有哪些热门板块？",
+    "推荐几只低估值蓝筹股",
+]
+
 
 def _init_state() -> None:
-    defaults: dict[str, Any] = {
+    for k, v in {
         "conv_list": [],
         "current_conv_id": "",
         "chat_history": [],
-        "_pending_report": None,
-    }
-    for k, v in defaults.items():
+    }.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
@@ -56,52 +58,11 @@ def _ensure_conversation() -> str:
     return conv["id"]
 
 
-def _render_header() -> None:
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        st.markdown(
-            """
-            <div style="display:flex;align-items:center;gap:12px;padding:8px 0 4px">
-                <div>
-                    <div style="font-weight:700;font-size:1.05rem;color:#1e293b">AI 投资助手</div>
-                    <div style="font-size:0.78rem;color:#64748b">量化投研 · 多模块协同 · 流式响应</div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with c2:
-        if st.button("新建对话", use_container_width=True, type="primary", key="new_conv_header"):
-            conv = create_conversation("新对话")
-            st.session_state["current_conv_id"] = conv["id"]
-            st.session_state["chat_history"] = []
-            st.rerun()
-
-
-def _render_status_row() -> None:
-    sc1, sc2, sc3 = st.columns(3)
-    try:
-        _ = get_status()
-        sc1.success("Agent 就绪")
-    except Exception:
-        sc1.error("Agent 未连接")
-    try:
-        tools = get_tools()
-        sc2.info(f"工具数量：{len(tools)}")
-    except Exception:
-        sc2.warning("工具获取失败")
-    try:
-        runs = get_agent_runs(10)
-        sc3.info(f"最近运行：{len(runs)}")
-    except Exception:
-        sc3.warning("运行记录获取失败")
-
-
 def _render_sidebar() -> None:
     with st.sidebar:
         st.markdown("### 对话管理")
 
-        if st.button("新建对话", use_container_width=True, type="primary", key="new_conv_sidebar"):
+        if st.button("+ 新建对话", use_container_width=True, type="primary", key="new_conv_sidebar"):
             conv = create_conversation("新对话")
             st.session_state["current_conv_id"] = conv["id"]
             st.session_state["chat_history"] = []
@@ -152,6 +113,34 @@ def _render_history() -> None:
             st.markdown(content)
 
 
+def _render_welcome() -> None:
+    with st.container():
+        col_icon, col_text = st.columns([1, 8])
+        with col_icon:
+            st.markdown("###")
+            st.markdown("###")
+            st.markdown("### <span style='font-size:2.5rem'>hi~</span>", unsafe_allow_html=True)
+        with col_text:
+            st.markdown("#### 欢迎使用 AI 投资助手")
+            st.markdown("请从左侧选择一个对话，或新建一个对话开始交流")
+            st.markdown("---")
+            st.markdown("**推荐问题：**")
+            for q in RECOMMENDED_QUESTIONS:
+                st.markdown(f"- {q}")
+
+
+def _render_tool_calls(tool_calls: list[dict[str, Any]]) -> None:
+    if not tool_calls:
+        return
+    with st.expander("工具调用详情"):
+        for t in tool_calls:
+            icon = {"done": "✅", "error": "❌", "running": "⏳"}.get(t.get("status") or "", "🔧")
+            st.markdown(f"{icon} **{t.get('name', '?')}**：`{t.get('status', '')}`")
+            detail = t.get("detail") or ""
+            if detail:
+                st.code(detail[:2000], language="json")
+
+
 def _handle_prompt(prompt: str) -> None:
     conv_id = _ensure_conversation()
 
@@ -187,7 +176,7 @@ def _handle_prompt(prompt: str) -> None:
 
             elif ev_type == "tools":
                 tools = payload.get("tools") or []
-                status_box.info(f"识别到工具：{len(tools)}")
+                status_box.info(f"识别到 {len(tools)} 个工具")
 
             elif ev_type == "tool_end":
                 tn = payload.get("tool") or "unknown"
@@ -199,7 +188,7 @@ def _handle_prompt(prompt: str) -> None:
                         "detail": json.dumps(rs or {}, ensure_ascii=False, indent=2)[:2000],
                     }
                 )
-                status_box.info(f"工具完成：{tn}")
+                status_box.success(f"工具 `{tn}` 完成")
 
             elif ev_type == "message":
                 m = payload.get("message") or {}
@@ -232,6 +221,8 @@ def _handle_prompt(prompt: str) -> None:
             assistant_placeholder = st.empty()
     assistant_placeholder.markdown(full_text or last_status or "已完成")
 
+    _render_tool_calls(tool_calls)
+
     st.session_state["chat_history"].append(
         {
             "role": "assistant",
@@ -241,14 +232,6 @@ def _handle_prompt(prompt: str) -> None:
         }
     )
     add_message(conv_id, "assistant", full_text or last_status or "已完成", {"tool_calls": tool_calls})
-
-    if tool_calls:
-        with st.expander("工具调用详情"):
-            for t in tool_calls:
-                st.markdown(f"{t.get('name')}：{t.get('status')}")
-                detail = t.get("detail") or ""
-                if detail:
-                    st.code(detail, language="json")
 
     if report_html:
         st.divider()
@@ -260,11 +243,16 @@ def _handle_prompt(prompt: str) -> None:
 
 _init_state()
 _render_sidebar()
-_render_header()
-_render_status_row()
-st.divider()
-_render_history()
 
-prompt = st.chat_input("输入您的问题，例如：请生成今日晨会简报")
+has_conv = bool(st.session_state.get("current_conv_id"))
+history = st.session_state.get("chat_history", [])
+
+if not has_conv:
+    _render_welcome()
+else:
+    _render_history()
+
+st.divider()
+prompt = st.chat_input("输入您的问题")
 if prompt:
     _handle_prompt(prompt)

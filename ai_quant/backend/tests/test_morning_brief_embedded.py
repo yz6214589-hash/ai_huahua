@@ -4,15 +4,15 @@ from pathlib import Path
 
 
 def test_ceo_integration_has_no_external_dependency() -> None:
-    p = Path(__file__).resolve().parents[1] / "ai_quant_api" / "services" / "ceo" / "integration.py"
+    p = Path(__file__).resolve().parents[1] / "" / "modules" / "console" / "service.py"
     text = p.read_text(encoding="utf-8")
     assert "sys.path.insert" not in text
     assert "from ceo." not in text
-    assert "ceo.morning_brief.graph" not in text
+    assert "services.ceo" not in text
 
 
 def test_morning_brief_graph_produces_report() -> None:
-    from ai_quant_api.ai.graphs.morning_brief_graph import build_graph
+    from workflow.morning_brief_graph import build_graph
 
     graph = build_graph()
     result = graph.invoke(

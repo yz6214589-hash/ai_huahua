@@ -1,8 +1,15 @@
 from fastapi.testclient import TestClient
 
-from ai_quant_api.app import app
-from ai_quant_api.api import reports as reports_api
+from app import app
+from api import reports as reports_api
 import time
+
+
+def _unwrap(resp):
+    body = resp.json()
+    if isinstance(body, dict) and "success" in body and "data" in body:
+        return body.get("data"), body
+    return body, body
 
 
 def test_reports_task_crud_and_view(tmp_path, monkeypatch) -> None:
@@ -16,11 +23,13 @@ def test_reports_task_crud_and_view(tmp_path, monkeypatch) -> None:
     client = TestClient(app)
 
     create = client.post(
-        "/api/reports/tasks",
+        "/api/v1/reports/tasks",
         json={"model": "qwen-max", "stock_codes": ["600519"]},
     )
     assert create.status_code == 200
-    task = (create.json() or {}).get("task") or {}
+    data, body = _unwrap(create)
+    assert body.get("success") is True
+    task = (data or {}).get("task") or {}
     task_id = task.get("task_id")
     assert task_id
     assert task.get("model") == "qwen-max"
@@ -29,15 +38,17 @@ def test_reports_task_crud_and_view(tmp_path, monkeypatch) -> None:
     assert task.get("finished_at") in (None, "")
     assert task.get("report_markdown") in (None, "")
 
-    lst = client.get("/api/reports/tasks?limit=100")
+    lst = client.get("/api/v1/reports/tasks?limit=100")
     assert lst.status_code == 200
-    tasks = (lst.json() or {}).get("tasks") or []
+    lst_data, lst_body = _unwrap(lst)
+    assert lst_body.get("success") is True
+    tasks = (lst_data or {}).get("tasks") or []
     assert any(x.get("task_id") == task_id for x in tasks)
 
     deadline = time.time() + 2.0
     final = None
     while time.time() < deadline:
-        view = client.get(f"/api/reports/tasks/{task_id}/view")
+        view = client.get(f"/api/v1/reports/tasks/{task_id}/view")
         if view.status_code == 200:
             final = view
             break
@@ -46,9 +57,11 @@ def test_reports_task_crud_and_view(tmp_path, monkeypatch) -> None:
     assert final is not None
     assert "600519" in (final.text or "")
 
-    delete = client.delete(f"/api/reports/tasks/{task_id}")
+    delete = client.delete(f"/api/v1/reports/tasks/{task_id}")
     assert delete.status_code == 200
-    assert delete.json().get("ok") is True
+    delete_data, delete_body = _unwrap(delete)
+    assert delete_body.get("success") is True
+    assert delete_data.get("ok") is True
 
 
 def test_reports_use_llm_enabled_without_key_still_generates(tmp_path, monkeypatch) -> None:
@@ -61,18 +74,20 @@ def test_reports_use_llm_enabled_without_key_still_generates(tmp_path, monkeypat
     client = TestClient(app)
 
     create = client.post(
-        "/api/reports/tasks",
+        "/api/v1/reports/tasks",
         json={"model": "deepseek", "stock_codes": ["002410.SZ"]},
     )
     assert create.status_code == 200
-    task = (create.json() or {}).get("task") or {}
+    data, body = _unwrap(create)
+    assert body.get("success") is True
+    task = (data or {}).get("task") or {}
     task_id = task.get("task_id")
     assert task_id
 
     deadline = time.time() + 2.0
     final = None
     while time.time() < deadline:
-        view = client.get(f"/api/reports/tasks/{task_id}/view")
+        view = client.get(f"/api/v1/reports/tasks/{task_id}/view")
         if view.status_code in (200, 500):
             final = view
             break
@@ -96,18 +111,20 @@ def test_reports_minmax_many_stocks(tmp_path, monkeypatch) -> None:
 
     codes = [f"6005{str(i).zfill(2)}" for i in range(1, 21)]
     create = client.post(
-        "/api/reports/tasks",
+        "/api/v1/reports/tasks",
         json={"model": "qwen-max", "stock_codes": codes},
     )
     assert create.status_code == 200
-    task = (create.json() or {}).get("task") or {}
+    data, body = _unwrap(create)
+    assert body.get("success") is True
+    task = (data or {}).get("task") or {}
     task_id = task.get("task_id")
     assert task_id
 
     deadline = time.time() + 3.0
     final = None
     while time.time() < deadline:
-        view = client.get(f"/api/reports/tasks/{task_id}/view")
+        view = client.get(f"/api/v1/reports/tasks/{task_id}/view")
         if view.status_code == 200:
             final = view
             break
@@ -139,18 +156,20 @@ def test_reports_retry_failed_then_success(tmp_path, monkeypatch) -> None:
     client = TestClient(app)
 
     create = client.post(
-        "/api/reports/tasks",
+        "/api/v1/reports/tasks",
         json={"model": "qwen-max", "stock_codes": ["600519"]},
     )
     assert create.status_code == 200
-    task = (create.json() or {}).get("task") or {}
+    data, body = _unwrap(create)
+    assert body.get("success") is True
+    task = (data or {}).get("task") or {}
     task_id = task.get("task_id")
     assert task_id
 
     deadline = time.time() + 2.0
     failed = None
     while time.time() < deadline:
-        view = client.get(f"/api/reports/tasks/{task_id}/view")
+        view = client.get(f"/api/v1/reports/tasks/{task_id}/view")
         if view.status_code == 500:
             failed = view
             break
@@ -158,14 +177,16 @@ def test_reports_retry_failed_then_success(tmp_path, monkeypatch) -> None:
         time.sleep(0.05)
     assert failed is not None
 
-    retry = client.post(f"/api/reports/tasks/{task_id}/retry")
+    retry = client.post(f"/api/v1/reports/tasks/{task_id}/retry")
     assert retry.status_code == 200
-    assert retry.json().get("ok") is True
+    retry_data, retry_body = _unwrap(retry)
+    assert retry_body.get("success") is True
+    assert retry_data.get("ok") is True
 
     deadline2 = time.time() + 2.0
     final = None
     while time.time() < deadline2:
-        view = client.get(f"/api/reports/tasks/{task_id}/view")
+        view = client.get(f"/api/v1/reports/tasks/{task_id}/view")
         if view.status_code == 200:
             final = view
             break
@@ -193,18 +214,20 @@ def test_reports_can_disable_rag_per_task(tmp_path, monkeypatch) -> None:
     client = TestClient(app)
 
     create = client.post(
-        "/api/reports/tasks",
+        "/api/v1/reports/tasks",
         json={"model": "qwen-max", "stock_codes": ["600519"], "use_rag": False},
     )
     assert create.status_code == 200
-    task = (create.json() or {}).get("task") or {}
+    data, body = _unwrap(create)
+    assert body.get("success") is True
+    task = (data or {}).get("task") or {}
     task_id = task.get("task_id")
     assert task_id
 
     deadline = time.time() + 2.0
     final = None
     while time.time() < deadline:
-        view = client.get(f"/api/reports/tasks/{task_id}/view")
+        view = client.get(f"/api/v1/reports/tasks/{task_id}/view")
         if view.status_code == 200:
             final = view
             break
@@ -226,18 +249,20 @@ def test_reports_saves_markdown_to_md_file(tmp_path, monkeypatch) -> None:
     client = TestClient(app)
 
     create = client.post(
-        "/api/reports/tasks",
+        "/api/v1/reports/tasks",
         json={"model": "qwen-max", "stock_codes": ["600519"]},
     )
     assert create.status_code == 200
-    task = (create.json() or {}).get("task") or {}
+    data, body = _unwrap(create)
+    assert body.get("success") is True
+    task = (data or {}).get("task") or {}
     task_id = task.get("task_id")
     assert task_id
 
     deadline = time.time() + 2.0
     final = None
     while time.time() < deadline:
-        view = client.get(f"/api/reports/tasks/{task_id}/view")
+        view = client.get(f"/api/v1/reports/tasks/{task_id}/view")
         if view.status_code == 200:
             final = view
             break
@@ -265,18 +290,20 @@ def test_reports_failed_task_has_error_location(tmp_path, monkeypatch) -> None:
     client = TestClient(app)
 
     create = client.post(
-        "/api/reports/tasks",
+        "/api/v1/reports/tasks",
         json={"model": "qwen-max", "stock_codes": ["600519"]},
     )
     assert create.status_code == 200
-    task = (create.json() or {}).get("task") or {}
+    data, body = _unwrap(create)
+    assert body.get("success") is True
+    task = (data or {}).get("task") or {}
     task_id = task.get("task_id")
     assert task_id
 
     deadline = time.time() + 2.0
     failed = None
     while time.time() < deadline:
-        view = client.get(f"/api/reports/tasks/{task_id}/view")
+        view = client.get(f"/api/v1/reports/tasks/{task_id}/view")
         if view.status_code == 500:
             failed = view
             break
@@ -284,6 +311,10 @@ def test_reports_failed_task_has_error_location(tmp_path, monkeypatch) -> None:
         time.sleep(0.05)
     assert failed is not None
 
-    tasks = (client.get("/api/reports/tasks?limit=50").json() or {}).get("tasks") or []
+    tasks_resp = client.get("/api/v1/reports/tasks?limit=50")
+    assert tasks_resp.status_code == 200
+    tasks_data, tasks_body = _unwrap(tasks_resp)
+    assert tasks_body.get("success") is True
+    tasks = (tasks_data or {}).get("tasks") or []
     item = [t for t in tasks if t.get("task_id") == task_id][0]
     assert item.get("error_location")

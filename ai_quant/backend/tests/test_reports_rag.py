@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from ai_quant_api.services.reports import rag
+from services.reports import rag
 
 
 class FakeEmbeddings:
