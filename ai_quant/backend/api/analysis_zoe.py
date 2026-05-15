@@ -12,9 +12,9 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from db import connect, load_mysql_config, query_dict
-from modules.analysis import get_sample_codes, get_signals, get_status as get_analysis_status
-from runtime.logging_service import get_logger
+from core.db import connect, load_mysql_config, query_dict
+from core.analysis import get_sample_codes, get_signals, get_status as get_analysis_status
+from infra.storage.logging_service import get_logger
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/v1/analysis", tags=["analysis"])
@@ -340,7 +340,7 @@ def _load_daily(stock_code: str, start: str, end: str) -> pd.DataFrame:
         rows = query_dict(
             conn,
             """
-            SELECT trade_date, open, high, low, close, volume, amount, stock_name
+            SELECT trade_date, open_price, high_price, low_price, close_price, volume, amount, stock_name
             FROM trade_stock_daily
             WHERE stock_code = %s AND trade_date >= %s AND trade_date <= %s
             ORDER BY trade_date ASC
@@ -350,7 +350,7 @@ def _load_daily(stock_code: str, start: str, end: str) -> pd.DataFrame:
         if not rows:
             return pd.DataFrame()
         df = pd.DataFrame(rows)
-        for col in ["open", "high", "low", "close", "volume", "amount"]:
+        for col in ["open_price", "high_price", "low_price", "close_price", "volume", "amount"]:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
         df["trade_date"] = pd.to_datetime(df["trade_date"])
@@ -367,7 +367,7 @@ def _run_simple_backtest(
     params: dict[str, Any],
 ) -> dict[str, Any]:
     df = df.copy().reset_index(drop=True)
-    close = df["close"].values
+    close = df["close_price"].values
     n = len(close)
     cash = 100000.0
     position = 0

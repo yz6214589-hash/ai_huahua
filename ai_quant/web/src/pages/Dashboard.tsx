@@ -20,7 +20,7 @@ export default function Dashboard() {
     setLoading(true)
     setErr(null)
     try {
-      const data = await fetchJson<ConsoleOverview>('/api/console/overview')
+      const data = await fetchJson<ConsoleOverview>('/api/v1/console/overview')
       setOverview(data)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))

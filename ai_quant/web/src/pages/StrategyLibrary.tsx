@@ -31,7 +31,7 @@ export default function StrategyLibrary() {
 
   useEffect(() => {
     setLoading(true)
-    fetchJson<{ strategies: StrategyDef[] }>('/api/analysis/strategies')
+    fetchJson<{ strategies: StrategyDef[] }>('/api/v1/analysis/strategies')
       .then((r) => setStrategies(r.strategies || []))
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))

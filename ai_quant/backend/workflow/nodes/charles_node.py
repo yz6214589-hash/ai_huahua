@@ -150,7 +150,7 @@ def charles_node(state: TradingState) -> dict:
 
     try:
         web_result = _run_script(
-            "skills/web-search/scripts/search_market.py",
+            "skills/web-search-qwen/scripts/search_market.py",
             ["--query", f"{stock} 基本面 行业动态", "--type", "stock"],
             timeout=60,
         )

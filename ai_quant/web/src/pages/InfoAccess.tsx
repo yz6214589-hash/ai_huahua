@@ -6,6 +6,7 @@ const TABS = [
   { key: 'sentiment', label: '舆情监控', path: '/info-access/sentiment' },
   { key: 'macro', label: '宏观数据', path: '/info-access/macro' },
   { key: 'financial-hot', label: '财经热点', path: '/info-access/financial-hot' },
+  { key: 'data-delivery', label: '数据与交付', path: '/info-access/data-delivery' },
 ]
 
 export default function InfoAccess() {

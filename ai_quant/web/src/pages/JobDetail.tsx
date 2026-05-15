@@ -29,7 +29,7 @@ export default function JobDetail() {
     setErr(null)
     try {
       const r = await fetchJson<{ runs: JobRunResult[] }>(
-        `/api/jobs/runs?domain=${encodeURIComponent(domain)}&limit=100`
+        `/api/v1/jobs/runs?domain=${encodeURIComponent(domain)}&limit=100`
       )
       setHistory(r.runs || [])
       if (r.runs && r.runs.length > 0) {

@@ -10,8 +10,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from db import connect, load_mysql_config, query_dict
-from runtime.logging_service import get_logger
+from core.db import connect, load_mysql_config, query_dict
+from infra.storage.logging_service import get_logger
 
 logger = get_logger("stock_detail")
 

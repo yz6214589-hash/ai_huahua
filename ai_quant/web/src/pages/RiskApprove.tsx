@@ -28,7 +28,7 @@ export default function RiskApprove() {
   const [resp, setResp] = useState<RiskApproveResponse | null>(null)
 
   useEffect(() => {
-    fetchJson<RiskStatus>('/api/risk/status').then(setData).catch(() => null)
+    fetchJson<RiskStatus>('/api/v1/risk/status').then(setData).catch(() => null)
   }, [])
 
   const payload = useMemo<RiskApproveRequest | null>(() => {
@@ -53,7 +53,7 @@ export default function RiskApprove() {
     setErr(null)
     setResp(null)
     try {
-      const r = await postJson<RiskApproveResponse>('/api/risk/approve', payload)
+      const r = await postJson<RiskApproveResponse>('/api/v1/risk/approve', payload)
       setResp(r)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))

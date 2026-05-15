@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from runtime.logging_service import (
+from infra.storage.logging_service import (
     get_logger,
     sanitize,
     sanitize_dict,

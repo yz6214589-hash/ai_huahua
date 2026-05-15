@@ -17,9 +17,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
-from db import connect, load_mysql_config, query_dict
-from modules.data import get_job_store_dir, get_summary
-from runtime.logging_service import get_logger
+from core.db import connect, load_mysql_config, query_dict
+from core.data import get_job_store_dir, get_summary
+from infra.storage.logging_service import get_logger
 
 logger = get_logger("data")
 
@@ -372,7 +372,7 @@ def financial_hot() -> dict[str, Any]:
     财经热点接口
     返回今日日历事件（财经日历）和最近重要新闻
     """
-    from db import load_mysql_config
+    from core.db import load_mysql_config
     import pymysql
     cfg = load_mysql_config()
     conn = pymysql.connect(
@@ -385,7 +385,7 @@ def financial_hot() -> dict[str, Any]:
         cur = conn.cursor(pymysql.cursors.DictCursor)
         cur.execute(
             """
-            SELECT event_date, country, importance, source, event_name
+            SELECT event_date, country, importance, source, title
             FROM trade_calendar_event
             WHERE event_date = %s
             ORDER BY FIELD(importance, '高', '中', '低'), source
@@ -399,8 +399,9 @@ def financial_hot() -> dict[str, Any]:
         cur2 = conn.cursor(pymysql.cursors.DictCursor)
         cur2.execute(
             """
-            SELECT stock_code, stock_name, title, source, published_at, url
-            FROM trade_stock_news
+            SELECT n.stock_code, m.stock_name, n.title, n.source, n.published_at, n.source_url
+            FROM trade_stock_news n
+            LEFT JOIN trade_stock_master m ON n.stock_code = m.stock_code
             WHERE published_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
             ORDER BY published_at DESC
             LIMIT 20
@@ -413,11 +414,11 @@ def financial_hot() -> dict[str, Any]:
             "date": today,
             "events": [{"event_date": str(r["event_date"]), "country": r["country"] or "—",
                         "importance": r["importance"] or "—", "source": r["source"] or "—",
-                        "event_name": r.get("event_name") or "—"} for r in events],
+                        "event_name": r.get("title") or "—"} for r in events],
             "news": [{"stock_code": r["stock_code"], "stock_name": r.get("stock_name") or "—",
                       "title": r["title"] or "—", "source": r.get("source") or "—",
                       "published_at": str(r["published_at"]) if r.get("published_at") else "—",
-                      "url": r.get("url") or ""} for r in news],
+                      "url": r.get("source_url") or ""} for r in news],
         }
     finally:
         conn.close()

@@ -1,0 +1,312 @@
+{
+  "execution_time": "20260514144220",
+  "total": 4,
+  "completed": 4,
+  "failed": 0,
+  "results": [
+    {
+      "id": "TC001",
+      "description": "海南发展 + qwen模型 + RAG关闭",
+      "status": "completed",
+      "steps": [
+        {
+          "step": 1,
+          "name": "页面加载",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC001_海南发展_20260514144220_01_page_load.png"
+        },
+        {
+          "step": 2,
+          "name": "参数配置",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC001_海南发展_20260514144220_02_config.png"
+        },
+        {
+          "step": 3,
+          "name": "股票选择",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC001_海南发展_20260514144220_03_stock_selected.png"
+        },
+        {
+          "step": 4,
+          "name": "创建任务",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC001_海南发展_20260514144220_04_task_created.png"
+        },
+        {
+          "step": 5,
+          "name": "任务等待",
+          "status": "timeout",
+          "note": "等待超时"
+        },
+        {
+          "step": 6,
+          "name": "文件验证",
+          "status": "timeout",
+          "note": "研报生成需要较长时间（LLM API调用）"
+        }
+      ],
+      "screenshots": [
+        {
+          "step": 1,
+          "name": "Step 1: 页面加载",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC001_海南发展_20260514144220_01_page_load.png"
+        },
+        {
+          "step": 2,
+          "name": "Step 2: 参数配置",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC001_海南发展_20260514144220_02_config.png"
+        },
+        {
+          "step": 3,
+          "name": "Step 3: 股票选择",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC001_海南发展_20260514144220_03_stock_selected.png"
+        },
+        {
+          "step": 4,
+          "name": "Step 4: 创建任务",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC001_海南发展_20260514144220_04_task_created.png"
+        },
+        {
+          "step": 5,
+          "name": "Step 5: 任务状态",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC001_海南发展_20260514144220_05_task_status.png"
+        },
+        {
+          "step": 6,
+          "name": "Step 6: 最终验证",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC001_海南发展_20260514144220_06_validation.png"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "TC002",
+      "description": "广联达 + DeepSeek模型 + 联网搜索开启 + RAG关闭",
+      "status": "completed",
+      "steps": [
+        {
+          "step": 1,
+          "name": "页面加载",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC002_广联达_20260514144220_01_page_load.png"
+        },
+        {
+          "step": 2,
+          "name": "参数配置",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC002_广联达_20260514144220_02_config.png"
+        },
+        {
+          "step": 3,
+          "name": "股票选择",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC002_广联达_20260514144220_03_stock_selected.png"
+        },
+        {
+          "step": 4,
+          "name": "创建任务",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC002_广联达_20260514144220_04_task_created.png"
+        },
+        {
+          "step": 5,
+          "name": "任务等待",
+          "status": "timeout",
+          "note": "等待超时"
+        },
+        {
+          "step": 6,
+          "name": "文件验证",
+          "status": "timeout",
+          "note": "研报生成需要较长时间（LLM API调用）"
+        }
+      ],
+      "screenshots": [
+        {
+          "step": 1,
+          "name": "Step 1: 页面加载",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC002_广联达_20260514144220_01_page_load.png"
+        },
+        {
+          "step": 2,
+          "name": "Step 2: 参数配置",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC002_广联达_20260514144220_02_config.png"
+        },
+        {
+          "step": 3,
+          "name": "Step 3: 股票选择",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC002_广联达_20260514144220_03_stock_selected.png"
+        },
+        {
+          "step": 4,
+          "name": "Step 4: 创建任务",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC002_广联达_20260514144220_04_task_created.png"
+        },
+        {
+          "step": 5,
+          "name": "Step 5: 任务状态",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC002_广联达_20260514144220_05_task_status.png"
+        },
+        {
+          "step": 6,
+          "name": "Step 6: 最终验证",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC002_广联达_20260514144220_06_validation.png"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "TC003",
+      "description": "海南发展 + qwen模型 + RAG开启",
+      "status": "completed",
+      "steps": [
+        {
+          "step": 1,
+          "name": "页面加载",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC003_海南发展_20260514144220_01_page_load.png"
+        },
+        {
+          "step": 2,
+          "name": "参数配置",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC003_海南发展_20260514144220_02_config.png"
+        },
+        {
+          "step": 3,
+          "name": "股票选择",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC003_海南发展_20260514144220_03_stock_selected.png"
+        },
+        {
+          "step": 4,
+          "name": "创建任务",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC003_海南发展_20260514144220_04_task_created.png"
+        },
+        {
+          "step": 5,
+          "name": "任务等待",
+          "status": "timeout",
+          "note": "等待超时"
+        },
+        {
+          "step": 6,
+          "name": "文件验证",
+          "status": "timeout",
+          "note": "研报生成需要较长时间（LLM API调用）"
+        }
+      ],
+      "screenshots": [
+        {
+          "step": 1,
+          "name": "Step 1: 页面加载",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC003_海南发展_20260514144220_01_page_load.png"
+        },
+        {
+          "step": 2,
+          "name": "Step 2: 参数配置",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC003_海南发展_20260514144220_02_config.png"
+        },
+        {
+          "step": 3,
+          "name": "Step 3: 股票选择",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC003_海南发展_20260514144220_03_stock_selected.png"
+        },
+        {
+          "step": 4,
+          "name": "Step 4: 创建任务",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC003_海南发展_20260514144220_04_task_created.png"
+        },
+        {
+          "step": 5,
+          "name": "Step 5: 任务状态",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC003_海南发展_20260514144220_05_task_status.png"
+        },
+        {
+          "step": 6,
+          "name": "Step 6: 最终验证",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC003_海南发展_20260514144220_06_validation.png"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "TC004",
+      "description": "金发科技 + DeepSeek模型 + 联网搜索开启 + RAG开启",
+      "status": "completed",
+      "steps": [
+        {
+          "step": 1,
+          "name": "页面加载",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC004_金发科技_20260514144220_01_page_load.png"
+        },
+        {
+          "step": 2,
+          "name": "参数配置",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC004_金发科技_20260514144220_02_config.png"
+        },
+        {
+          "step": 3,
+          "name": "股票选择",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC004_金发科技_20260514144220_03_stock_selected.png"
+        },
+        {
+          "step": 4,
+          "name": "创建任务",
+          "status": "pass",
+          "screenshot": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC004_金发科技_20260514144220_04_task_created.png"
+        },
+        {
+          "step": 5,
+          "name": "任务等待",
+          "status": "timeout",
+          "note": "等待超时"
+        },
+        {
+          "step": 6,
+          "name": "文件验证",
+          "status": "timeout",
+          "note": "研报生成需要较长时间（LLM API调用）"
+        }
+      ],
+      "screenshots": [
+        {
+          "step": 1,
+          "name": "Step 1: 页面加载",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC004_金发科技_20260514144220_01_page_load.png"
+        },
+        {
+          "step": 2,
+          "name": "Step 2: 参数配置",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC004_金发科技_20260514144220_02_config.png"
+        },
+        {
+          "step": 3,
+          "name": "Step 3: 股票选择",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC004_金发科技_20260514144220_03_stock_selected.png"
+        },
+        {
+          "step": 4,
+          "name": "Step 4: 创建任务",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC004_金发科技_20260514144220_04_task_created.png"
+        },
+        {
+          "step": 5,
+          "name": "Step 5: 任务状态",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC004_金发科技_20260514144220_05_task_status.png"
+        },
+        {
+          "step": 6,
+          "name": "Step 6: 最终验证",
+          "path": "/Users/apple/Desktop/ai_huahua/ai_quant/web/e2e/test_screenshots/TC004_金发科技_20260514144220_06_validation.png"
+        }
+      ],
+      "error": null
+    }
+  ]
+}

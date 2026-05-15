@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from modules.console import get_overview, get_status, trigger_morning
+from core.console import get_overview, get_status, trigger_morning
 
 router = APIRouter(prefix="/api/v1/console", tags=["console"])
 

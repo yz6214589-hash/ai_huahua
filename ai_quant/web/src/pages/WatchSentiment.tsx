@@ -40,12 +40,12 @@ export default function WatchSentiment() {
   const [err, setErr] = useState<string | null>(null)
 
   const loadSchedule = async () => {
-    const r = await fetchJson<{ enabled: boolean; cron: string; timezone: string }>('/api/sentiment/schedule')
+    const r = await fetchJson<{ enabled: boolean; cron: string; timezone: string }>('/api/v1/sentiment/schedule')
     setSchedule(r)
   }
 
   const loadRuns = async () => {
-    const r = await fetchJson<{ runs: SentimentRun[] }>('/api/sentiment/runs?limit=20')
+    const r = await fetchJson<{ runs: SentimentRun[] }>('/api/v1/sentiment/runs?limit=20')
     setRuns(r.runs || [])
     setLatestRun((r.runs || [])[0] || null)
   }
@@ -57,7 +57,7 @@ export default function WatchSentiment() {
       const params = new URLSearchParams()
       if (runId) params.set('run_id', runId)
       params.set('limit', '100')
-      const r = await fetchJson<{ events: SentimentEvent[] }>(`/api/sentiment/events?${params.toString()}`)
+      const r = await fetchJson<{ events: SentimentEvent[] }>(`/api/v1/sentiment/events?${params.toString()}`)
       setEvents(r.events || [])
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -70,7 +70,7 @@ export default function WatchSentiment() {
     if (!schedule) return
     setScheduleSaving(true)
     try {
-      await fetchJson(`/api/sentiment/schedule`, {
+      await fetchJson(`/api/v1/sentiment/schedule`, {
         method: 'PUT',
         body: JSON.stringify({ enabled: !schedule.enabled, cron: schedule.cron, timezone: schedule.timezone }),
       })
@@ -85,7 +85,7 @@ export default function WatchSentiment() {
   const runWatchlistOnce = async () => {
     setErr(null)
     try {
-      await postJson('/api/sentiment/watchlist', {})
+      await postJson('/api/v1/sentiment/watchlist', {})
       await loadRuns()
       await loadEvents()
     } catch (e) {
@@ -97,7 +97,7 @@ export default function WatchSentiment() {
     if (manualSelected.length === 0) return
     setErr(null)
     try {
-      await postJson('/api/sentiment/analyze', {
+      await postJson('/api/v1/sentiment/analyze', {
         stock_codes: manualSelected.map((s) => s.code),
         days: manualDays,
         use_llm: manualUseLlm,

@@ -1,0 +1,1 @@
+{"runId": "513e7d9ed5cc4c2784e052ea67011c62", "domain": "sentiment_monitor", "startedAt": "2026-05-15T15:10:00", "finishedAt": "2026-05-15T15:10:00", "status": "success", "dataSourceFinal": "file", "fallbackChain": ["file"], "rowsWritten": 0, "itemsProcessed": 5, "failedItems": [], "message": "已触发扫描（days=3，stocks=5）", "userMessage": "已触发扫描（days=3，stocks=5）"}

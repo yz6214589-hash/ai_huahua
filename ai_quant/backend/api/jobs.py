@@ -14,11 +14,11 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from db import connect, execute, executemany, load_mysql_config, query_dict
+from core.db import connect, execute, executemany, load_mysql_config, query_dict
 
-from modules.data import list_job_runs, write_job_run
-from modules.jobs import run_domain
-from runtime.logging_service import get_logger
+from core.data import list_job_runs, write_job_run
+from core.jobs import run_domain
+from infra.storage.logging_service import get_logger
 
 logger = get_logger("jobs")
 
@@ -431,7 +431,7 @@ def list_runs(limit: int = 10, domain: str | None = None) -> dict[str, object]:
 
 @router.get("/runs/{run_id}")
 def get_run(run_id: str) -> dict[str, Any]:
-    from modules.data import read_job_run
+    from core.data import read_job_run
 
     rid = str(run_id or "").strip()
     if not rid:

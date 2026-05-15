@@ -18,10 +18,13 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from runtime.report_store import create_task, delete_task, get_task, list_tasks, now_iso, update_task
-from runtime.logging_service import get_logger
-from modules.data import search_stocks
-from services.reports.rag import (
+from common.response import ok
+
+from agents.report_agent import run_report_agent, ReportAgentResult
+from infra.storage.report_store import create_task, delete_task, get_task, list_tasks, now_iso, update_task
+from infra.storage.logging_service import get_logger
+from core.data import search_stocks
+from infra.reports.rag import (
     build_faiss_index,
     get_rag_settings,
     ingest_pdfs,
@@ -31,6 +34,52 @@ from services.reports.rag import (
 )
 
 logger = get_logger("reports")
+
+
+def _do_mysql_upsert_with_rollback(
+    task_id: str,
+    report_path: str | None,
+    status: str,
+    finished_at: str,
+    error_msg: str | None = None,
+) -> None:
+    """
+    将任务写入 report_tasks 表，实现"文件存在 ↔ 表记录存在"强一致性。
+
+    策略：文件先写入 → DB 写入（report_tasks）→ 失败则删除文件并回滚状态。
+    使用 update_task 回滚状态到 waiting（而非保留 failed，避免混淆重试逻辑）。
+
+    Args:
+        task_id:      任务 ID
+        report_path:  报告文件路径（成功时非空，失败时传 None）
+        status:       最终状态（success / failed）
+        finished_at:  完成时间（ISO 字符串）
+        error_msg:    错误信息（失败时传入）
+    """
+    try:
+        from infra.storage.report_store import _mysql_upsert_report_tasks
+        from infra.storage.report_store import get_task
+    except Exception:
+        return
+
+    task = get_task(task_id)
+    if task is None:
+        return
+
+    task.report_path = report_path
+    task.status = status
+    task.finished_at = finished_at
+    if error_msg:
+        task.error_message = error_msg
+
+    ok = _mysql_upsert_report_tasks(task)
+    if not ok and report_path:
+        try:
+            Path(report_path).unlink(missing_ok=True)
+            logger.warning("report_tasks 写入失败，已回滚删除文件: %s", report_path)
+        except Exception:
+            logger.error("文件回滚删除失败: %s", report_path)
+        update_task(task_id, status="waiting", report_path=None, finished_at=None)
 
 
 def _project_root() -> Path:
@@ -86,11 +135,13 @@ class ReportTaskCreateRequest(BaseModel):
     Attributes:
         model: LLM模型名称，支持qwen-max和deepseek
         stock_codes: 股票代码列表
-        use_rag: 是否启用RAG检索增强
+        use_rag: 是否启用本地RAG检索增强（默认 False）
+        mode: 生成模式 - qwen（默认）、deepseek_with_web（DeepSeek + 联网搜索）
     """
     model: str
     stock_codes: list[str]
-    use_rag: bool = True
+    use_rag: bool = False
+    mode: str = "qwen"
 
 
 def _parse_date(v: str) -> date | None:
@@ -173,25 +224,14 @@ def reports_rag_status() -> dict[str, Any]:
     Returns:
         dict: RAG索引状态信息
     """
-    return rag_status()
+    return ok(rag_status())
 
 
 @router.post("/rag/ingest")
 def reports_rag_ingest(req: RagIngestRequest) -> dict[str, Any]:
-    """
-    触发PDF文档解析与RAG FAISS索引构建
-    
-    将PDF文档解析为文本块并构建向量索引，支持增量添加和全量重建
-    
-    Args:
-        req: RAG索引构建请求参数
-        
-    Returns:
-        dict: 包含ingest和index两个部分的处理结果
-    """
     ingest = ingest_pdfs(rebuild=bool(req.rebuild), limit=req.limit)
     built = build_faiss_index(rebuild=bool(req.rebuild))
-    return {"ingest": ingest, "index": built}
+    return ok({"ingest": ingest, "index": built})
 
 
 @router.get("/rag/query")
@@ -209,7 +249,7 @@ def reports_rag_query(q: str = Query(default=""), stock: str = Query(default="")
     Returns:
         dict: 包含k条最相关文档片段
     """
-    return rag_query(q=q, stock=stock, k=k)
+    return ok(rag_query(q=q, stock=stock, k=k))
 
 
 def _case_root() -> Path:
@@ -324,7 +364,7 @@ def _builtin_report_markdown(model: str, stock_code: str, stock_name: str, warni
     data_note = ""
     data_block = ""
     try:
-        from db import connect, load_mysql_config, query_dict
+        from core.db import connect, load_mysql_config, query_dict
 
         cfg = load_mysql_config()
         conn = connect(cfg)
@@ -428,37 +468,65 @@ def _builtin_report_markdown(model: str, stock_code: str, stock_name: str, warni
     return "\n".join(sections).strip() + "\n"
 
 
-def _generate_report_markdown(model: str, stock_code: str, stock_name: str, use_rag: bool = True) -> str:
+def _generate_report_markdown(
+    model: str,
+    stock_code: str,
+    stock_name: str,
+    use_rag: bool = False,
+    mode: str = "qwen",
+) -> str:
     """
-    单只股票的研报生成核心逻辑（严格LLM模式）
-    
+    单只股票的研报生成核心逻辑。
+
     完整流程：
-    1. 前置校验：检查AI_QUANT_REPORT_USE_LLM和DASHSCOPE_API_KEY环境变量
-    2. 从MySQL读取日线行情、财务报告期、最新新闻等数据快照
-    3. 若FAISS索引已构建则执行RAG检索，补充研报背景材料
-    4. 构造system_prompt（角色设定）+ user_prompt（数据+结构要求），调用DashScope LLM
-    5. 返回LLM生成的Markdown研报全文
-    
-    若任一步骤失败则抛出异常，不使用内置模板兜底
-    
+    1. 前置校验：检查 API Key 环境变量
+    2. deepseek_with_web 模式：调用 report_agent（联网搜索 + DeepSeek）
+    3. qwen 模式：读取 MySQL 数据快照，调用 DashScope LLM
+    4. 返回 Markdown 研报全文
+
     Args:
-        model: LLM模型名称
+        model: LLM 模型名称
         stock_code: 股票代码
         stock_name: 股票名称
-        use_rag: 是否使用RAG检索增强
-        
+        use_rag: 是否使用本地 RAG
+        mode: 生成模式 - qwen / deepseek_with_web
+
     Returns:
-        str: Markdown格式的研报全文
-        
+        Markdown 格式研报全文
+
     Raises:
-        RuntimeError: 环境配置不完整或LLM调用失败
+        RuntimeError: 环境配置不完整或 LLM 调用失败
     """
     logger.info("研报生成开始", extra={
         "model": model,
         "stock_code": stock_code,
         "stock_name": stock_name,
-        "use_rag": bool(use_rag)
+        "use_rag": bool(use_rag),
+        "mode": mode,
     })
+
+    if mode == "deepseek_with_web":
+        logger.info("使用 DeepAgent 模式", extra={
+            "stock_code": stock_code,
+            "stock_name": stock_name,
+            "use_rag": bool(use_rag),
+        })
+        result = run_report_agent(
+            stock_codes=[stock_code],
+            stock_names=[stock_name],
+            mode=mode,
+            use_rag=bool(use_rag),
+            model=model,
+        )
+        if result.error:
+            raise RuntimeError(result.error)
+        logger.info("DeepAgent 完成", extra={
+            "stock_code": stock_code,
+            "tools_used": result.tools_used,
+            "text_len": len(result.text),
+        })
+        return result.text + "\n"
+
     env_use_llm = str(os.getenv("AI_QUANT_REPORT_USE_LLM", "")).strip() in ("1", "true", "True")
     if not env_use_llm:
         logger.warning("LLM 未启用", extra={
@@ -484,7 +552,7 @@ def _generate_report_markdown(model: str, stock_code: str, stock_name: str, use_
     fin_latest = ""
     news_rows: list[dict[str, Any]] = []
     try:
-        from db import connect, load_mysql_config, query_dict
+        from core.db import connect, load_mysql_config, query_dict
 
         cfg = load_mysql_config()
         conn = connect(cfg)
@@ -501,7 +569,7 @@ def _generate_report_markdown(model: str, stock_code: str, stock_name: str, use_
             # 查询最近30条新闻
             news_rows = query_dict(
                 conn,
-                "SELECT published_at, title, news_type, url FROM trade_stock_news WHERE stock_code=%s ORDER BY published_at DESC LIMIT 30",
+                "SELECT published_at, title, news_type, source_url FROM trade_stock_news WHERE stock_code=%s ORDER BY published_at DESC LIMIT 30",
                 (stock_code,),
             )
         finally:
@@ -650,16 +718,17 @@ def _map_report_error_message(msg: str) -> str:
 
 def _process_task(task_id: str) -> None:
     """
-    后台worker线程中执行单个研报任务的完整生成流程
-    
+    后台 worker 线程中执行单个研报任务的完整生成流程
+
     步骤：
     1. 从持久化存储中读取任务记录
-    2. 更新状态为running（含started_at）
-    3. 对每只股票调用_generate_report_markdown生成内容
-    4. 多只股票结果用分隔线拼接，写入report_outputs/{task_id}.md
-    5. 更新任务状态为success并存储报告正文
-    6. 捕获所有异常，写入日志并将状态更新为failed（含错误提示）
-    
+    2. 更新状态为 running（含 started_at）
+    3. 对每只股票调用 _generate_report_markdown 生成内容
+    4. 多只股票结果用分隔线拼接，写入 report_outputs/report_{YYYYMMDD}_{task_id}.md
+    5. 尝试写入 report_tasks 表（事务一致性：DB 失败则删除文件并回滚状态）
+    6. 更新任务状态为 success 并存储报告正文
+    7. 捕获所有异常，写入日志并将状态更新为 failed（含错误提示）
+
     Args:
         task_id: 任务唯一标识符
     """
@@ -667,40 +736,69 @@ def _process_task(task_id: str) -> None:
     if task is None:
         return
     update_task(task_id, status="running", started_at=now_iso(), finished_at=None, error_message=None)
+    out_file: Path | None = None
     try:
         if not task.stock_codes:
             raise RuntimeError("任务缺少股票信息（stock_codes 为空）")
         parts = []
         for code, name in zip(task.stock_codes, task.stock_names):
-            parts.append(_generate_report_markdown(model=task.model, stock_code=code, stock_name=name, use_rag=bool(getattr(task, "use_rag", True))))
+            parts.append(_generate_report_markdown(
+                model=task.model,
+                stock_code=code,
+                stock_name=name,
+                use_rag=bool(getattr(task, "use_rag", False)),
+                mode=getattr(task, "mode", "qwen"),
+            ))
         report_md = "\n\n---\n\n".join(parts)
         if not str(report_md or "").strip():
             raise RuntimeError("研报内容为空")
+
+        date_str = datetime.now().strftime("%Y%m%d")
         _default_out_dir = _project_root() / ".ai_quant" / "report_outputs"
         _env_out_dir = Path(str(os.getenv("AI_QUANT_REPORT_OUTPUT_DIR", "") or "").strip())
         out_dir = _env_out_dir if str(_env_out_dir) not in (".", "") else _default_out_dir
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_file = out_dir / f"{task_id}.md"
+        out_file = out_dir / f"report_{date_str}_{task_id}.md"
+
         try:
             out_file.write_text(report_md, encoding="utf-8")
         except PermissionError:
             out_dir = _default_out_dir
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_file = out_dir / f"{task_id}.md"
+            out_file = out_dir / f"report_{date_str}_{task_id}.md"
             out_file.write_text(report_md, encoding="utf-8")
-        file_size = len(report_md.encode('utf-8'))
+
+        file_size = len(report_md.encode("utf-8"))
         logger.info("研报保存成功", extra={
             "task_id": task_id,
             "file_path": str(out_file),
             "file_size": file_size,
-            "stocks_count": len(task.stock_codes)
+            "stocks_count": len(task.stock_codes),
+            "use_web": bool(getattr(task, "use_web", False)),
         })
-        update_task(task_id, status="success", finished_at=now_iso(), report_markdown=report_md, report_path=str(out_file))
+
+        finished_at = now_iso()
+        updated = update_task(
+            task_id,
+            status="success",
+            finished_at=finished_at,
+            report_markdown=report_md,
+            report_path=str(out_file),
+        )
+        if updated:
+            rec = updated
+        else:
+            rec = None
+
+        _do_mysql_upsert_with_rollback(task_id, str(out_file), "success", finished_at)
+
+        update_task(task_id, status="success")
+
     except BaseException as exc:
         msg = str(exc) if str(exc).strip() else f"{type(exc).__name__}"
         if isinstance(exc, SystemExit):
             msg = "研报生成被终止（请检查 DASHSCOPE_API_KEY、索引文件等配置）"
-        err_loc = None
+        err_loc: str | None = None
         try:
             tb = traceback.extract_tb(exc.__traceback__)
             if tb:
@@ -712,9 +810,13 @@ def _process_task(task_id: str) -> None:
             "task_id": task_id,
             "error": msg,
             "error_location": err_loc,
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         })
-        update_task(task_id, status="failed", finished_at=now_iso(), error_message=_map_report_error_message(msg), error_location=err_loc)
+        finished_at = now_iso()
+        update_task(task_id, status="failed", finished_at=finished_at,
+                    error_message=_map_report_error_message(msg), error_location=err_loc)
+        _do_mysql_upsert_with_rollback(task_id, None, "failed", finished_at,
+                                       error_msg=_map_report_error_message(msg))
 
 
 def _worker_loop() -> None:
@@ -833,7 +935,7 @@ def reports_list_tasks(
         out.append(it)
         if len(out) >= n:
             break
-    return {"tasks": out}
+    return ok({"tasks": out})
 
 
 @router.post("/tasks")
@@ -860,10 +962,18 @@ def reports_create_task(req: ReportTaskCreateRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="请选择至少一只股票")
 
     stock_names = _resolve_stock_names(stock_codes)
-    rec = create_task(model=model, stock_codes=stock_codes, stock_names=stock_names, use_rag=bool(req.use_rag))
+    mode_val = str(req.mode or "qwen")
+    rec = create_task(
+        model=model,
+        stock_codes=stock_codes,
+        stock_names=stock_names,
+        use_rag=bool(req.use_rag),
+        mode=mode_val,
+        use_web=(mode_val == "deepseek_with_web"),
+    )
     payload = dict(rec.__dict__)
     _enqueue_task(rec.task_id)
-    return {"task": payload}
+    return ok({"task": payload})
 
 
 @router.delete("/tasks/{task_id}")
@@ -879,10 +989,10 @@ def reports_delete_task(task_id: str) -> dict[str, Any]:
     Returns:
         dict: 操作结果
     """
-    ok = delete_task(task_id)
-    if not ok:
+    deleted = delete_task(task_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="task not found")
-    return {"ok": True}
+    return ok({"ok": True})
 
 
 @router.post("/tasks/{task_id}/retry")
@@ -907,7 +1017,7 @@ def reports_retry_task(task_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail="task is running")
     update_task(task_id, status="waiting", started_at=None, finished_at=None, error_message=None, report_markdown=None)
     _enqueue_task(task_id)
-    return {"ok": True}
+    return ok({"ok": True})
 
 
 @router.get("/tasks/{task_id}/view")
@@ -942,3 +1052,76 @@ def reports_view_task(task_id: str) -> Response:
     if task.status == "failed":
         return Response(content=str(task.error_message or ""), media_type="text/plain; charset=utf-8", status_code=500)
     return Response(content="report not ready", media_type="text/plain; charset=utf-8", status_code=409)
+
+
+@router.get("/report-tasks/query")
+def reports_query_tasks(
+    status: str = Query(default="", description="按状态精确过滤（success/failed/running/waiting）"),
+    model: str = Query(default="", description="按模型模糊过滤（如 deepseek/qwen）"),
+    created_start: str = Query(default="", description="创建时间起点（ISO 格式，如 2026-01-01）"),
+    created_end: str = Query(default="", description="创建时间终点（ISO 格式）"),
+    limit: int = Query(default=50, ge=1, le=500, description="最大返回条数"),
+) -> dict[str, Any]:
+    """
+    从 MySQL report_tasks 表查询研报任务（支持多条件筛选）。
+
+    返回字段：id, created_at, status, report_path, model, use_rag, use_web,
+              finish_time, stock_codes, stock_names, mode, error_message
+
+    Args:
+        status:        按状态精确过滤（success / failed / running / waiting）
+        model:         按模型模糊过滤（LIKE %model%）
+        created_start: 创建时间起点（ISO 格式）
+        created_end:   创建时间终点（ISO 格式）
+        limit:         最大返回条数（默认 50，最大 500）
+
+    Returns:
+        dict: 包含 tasks 列表和 total 计数
+    """
+    try:
+        from infra.storage.report_store import query_report_tasks
+    except Exception as e:
+        logger.error("导入 query_report_tasks 失败: %s", e)
+        raise HTTPException(status_code=500, detail="query not available")
+    rows = query_report_tasks(
+        status_filter=status or None,
+        model_filter=model or None,
+        created_start=created_start or None,
+        created_end=created_end or None,
+        limit=limit,
+    )
+    return ok({"tasks": rows, "total": len(rows)})
+
+
+@router.get("/report-tasks/{task_id}/download")
+def reports_download_task(task_id: str) -> Response:
+    """
+    获取研报文件的直接下载链接（302 重定向到实际文件路径）。
+
+    Args:
+        task_id: 任务 ID
+
+    Returns:
+        Response: 文件内容（text/markdown），不存在时 404
+    """
+    task = get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    path = task.report_path
+    if not path:
+        raise HTTPException(status_code=404, detail="report file not found")
+    p = Path(path)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="report file missing on disk")
+    try:
+        content = p.read_text(encoding="utf-8")
+    except Exception:
+        content = str(task.report_markdown or "")
+    return Response(
+        content=content,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename={p.name}",
+            "X-Report-Path": str(p),
+        },
+    )

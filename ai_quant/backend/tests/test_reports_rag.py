@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from services.reports import rag
+from infra.reports import rag
 
 
 class FakeEmbeddings:

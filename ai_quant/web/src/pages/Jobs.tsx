@@ -85,11 +85,11 @@ export default function Jobs() {
     setLoading(true)
     if (!opts?.silent) setErr(null)
     try {
-      const d = await fetchJson<{ domains: JobDomainInfo[] }>('/api/jobs/domains')
+      const d = await fetchJson<{ domains: JobDomainInfo[] }>('/api/v1/jobs/domains')
       setDomains(d.domains || [])
-      const r = await fetchJson<{ runs: JobRunResult[] }>('/api/jobs/runs?limit=50')
+      const r = await fetchJson<{ runs: JobRunResult[] }>('/api/v1/jobs/runs?limit=50')
       setRuns(r.runs || [])
-      const s = await fetchJson<{ schedules: JobSchedule[] }>('/api/jobs/schedules')
+      const s = await fetchJson<{ schedules: JobSchedule[] }>('/api/v1/jobs/schedules')
       const map = {} as Record<JobDomain, JobSchedule>
       for (const it of s.schedules || []) map[it.domain] = it
       setSchedules(map)
@@ -112,7 +112,7 @@ export default function Jobs() {
       const params: Record<string, unknown> = {}
       const mode0 = String(mode || 'test')
       if (domain === 'stock_daily' && stockDailyStart.trim()) params.data_start = stockDailyStart.trim()
-      await postJson<{ result: JobRunResult }>('/api/jobs/run', { domain, mode: mode0, params })
+      await postJson<{ result: JobRunResult }>('/api/v1/jobs/run', { domain, mode: mode0, params })
       await load()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -137,7 +137,7 @@ export default function Jobs() {
     setErr(null)
     try {
       const cron = buildCron(editEvery, editUnit, editStartTime)
-      await fetchJson<{ ok: boolean }>(`/api/jobs/schedules/${editingDomain}`, {
+      await fetchJson<{ ok: boolean }>(`/api/v1/jobs/schedules/${editingDomain}`, {
         method: 'PUT',
         body: JSON.stringify({ enabled: editEnabled, cron, timezone: editTimezone }),
       })

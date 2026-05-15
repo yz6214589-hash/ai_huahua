@@ -1,0 +1,68 @@
+{
+  "execution_time": "20260514155620",
+  "total": 4,
+  "completed": 0,
+  "failed": 4,
+  "results": [
+    {
+      "id": "TC001",
+      "description": "海南发展 + qwen模型 + RAG关闭",
+      "status": "failed",
+      "steps": [
+        {
+          "step": 1,
+          "name": "API健康检查",
+          "status": "fail",
+          "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/v1/health (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+        }
+      ],
+      "screenshots": [],
+      "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/v1/health (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+    },
+    {
+      "id": "TC002",
+      "description": "广联达 + DeepSeek模型 + 联网搜索开启 + RAG关闭",
+      "status": "failed",
+      "steps": [
+        {
+          "step": 1,
+          "name": "API健康检查",
+          "status": "fail",
+          "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/v1/health (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+        }
+      ],
+      "screenshots": [],
+      "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/v1/health (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+    },
+    {
+      "id": "TC003",
+      "description": "海南发展 + qwen模型 + RAG开启",
+      "status": "failed",
+      "steps": [
+        {
+          "step": 1,
+          "name": "API健康检查",
+          "status": "fail",
+          "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/v1/health (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+        }
+      ],
+      "screenshots": [],
+      "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/v1/health (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+    },
+    {
+      "id": "TC004",
+      "description": "金发科技 + DeepSeek模型 + 联网搜索开启 + RAG开启",
+      "status": "failed",
+      "steps": [
+        {
+          "step": 1,
+          "name": "API健康检查",
+          "status": "fail",
+          "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/v1/health (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+        }
+      ],
+      "screenshots": [],
+      "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/v1/health (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8000): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+    }
+  ]
+}

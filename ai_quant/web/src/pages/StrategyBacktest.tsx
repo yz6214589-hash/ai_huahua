@@ -58,8 +58,8 @@ export default function StrategyBacktest() {
 
   useEffect(() => {
     Promise.all([
-      fetchJson<{ strategies: StrategyDef[] }>('/api/analysis/strategies'),
-      fetchJson<{ instances: StrategyInstance[] }>('/api/analysis/strategy-instances'),
+      fetchJson<{ strategies: StrategyDef[] }>('/api/v1/analysis/strategies'),
+      fetchJson<{ instances: StrategyInstance[] }>('/api/v1/analysis/strategy-instances'),
     ]).then(([s, i]) => {
       setStrategies(s.strategies || [])
       setInstances(i.instances || [])
@@ -111,7 +111,7 @@ export default function StrategyBacktest() {
         else if (meta.type === 'float') params[k] = parseFloat(String(v))
         else params[k] = v
       }
-      const r = await postJson<BacktestResult>('/api/analysis/backtest/run', {
+      const r = await postJson<BacktestResult>('/api/v1/analysis/backtest/run', {
         stock_code: stockCode.trim(),
         start: startDate,
         end: endDate,

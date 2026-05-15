@@ -238,7 +238,7 @@ def test_watchlist_get_exists() -> None:
 
 
 def test_watchlist_write_routes_exist_without_db(monkeypatch) -> None:
-    from modules.data import service as data_service
+    from core.data import service as data_service
 
     monkeypatch.setattr(data_service, "_get_conn_and_query", lambda: (None, None))
     client = TestClient(app)
@@ -371,7 +371,7 @@ def test_risk_approve_and_audit_exist() -> None:
 
 
 def test_console_status_and_morning_trigger_exist(monkeypatch) -> None:
-    from modules.console import morning_brief
+    from core.console import morning_brief
 
     monkeypatch.setattr(
         morning_brief,

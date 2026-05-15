@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from modules.execution import create_execution_task, list_execution_tasks
+from core.execution import create_execution_task, list_execution_tasks
 
 
 def test_ethan_integration_has_no_external_dependency() -> None:

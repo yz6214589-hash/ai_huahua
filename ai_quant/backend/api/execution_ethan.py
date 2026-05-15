@@ -4,13 +4,13 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from modules.execution import (
+from core.execution import (
     create_execution_task,
     get_execution_task,
     get_status,
     list_execution_tasks,
 )
-from runtime.logging_service import get_logger
+from infra.storage.logging_service import get_logger
 
 logger = get_logger("execution")
 

@@ -111,7 +111,7 @@ export default function WorkFlowDragon() {
     setLoading(true)
     setCandidates([])
     try {
-      const r = await postJson<{ candidates: DragonCandidate[] }>('/api/workflow/dragon/pick', params)
+      const r = await postJson<{ candidates: DragonCandidate[] }>('/api/v1/workflow/dragon/pick', params)
       setCandidates(r.candidates || [])
     } catch {
       setCandidates(MOCK_CANDIDATES)
@@ -124,7 +124,7 @@ export default function WorkFlowDragon() {
     setBacktestLoading(true)
     setBacktest(null)
     try {
-      const r = await postJson<BacktestResult>('/api/workflow/dragon/backtest', params)
+      const r = await postJson<BacktestResult>('/api/v1/workflow/dragon/backtest', params)
       setBacktest(r)
     } catch {
       setBacktest(MOCK_BACKTEST)

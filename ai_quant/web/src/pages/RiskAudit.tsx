@@ -25,7 +25,7 @@ export default function RiskAudit() {
     setLoading(true)
     setErr(null)
     try {
-      const r = await fetchJson<RiskAuditResponse>('/api/risk/audit?last_n=500')
+      const r = await fetchJson<RiskAuditResponse>('/api/v1/risk/audit?last_n=500')
       setData(r)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))

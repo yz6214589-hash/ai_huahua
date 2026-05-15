@@ -6,8 +6,8 @@ from uuid import uuid4
 
 from fastapi import APIRouter
 
-from modules.data import get_watchlist
-from runtime.logging_service import get_logger
+from core.data import get_watchlist
+from infra.storage.logging_service import get_logger
 
 logger = get_logger("sentiment")
 

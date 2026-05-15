@@ -75,7 +75,7 @@ export default function Reports() {
       if (createdStart) params.set('created_start', createdStart)
       if (createdEnd) params.set('created_end', createdEnd)
       // 获取任务列表
-      const r = await fetchJson<{ tasks: ReportTask[] }>(`/api/reports/tasks?${params.toString()}`)
+      const r = await fetchJson<{ tasks: ReportTask[] }>(`/api/v1/reports/tasks?${params.toString()}`)
       setTasks(r.tasks || [])
     } catch (e) {
       if (!opts?.silent) setErr(e instanceof Error ? e.message : String(e))
@@ -102,7 +102,7 @@ export default function Reports() {
     setCreating(true)
     setErr(null)
     try {
-      await postJson<{ task: ReportTask }>('/api/reports/tasks', {
+      await postJson<{ task: ReportTask }>('/api/v1/reports/tasks', {
         model,
         stock_codes: selectedStocks.map((s) => s.code),
         use_rag: useRag,
@@ -120,7 +120,7 @@ export default function Reports() {
   const delTask = async (taskId: string) => {
     setErr(null)
     try {
-      await fetchJson<{ ok: boolean }>(`/api/reports/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' })
+      await fetchJson<{ ok: boolean }>(`/api/v1/reports/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' })
       await loadTasks()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -132,7 +132,7 @@ export default function Reports() {
     setErr(null)
     setRetrying(taskId)
     try {
-      await fetchJson<{ ok: boolean }>(`/api/reports/tasks/${encodeURIComponent(taskId)}/retry`, { method: 'POST' })
+      await fetchJson<{ ok: boolean }>(`/api/v1/reports/tasks/${encodeURIComponent(taskId)}/retry`, { method: 'POST' })
       await loadTasks()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -158,7 +158,7 @@ export default function Reports() {
     setViewerLoading(true)
     setViewerMd('')
     try {
-      const md = await fetchText(`/api/reports/tasks/${encodeURIComponent(t.task_id)}/view`)
+      const md = await fetchText(`/api/v1/reports/tasks/${encodeURIComponent(t.task_id)}/view`)
       setViewerMd(md || '')
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e))

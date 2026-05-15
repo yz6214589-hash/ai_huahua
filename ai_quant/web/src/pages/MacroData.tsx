@@ -41,7 +41,7 @@ export default function MacroData() {
     setLoading(true)
     setErr(null)
     try {
-      const r = await fetchJson<MacroLatest>('/api/macro/latest')
+      const r = await fetchJson<MacroLatest>('/api/v1/macro/latest')
       setMacro(r)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))

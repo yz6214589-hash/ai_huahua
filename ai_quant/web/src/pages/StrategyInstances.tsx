@@ -34,8 +34,8 @@ export default function StrategyInstances() {
     setLoading(true)
     try {
       const [s, i] = await Promise.all([
-        fetchJson<{ strategies: StrategyDef[] }>('/api/analysis/strategies'),
-        fetchJson<{ instances: StrategyInstance[] }>('/api/analysis/strategy-instances'),
+        fetchJson<{ strategies: StrategyDef[] }>('/api/v1/analysis/strategies'),
+        fetchJson<{ instances: StrategyInstance[] }>('/api/v1/analysis/strategy-instances'),
       ])
       setStrategies(s.strategies || [])
       setInstances(i.instances || [])
@@ -93,7 +93,7 @@ export default function StrategyInstances() {
       }
     }
     try {
-      await postJson('/api/analysis/strategy-instances', { strategy_id: formStrategyId, name: formName.trim(), params })
+      await postJson('/api/v1/analysis/strategy-instances', { strategy_id: formStrategyId, name: formName.trim(), params })
       toast('success', `实例「${formName}」创建成功`)
       setShowForm(false)
       await loadAll()
@@ -104,7 +104,7 @@ export default function StrategyInstances() {
 
   const delInstance = async (id: string) => {
     try {
-      await fetchJson(`/api/analysis/strategy-instances/${id}`, { method: 'DELETE' })
+      await fetchJson(`/api/v1/analysis/strategy-instances/${id}`, { method: 'DELETE' })
       toast('success', '实例删除成功')
       await loadAll()
     } catch (e) {

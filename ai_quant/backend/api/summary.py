@@ -5,8 +5,8 @@
 
 from fastapi import APIRouter
 
-from modules.data import get_summary
-from runtime.logging_service import get_logger
+from core.data import get_summary
+from infra.storage.logging_service import get_logger
 
 logger = get_logger("dashboard")
 

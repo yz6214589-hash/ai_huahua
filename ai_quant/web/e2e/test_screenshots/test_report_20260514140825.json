@@ -1,0 +1,40 @@
+{
+  "execution_time": "20260514140825",
+  "total": 4,
+  "completed": 0,
+  "failed": 4,
+  "results": [
+    {
+      "id": "TC001",
+      "description": "海南发展 + qwen模型 + RAG关闭",
+      "status": "failed",
+      "steps": [],
+      "screenshots": [],
+      "error": "Page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating to \"http://localhost:5173/reports\", waiting until \"domcontentloaded\"\n"
+    },
+    {
+      "id": "TC002",
+      "description": "广联达 + DeepSeek模型 + 联网搜索开启 + RAG关闭",
+      "status": "failed",
+      "steps": [],
+      "screenshots": [],
+      "error": "Page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating to \"http://localhost:5173/reports\", waiting until \"domcontentloaded\"\n"
+    },
+    {
+      "id": "TC003",
+      "description": "海南发展 + qwen模型 + RAG开启",
+      "status": "failed",
+      "steps": [],
+      "screenshots": [],
+      "error": "Page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating to \"http://localhost:5173/reports\", waiting until \"domcontentloaded\"\n"
+    },
+    {
+      "id": "TC004",
+      "description": "金发科技 + DeepSeek模型 + 联网搜索开启 + RAG开启",
+      "status": "failed",
+      "steps": [],
+      "screenshots": [],
+      "error": "Page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating to \"http://localhost:5173/reports\", waiting until \"domcontentloaded\"\n"
+    }
+  ]
+}

@@ -16,7 +16,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from modules.console.morning_brief import run_morning_workflow
+from core.console.morning_brief import run_morning_workflow
 
 
 def build_graph():

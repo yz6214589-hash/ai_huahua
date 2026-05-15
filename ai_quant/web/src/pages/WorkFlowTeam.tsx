@@ -160,7 +160,7 @@ export default function WorkFlowTeam() {
     setLoading(true)
     try {
       const body = { stock_code: triggerStock.trim(), capital: Number(triggerCapital) || 1000000, user_question: triggerQuestion }
-      await postJson('/api/workflow/team/trigger', body)
+      await postJson('/api/v1/workflow/team/trigger', body)
       setSelectedRun(null)
     } catch (e) {
       console.error(e)

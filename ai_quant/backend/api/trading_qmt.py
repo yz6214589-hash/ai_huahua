@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from services.qmt_gateway_client import request_json
+from infra.qmt_gateway_client import request_json
 
 
 router = APIRouter(prefix="/api/v1/trading", tags=["trading"])

@@ -4,17 +4,24 @@
  * 自动处理 API 密钥认证和错误响应解析
  */
 
+function _resolveUrl(url: string): string {
+  if (url.includes('/api/v1/')) {
+    return url
+  }
+  return url.replace(/^\/api\//, '/api/v1/')
+}
+
 // 通用 JSON 请求函数，支持泛型返回类型
 // 从环境变量或全局对象中获取 API 密钥，并将其添加到请求头中
 // 如果响应状态码不是 2xx，会尝试解析错误详情并抛出异常
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   // 优先从 Vite 环境变量获取 API 密钥，回退到全局变量
   const apiKey = ((import.meta as any)?.env?.VITE_AI_QUANT_API_KEY as string | undefined) || ((globalThis as any).VITE_AI_QUANT_API_KEY as string | undefined)
-  const res = await fetch(url, {
+  const res = await fetch(_resolveUrl(url), {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      ...(apiKey ? { 'X-API-Key': String(apiKey) } : {}),  // 添加 API 密钥到请求头
+      ...(apiKey ? { 'X-API-Key': String(apiKey) } : {}),
       ...(init?.headers || {}),
     },
   })
@@ -56,7 +63,7 @@ export async function postJson<T>(url: string, body: unknown): Promise<T> {
 // 不设置 Content-Type，因为不发送 JSON body
 export async function fetchText(url: string, init?: RequestInit): Promise<string> {
   const apiKey = ((import.meta as any)?.env?.VITE_AI_QUANT_API_KEY as string | undefined) || ((globalThis as any).VITE_AI_QUANT_API_KEY as string | undefined)
-  const res = await fetch(url, {
+  const res = await fetch(_resolveUrl(url), {
     ...init,
     headers: {
       ...(apiKey ? { 'X-API-Key': String(apiKey) } : {}),
@@ -76,4 +83,3 @@ export async function fetchText(url: string, init?: RequestInit): Promise<string
   }
   return res.text()
 }
-

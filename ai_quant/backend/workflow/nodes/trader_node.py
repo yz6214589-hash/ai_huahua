@@ -79,7 +79,7 @@ def trader_node(state: TradingState) -> dict:
         }]}
 
     try:
-        from modules.execution import create_execution_task
+        from core.execution import create_execution_task
         task_payload = {
             "symbol": stock,
             "side": direction,

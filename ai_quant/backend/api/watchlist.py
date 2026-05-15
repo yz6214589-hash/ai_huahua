@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from modules.data import (
+from core.data import (
     add_watchlist_item,
     add_watchlist_item_with_groups,
     create_watchlist_group,
@@ -20,7 +20,7 @@ from modules.data import (
     rename_watchlist_group,
     search_stocks,
 )
-from runtime.logging_service import get_logger
+from infra.storage.logging_service import get_logger
 
 logger = get_logger("watchlist")
 

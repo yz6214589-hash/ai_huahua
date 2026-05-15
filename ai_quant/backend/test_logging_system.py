@@ -14,7 +14,7 @@ def test_logging_service():
     """测试日志服务核心功能"""
     print("\n1. 测试日志服务核心功能...")
 
-    from runtime.logging_service import get_logger, init_logging, sanitize, sanitize_dict
+    from infra.storage.logging_service import get_logger, init_logging, sanitize, sanitize_dict
 
     init_logging()
 
@@ -39,7 +39,7 @@ def test_all_modules():
     """测试所有业务模块的日志"""
     print("\n2. 测试所有业务模块...")
 
-    from runtime.logging_service import get_logger
+    from infra.storage.logging_service import get_logger
 
     modules = [
         'dashboard', 'reports', 'data', 'jobs', 'sentiment',
@@ -128,7 +128,7 @@ def test_log_rotation():
     """测试日志轮转配置"""
     print("\n6. 测试日志轮转配置...")
 
-    from runtime.logging_service import get_logger
+    from infra.storage.logging_service import get_logger
     from config import get_logging_settings
 
     config = get_logging_settings()

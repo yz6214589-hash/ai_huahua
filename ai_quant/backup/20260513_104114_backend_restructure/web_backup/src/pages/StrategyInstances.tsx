@@ -1,0 +1,249 @@
+import { useEffect, useState } from 'react'
+import { fetchJson, postJson } from '@/api/client'
+import { toast } from '@/components/Toast'
+import { Card, CardBody, CardHeader } from '@/components/Card'
+import { Plus, Trash2, RefreshCcw } from 'lucide-react'
+
+interface StrategyDef {
+  strategy_id: string
+  name: string
+  params_schema: Record<string, {
+    type: string; label: string; help: string
+    min?: number; max?: number; step?: number; default?: number; values?: string[]
+  }>
+  default_params: Record<string, unknown>
+}
+
+interface StrategyInstance {
+  instance_id: string
+  strategy_id: string
+  name: string
+  params: Record<string, unknown>
+}
+
+export default function StrategyInstances() {
+  const [strategies, setStrategies] = useState<StrategyDef[]>([])
+  const [instances, setInstances] = useState<StrategyInstance[]>([])
+  const [loading, setLoading] = useState(false)
+  const [showForm, setShowForm] = useState(false)
+  const [formStrategyId, setFormStrategyId] = useState('')
+  const [formName, setFormName] = useState('')
+  const [formParams, setFormParams] = useState<Record<string, string>>({})
+
+  const loadAll = async () => {
+    setLoading(true)
+    try {
+      const [s, i] = await Promise.all([
+        fetchJson<{ strategies: StrategyDef[] }>('/api/analysis/strategies'),
+        fetchJson<{ instances: StrategyInstance[] }>('/api/analysis/strategy-instances'),
+      ])
+      setStrategies(s.strategies || [])
+      setInstances(i.instances || [])
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { loadAll() }, [])
+
+  const currentStrategy = strategies.find((s) => s.strategy_id === formStrategyId)
+
+  const openForm = () => {
+    setShowForm(true)
+    setFormStrategyId(strategies[0]?.strategy_id || '')
+    setFormName('')
+    const def = strategies[0]
+    if (def) {
+      const p: Record<string, string> = {}
+      for (const [k, v] of Object.entries(def.default_params)) {
+        p[k] = String(v ?? '')
+      }
+      setFormParams(p)
+    }
+  }
+
+  const handleStrategyChange = (sid: string) => {
+    setFormStrategyId(sid)
+    const def = strategies.find((s) => s.strategy_id === sid)
+    if (def) {
+      const p: Record<string, string> = {}
+      for (const [k, v] of Object.entries(def.default_params)) {
+        p[k] = String(v ?? '')
+      }
+      setFormParams(p)
+    }
+  }
+
+  const submit = async () => {
+    if (!formStrategyId || !formName.trim()) {
+      toast('error', '请填写策略和实例名称')
+      return
+    }
+    const def = strategies.find((s) => s.strategy_id === formStrategyId)
+    if (!def) return
+    const params: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(formParams)) {
+      if (k in (def.params_schema || {})) {
+        const meta = def.params_schema[k]
+        if (meta.type === 'int') params[k] = parseInt(String(v), 10)
+        else if (meta.type === 'float') params[k] = parseFloat(String(v))
+        else params[k] = v
+      }
+    }
+    try {
+      await postJson('/api/analysis/strategy-instances', { strategy_id: formStrategyId, name: formName.trim(), params })
+      toast('success', `实例「${formName}」创建成功`)
+      setShowForm(false)
+      await loadAll()
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const delInstance = async (id: string) => {
+    try {
+      await fetchJson(`/api/analysis/strategy-instances/${id}`, { method: 'DELETE' })
+      toast('success', '实例删除成功')
+      await loadAll()
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const grouped = instances.reduce((acc, inst) => {
+    const s = strategies.find((s) => s.strategy_id === inst.strategy_id)
+    const groupName = s?.name || inst.strategy_id
+    if (!acc[groupName]) acc[groupName] = []
+    acc[groupName].push(inst)
+    return acc
+  }, {} as Record<string, StrategyInstance[]>)
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-zinc-600">共 {instances.length} 个策略实例</div>
+        <div className="flex gap-2">
+          <button onClick={loadAll} disabled={loading} className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+            <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+          <button onClick={openForm} className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800">
+            <Plus className="h-4 w-4" />
+            新建实例
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <Card>
+          <CardHeader title="新建策略实例" />
+          <CardBody>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="mb-1 text-xs text-zinc-500">所属策略</div>
+                  <select
+                    value={formStrategyId}
+                    onChange={(e) => handleStrategyChange(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                  >
+                    {strategies.map((s) => (
+                      <option key={s.strategy_id} value={s.strategy_id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="mb-1 text-xs text-zinc-500">实例名称</div>
+                  <input
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    placeholder="例如：我的MACD参数"
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                  />
+                </div>
+              </div>
+              {currentStrategy && Object.keys(currentStrategy.params_schema).length > 0 && (
+                <div>
+                  <div className="mb-2 text-xs font-semibold text-zinc-900">参数配置</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {Object.entries(currentStrategy.params_schema).map(([key, meta]) => (
+                      <div key={key}>
+                        <div className="mb-1 text-xs text-zinc-500">{meta.label}</div>
+                        <input
+                          type={meta.type === 'int' || meta.type === 'float' ? 'number' : 'text'}
+                          value={formParams[key] ?? String(meta.default ?? '')}
+                          onChange={(e) => setFormParams((p) => ({ ...p, [key]: e.target.value }))}
+                          min={meta.min}
+                          max={meta.max}
+                          step={meta.step}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                        />
+                        <div className="mt-0.5 text-xs text-zinc-400">{meta.help}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button onClick={submit} className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800">
+                  <Plus className="h-4 w-4" />
+                  保存实例
+                </button>
+                <button onClick={() => setShowForm(false)} className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+                  取消
+                </button>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {Object.entries(grouped).map(([groupName, insts]) => (
+        <Card key={groupName}>
+          <CardHeader title={groupName} />
+          <CardBody>
+            <div className="space-y-2">
+              {insts.map((inst) => (
+                <div key={inst.instance_id} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-4 py-3">
+                  <div>
+                    <div className="text-sm font-medium text-zinc-900">{inst.name}</div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {Object.entries(inst.params).map(([k, v]) => (
+                        <span key={k} className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-xs text-zinc-600">
+                          {k}={String(v)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <a
+                      href={`/strategy/backtest?instance_id=${inst.instance_id}`}
+                      className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                    >
+                      回测
+                    </a>
+                    <button
+                      onClick={() => delInstance(inst.instance_id)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      删除
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      ))}
+
+      {!loading && instances.length === 0 && !showForm && (
+        <div className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center text-sm text-zinc-500">
+          暂无策略实例，点击上方「新建实例」开始
+        </div>
+      )}
+    </div>
+  )
+}

@@ -43,7 +43,7 @@ export default function FinancialHot() {
     setLoading(true)
     setErr(null)
     try {
-      const r = await fetchJson<FinancialHotData>('/api/financial-hot')
+      const r = await fetchJson<FinancialHotData>('/api/v1/financial-hot')
       setData(r)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))

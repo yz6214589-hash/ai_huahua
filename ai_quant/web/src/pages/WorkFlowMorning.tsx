@@ -146,7 +146,7 @@ export default function WorkFlowMorning() {
     }, 1000)
     setElapsedSec(0)
     try {
-      await postJson('/api/workflow/morning/trigger', {
+      await postJson('/api/v1/workflow/morning/trigger', {
         industry_level: industryLevel,
         top_n_industries: Number(topIndustries),
         top_n_stocks: Number(topStocks),

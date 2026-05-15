@@ -4,8 +4,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from modules.risk import approve, audit, status
-from runtime.logging_service import get_logger
+from core.risk import approve, audit, status
+from infra.storage.logging_service import get_logger
 
 logger = get_logger("risk")
 

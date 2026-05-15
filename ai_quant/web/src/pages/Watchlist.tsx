@@ -238,7 +238,7 @@ export default function Watchlist() {
 
   const loadGroups = async () => {
     try {
-      const r = await fetchJson<{ items: WatchlistGroup[] }>('/api/watchlist/groups')
+      const r = await fetchJson<{ items: WatchlistGroup[] }>('/api/v1/watchlist/groups')
       setGroups(r.items || [])
     } catch { /* ignore */ }
   }
@@ -248,7 +248,7 @@ export default function Watchlist() {
     setErr(null)
     try {
       const qs = activeGroupId != null ? `?group_id=${activeGroupId}` : ''
-      const r = await fetchJson<{ items: WatchlistItem[] }>(`/api/watchlist/list${qs}`)
+      const r = await fetchJson<{ items: WatchlistItem[] }>(`/api/v1/watchlist/list${qs}`)
       setItems(r.items || [])
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -261,7 +261,7 @@ export default function Watchlist() {
     if (items.length === 0) return
     setLoadingSnapshot(true)
     try {
-      const r = await fetchJson<{ items: WatchlistSnapshot[] }>('/api/watchlist/snapshots')
+      const r = await fetchJson<{ items: WatchlistSnapshot[] }>('/api/v1/watchlist/snapshots')
       const map: Record<string, WatchlistSnapshot> = {}
       for (const it of r.items || []) map[it.stock_code] = it
       setSnapshots(map)
@@ -278,7 +278,7 @@ export default function Watchlist() {
 
   const handleCreateGroup = async (name: string) => {
     try {
-      await postJson('/api/watchlist/groups', { name })
+      await postJson('/api/v1/watchlist/groups', { name })
       toast('success', `分组「${name}」创建成功`)
       await loadGroups()
     } catch (e) {
@@ -288,7 +288,7 @@ export default function Watchlist() {
 
   const handleRenameGroup = async (id: number, name: string) => {
     try {
-      await postJson(`/api/watchlist/groups/${id}/rename`, { name })
+      await postJson(`/api/v1/watchlist/groups/${id}/rename`, { name })
       toast('success', `分组重命名成功`)
       await loadGroups()
     } catch (e) {
@@ -298,7 +298,7 @@ export default function Watchlist() {
 
   const handleDeleteGroup = async (id: number) => {
     try {
-      await fetchJson(`/api/watchlist/groups/${id}`, { method: 'DELETE' })
+      await fetchJson(`/api/v1/watchlist/groups/${id}`, { method: 'DELETE' })
       toast('success', `分组删除成功`)
       if (activeGroupId === id) setActiveGroupId(null)
       await loadGroups()
@@ -310,7 +310,7 @@ export default function Watchlist() {
   const add = async (item: StockSearchItem) => {
     setErr(null)
     try {
-      await postJson('/api/watchlist/with-groups', { stock_code: item.code, group_ids: selectedGroupIds })
+      await postJson('/api/v1/watchlist/with-groups', { stock_code: item.code, group_ids: selectedGroupIds })
       setSelectedGroupIds([])
       await loadItems()
     } catch (e) {
@@ -321,7 +321,7 @@ export default function Watchlist() {
   const del = async (code: string) => {
     setErr(null)
     try {
-      await fetchJson(`/api/watchlist/${encodeURIComponent(code)}`, { method: 'DELETE' })
+      await fetchJson(`/api/v1/watchlist/${encodeURIComponent(code)}`, { method: 'DELETE' })
       await loadItems()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -331,7 +331,7 @@ export default function Watchlist() {
   const pin = async (code: string, pinned: boolean) => {
     setErr(null)
     try {
-      await fetchJson(`/api/watchlist/${encodeURIComponent(code)}/pin`, {
+      await fetchJson(`/api/v1/watchlist/${encodeURIComponent(code)}/pin`, {
         method: 'PUT', body: JSON.stringify({ pinned })
       })
       await loadItems()
@@ -342,7 +342,7 @@ export default function Watchlist() {
 
   const saveOrder = async (nextPinned: WatchlistItem[], nextNormal: WatchlistItem[]) => {
     const ordered = [...nextPinned, ...nextNormal].map((x) => x.stock_code)
-    await fetchJson('/api/watchlist/reorder', { method: 'PUT', body: JSON.stringify({ codes: ordered }) })
+    await fetchJson('/api/v1/watchlist/reorder', { method: 'PUT', body: JSON.stringify({ codes: ordered }) })
   }
 
   const onDragEnd = async (event: DragEndEvent) => {

@@ -39,7 +39,7 @@ from api.trading_qmt import router as trading_router
 from api.watchlist import router as watchlist_router
 from api.stock_detail import router as stock_detail_router
 from config import get_settings, get_logging_settings
-from runtime.logging_service import init_logging, get_logger, shutdown_logging
+from infra.storage.logging_service import init_logging, get_logger, shutdown_logging
 
 
 def create_app() -> FastAPI:

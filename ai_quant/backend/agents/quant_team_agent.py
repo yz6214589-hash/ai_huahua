@@ -40,7 +40,7 @@ def run_quant_assistant(
     text = user_input.strip().lower()
 
     if "数据" in text or "汇总" in text or "概览" in text:
-        from modules.data import get_summary
+        from core.data import get_summary
         try:
             summary = get_summary()
             return {

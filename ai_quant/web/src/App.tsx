@@ -13,6 +13,7 @@ import JobDetail from '@/pages/JobDetail'
 import WatchSentiment from '@/pages/WatchSentiment'
 import MacroData from '@/pages/MacroData'
 import FinancialHot from '@/pages/FinancialHot'
+import DataDelivery from '@/pages/DataDelivery'
 import Watchlist from '@/pages/Watchlist'
 import Reports from '@/pages/Reports'
 import StockDetail from '@/pages/StockDetail'
@@ -57,6 +58,7 @@ export default function App() {
             <Route path="sentiment" element={<WatchSentiment />} />
             <Route path="macro" element={<MacroData />} />
             <Route path="financial-hot" element={<FinancialHot />} />
+            <Route path="data-delivery" element={<DataDelivery />} />
           </Route>
           <Route path="/reports" element={<Reports />} />
           <Route path="/watchlist" element={<Watchlist />} />

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ai.deepagent_engine import run_deepagent
+from llm.deepagent_engine import run_deepagent
 
 
 def run_agent(user_input: str, *, thread_id: str = "default") -> dict[str, Any]:

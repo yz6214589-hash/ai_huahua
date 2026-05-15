@@ -1,4 +1,4 @@
-from db import load_mysql_config
+from core.db import load_mysql_config
 
 
 def test_load_mysql_config_from_wucai_env(monkeypatch) -> None:

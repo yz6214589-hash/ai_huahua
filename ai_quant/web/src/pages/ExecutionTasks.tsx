@@ -44,14 +44,15 @@ export default function ExecutionTasks() {
   const [creating, setCreating] = useState(false)
 
   useEffect(() => {
-    fetchJson<ExecStatus>('/api/execution/status').then(setStatus).catch(() => null)
+    fetchJson<ExecStatus>('/api/v1/execution/status').then(setStatus).catch(() => null)
   }, [])
 
   const load = async () => {
     setLoading(true)
+
     setErr(null)
     try {
-      const r = await fetchJson<{ items: Task[] }>('/api/execution/tasks')
+      const r = await fetchJson<{ items: Task[] }>('/api/v1/execution/tasks')
       setItems(r.items || [])
     } catch (e) {
       setItems([])
@@ -65,7 +66,7 @@ export default function ExecutionTasks() {
 
   const stopTask = async (id: string) => {
     try {
-      await fetchJson(`/api/execution/tasks/${id}`, { method: 'DELETE' })
+      await fetchJson(`/api/v1/execution/tasks/${id}`, { method: 'DELETE' })
       await load()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -80,7 +81,7 @@ export default function ExecutionTasks() {
     setCreating(true)
     setErr(null)
     try {
-      await postJson('/api/execution/tasks', { symbol: sym, side, total_qty: qty, num_steps: 48, strategy })
+      await postJson('/api/v1/execution/tasks', { symbol: sym, side, total_qty: qty, num_steps: 48, strategy })
       setSymbol('')
       await load()
     } catch (e) {

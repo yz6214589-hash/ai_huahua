@@ -238,6 +238,8 @@ def test_reports_can_disable_rag_per_task(tmp_path, monkeypatch) -> None:
 
 
 def test_reports_saves_markdown_to_md_file(tmp_path, monkeypatch) -> None:
+    import time as time_mod
+    import datetime as dt_mod
     monkeypatch.setenv("AI_QUANT_REPORT_MYSQL_ENABLED", "0")
     monkeypatch.setenv("AI_QUANT_REPORT_TASK_STORE_DIR", str(tmp_path))
     monkeypatch.setenv("AI_QUANT_REPORT_STORE_BOOTSTRAP", "0")
@@ -245,7 +247,10 @@ def test_reports_saves_markdown_to_md_file(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AI_QUANT_REPORT_OUTPUT_DIR", str(out_dir))
     monkeypatch.setenv("AI_QUANT_REPORT_USE_LLM", "1")
     monkeypatch.setenv("DASHSCOPE_API_KEY", "k1")
-    monkeypatch.setattr(reports_api, "_generate_report_markdown", lambda model, stock_code, stock_name, use_rag=True: f"# {stock_code}\n")
+
+    def mock_generate(model, stock_code, stock_name, use_rag=False, mode="qwen"):
+        return f"# {stock_code}\n"
+    monkeypatch.setattr(reports_api, "_generate_report_markdown", mock_generate)
     client = TestClient(app)
 
     create = client.post(
@@ -259,19 +264,20 @@ def test_reports_saves_markdown_to_md_file(tmp_path, monkeypatch) -> None:
     task_id = task.get("task_id")
     assert task_id
 
-    deadline = time.time() + 2.0
+    deadline = time_mod.time() + 2.0
     final = None
-    while time.time() < deadline:
+    while time_mod.time() < deadline:
         view = client.get(f"/api/v1/reports/tasks/{task_id}/view")
         if view.status_code == 200:
             final = view
             break
         assert view.status_code in (409, 500)
-        time.sleep(0.05)
+        time_mod.sleep(0.05)
     assert final is not None
 
-    md = out_dir / f"{task_id}.md"
-    assert md.exists()
+    date_str = dt_mod.datetime.now().strftime("%Y%m%d")
+    md = out_dir / f"report_{date_str}_{task_id}.md"
+    assert md.exists(), f"Expected {md} to exist"
     assert "600519" in md.read_text(encoding="utf-8")
 
 

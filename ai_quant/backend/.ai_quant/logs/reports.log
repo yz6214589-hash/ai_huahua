@@ -107,3 +107,131 @@
 [2026-05-13 01:30:45] [reports] [INFO] 研报保存成功
 [2026-05-13 01:30:45] [reports] [INFO] 研报保存成功
 [2026-05-13 01:30:45] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:41:26] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:41:27] [reports] [INFO] 研报生成开始
+[2026-05-14 09:41:27] [reports] [ERROR] 数据库查询失败
+[2026-05-14 09:41:53] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:42:14] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:44:12] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:44:12] [reports] [INFO] 研报生成开始
+[2026-05-14 09:44:12] [reports] [ERROR] 数据库查询失败
+[2026-05-14 09:48:17] [reports] [INFO] 研报保存成功
+[2026-05-14 09:48:34] [reports] [INFO] 研报保存成功
+[2026-05-14 09:52:23] [reports] [INFO] 研报保存成功
+[2026-05-14 09:52:40] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:52:42] [reports] [INFO] 研报生成开始
+[2026-05-14 09:52:43] [reports] [ERROR] 数据库查询失败
+[2026-05-14 09:52:43] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:52:46] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:52:49] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:52:49] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:52:51] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:52:53] [reports] [INFO] 研报保存成功
+[2026-05-14 09:52:53] [reports] [ERROR] 任务执行失败
+[2026-05-14 09:53:41] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:07:03] [reports] [INFO] 研报保存成功
+[2026-05-14 12:07:45] [reports] [INFO] 研报保存成功
+[2026-05-14 12:11:01] [reports] [INFO] 研报保存成功
+[2026-05-14 12:12:17] [reports] [INFO] 研报保存成功
+[2026-05-14 12:16:40] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:16:40] [reports] [INFO] 研报保存成功
+[2026-05-14 12:28:07] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:28:07] [reports] [INFO] 研报保存成功
+[2026-05-14 12:29:04] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:29:42] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:32:13] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:37:26] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:37:26] [reports] [INFO] 研报保存成功
+[2026-05-14 12:38:54] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:38:54] [reports] [INFO] 研报保存成功
+[2026-05-14 12:43:31] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:43:31] [reports] [INFO] 研报保存成功
+[2026-05-14 12:50:58] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:50:58] [reports] [INFO] 研报保存成功
+[2026-05-14 12:53:14] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:53:14] [reports] [INFO] 研报保存成功
+[2026-05-14 12:54:45] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:54:48] [reports] [INFO] 研报生成开始
+[2026-05-14 12:54:48] [reports] [ERROR] 数据库查询失败
+[2026-05-14 12:54:48] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:54:51] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:54:54] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:54:54] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:54:56] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:54:59] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:54:59] [reports] [INFO] 研报保存成功
+[2026-05-14 12:54:59] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:56:11] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:59:21] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:59:21] [reports] [INFO] 研报保存成功
+[2026-05-14 12:59:22] [reports] [INFO] 研报生成开始
+[2026-05-14 12:59:22] [reports] [ERROR] 数据库查询失败
+[2026-05-14 12:59:22] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:59:25] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:59:25] [reports] [INFO] 研报保存成功
+[2026-05-14 12:59:25] [reports] [ERROR] 任务执行失败
+[2026-05-14 12:59:25] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:59:25] [reports] [INFO] 研报保存成功
+[2026-05-14 12:59:25] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:59:25] [reports] [INFO] 研报保存成功
+[2026-05-14 12:59:25] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 12:59:25] [reports] [INFO] 研报保存成功
+[2026-05-14 12:59:25] [reports] [ERROR] 任务执行失败
+[2026-05-14 15:24:05] [reports] [INFO] 研报生成开始
+[2026-05-14 15:24:06] [reports] [ERROR] 数据库查询失败
+[2026-05-14 15:24:42] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 15:24:42] [reports] [INFO] 研报保存成功
+[2026-05-14 15:34:14] [reports] [INFO] 研报生成开始
+[2026-05-14 15:34:14] [reports] [INFO] 使用 DeepAgent 模式
+[2026-05-14 15:34:15] [reports] [INFO] DeepAgent 完成
+[2026-05-14 15:34:15] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 15:34:15] [reports] [INFO] 研报保存成功
+[2026-05-14 15:44:23] [reports] [INFO] 研报生成开始
+[2026-05-14 15:44:23] [reports] [ERROR] 数据库查询失败
+[2026-05-14 15:45:13] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 15:45:13] [reports] [INFO] 研报保存成功
+[2026-05-14 15:54:32] [reports] [INFO] 研报生成开始
+[2026-05-14 15:54:32] [reports] [INFO] 使用 DeepAgent 模式
+[2026-05-14 15:54:32] [reports] [INFO] DeepAgent 完成
+[2026-05-14 15:54:32] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 15:54:32] [reports] [INFO] 研报保存成功
+[2026-05-14 16:15:42] [reports] [INFO] 研报生成开始
+[2026-05-14 16:15:43] [reports] [ERROR] 数据库查询失败
+[2026-05-14 16:16:38] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:16:38] [reports] [INFO] 研报保存成功
+[2026-05-14 16:16:53] [reports] [INFO] 研报生成开始
+[2026-05-14 16:16:53] [reports] [ERROR] 数据库查询失败
+[2026-05-14 16:17:38] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:17:38] [reports] [INFO] 研报保存成功
+[2026-05-14 16:21:41] [reports] [INFO] 研报生成开始
+[2026-05-14 16:21:42] [reports] [ERROR] 数据库查询失败
+[2026-05-14 16:22:20] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:22:20] [reports] [INFO] 研报保存成功
+[2026-05-14 16:22:29] [reports] [INFO] 研报生成开始
+[2026-05-14 16:22:29] [reports] [INFO] 使用 DeepAgent 模式
+[2026-05-14 16:23:19] [reports] [INFO] DeepAgent 完成
+[2026-05-14 16:23:19] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:23:19] [reports] [INFO] 研报保存成功
+[2026-05-14 16:23:26] [reports] [INFO] 研报生成开始
+[2026-05-14 16:23:26] [reports] [ERROR] 数据库查询失败
+[2026-05-14 16:24:14] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:24:14] [reports] [INFO] 研报保存成功
+[2026-05-14 16:24:25] [reports] [INFO] 研报生成开始
+[2026-05-14 16:24:25] [reports] [ERROR] 数据库查询失败
+[2026-05-14 16:25:55] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:25:55] [reports] [INFO] 研报保存成功
+[2026-05-14 16:50:37] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:50:37] [reports] [INFO] 研报保存成功
+[2026-05-14 16:50:37] [reports] [INFO] 研报生成开始
+[2026-05-14 16:50:37] [reports] [ERROR] 数据库查询失败
+[2026-05-14 16:50:37] [reports] [ERROR] 任务执行失败
+[2026-05-14 16:50:40] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:50:40] [reports] [INFO] 研报保存成功
+[2026-05-14 16:50:41] [reports] [ERROR] 任务执行失败
+[2026-05-14 16:50:41] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:50:41] [reports] [INFO] 研报保存成功
+[2026-05-14 16:50:41] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:50:41] [reports] [INFO] 研报保存成功
+[2026-05-14 16:50:41] [reports] [INFO] DEBUG _process_task path resolution
+[2026-05-14 16:50:41] [reports] [INFO] 研报保存成功
+[2026-05-14 16:50:41] [reports] [ERROR] 任务执行失败
