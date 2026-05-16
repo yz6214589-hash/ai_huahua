@@ -8,18 +8,11 @@ from fastapi import APIRouter
 
 from core.data import get_watchlist
 from infra.storage.logging_service import get_logger
+from infra.storage import sentiment_store as store
 
 logger = get_logger("sentiment")
 
 router = APIRouter(prefix="/api/v1", tags=["sentiment"])
-
-_SENTIMENT_SCHEDULE: dict[str, Any] = {
-    "enabled": True,
-    "cron": "10 15 * * 1-5",
-    "timezone": "Asia/Shanghai",
-}
-_SENTIMENT_RUNS: list[dict[str, Any]] = []
-_SENTIMENT_EVENTS: list[dict[str, Any]] = []
 
 
 def _now_iso() -> str:
@@ -43,20 +36,32 @@ def _pick_watchlist_codes() -> tuple[list[str], list[str]]:
 
 @router.get("/sentiment/schedule")
 def sentiment_schedule_get() -> dict[str, Any]:
-    return dict(_SENTIMENT_SCHEDULE)
+    return store.get_schedule()
 
 
 @router.put("/sentiment/schedule")
 def sentiment_schedule_put(body: dict[str, Any]) -> dict[str, Any]:
-    enabled = bool(body.get("enabled", _SENTIMENT_SCHEDULE["enabled"]))
-    _SENTIMENT_SCHEDULE["enabled"] = enabled
-    return dict(_SENTIMENT_SCHEDULE)
+    current = store.get_schedule()
+    enabled = bool(body.get("enabled", current.get("enabled", True)))
+    cron = str(body.get("cron") or current.get("cron", "10 15 * * 1-5")).strip()
+    timezone = str(body.get("timezone") or current.get("timezone", "Asia/Shanghai")).strip() or "Asia/Shanghai"
+    updated = {
+        "enabled": enabled,
+        "cron": cron,
+        "timezone": timezone,
+    }
+    store.save_schedule(updated)
+    logger.info("舆情调度配置已更新", extra={
+        "enabled": enabled,
+        "cron": cron,
+        "timezone": timezone,
+    })
+    return store.get_schedule()
 
 
 @router.get("/sentiment/runs")
 def sentiment_runs_list(limit: int = 20) -> dict[str, Any]:
-    n = max(1, min(limit, 200))
-    return {"runs": _SENTIMENT_RUNS[:n]}
+    return {"runs": store.list_runs(limit=limit)}
 
 
 @router.post("/sentiment/runs")
@@ -91,75 +96,65 @@ def sentiment_run_create(body: dict[str, Any]) -> dict[str, Any]:
         "stock_names": stock_names,
         "days": int(body.get("days") or 3),
         "use_llm": bool(body.get("use_llm", False)),
-        "status": "success",
+        "status": "running",
         "total_events": 0,
         "created_at": created_at,
         "started_at": created_at,
-        "finished_at": created_at,
+        "finished_at": None,
         "error_message": None,
     }
-    _SENTIMENT_RUNS.insert(0, run)
+    store.write_run(run)
 
-    next_id = len(_SENTIMENT_EVENTS) + 1
+    event_count = 0
     for code, name in zip(stock_codes, stock_names):
-        _SENTIMENT_EVENTS.append(
-            {
-                "id": next_id,
-                "run_id": run_id,
-                "stock_code": code,
-                "stock_name": name,
-                "source_type": "news",
-                "source_title": "自选股扫描",
-                "source_url": None,
-                "published_at": created_at,
-                "event_type": "政策",
-                "event_category": "例行扫描",
-                "signal": "观察",
-                "signal_reason": "系统完成扫描",
-                "impact": "暂无显著影响",
-                "confidence": 0.5,
-                "urgency": "低",
-            }
-        )
-        next_id += 1
-    run["total_events"] = len(stock_codes)
-    return {"ok": True, "run": run}
+        evt = {
+            "run_id": run_id,
+            "stock_code": code,
+            "stock_name": name,
+            "source_type": "news",
+            "source_title": "自选股扫描",
+            "source_url": None,
+            "published_at": created_at,
+            "event_type": "政策",
+            "event_category": "例行扫描",
+            "signal": "观察",
+            "signal_reason": "系统完成扫描",
+            "impact": "暂无显著影响",
+            "confidence": 0.5,
+            "urgency": "低",
+        }
+        store.write_event(evt)
+        event_count += 1
+
+    finished_at = _now_iso()
+    run["status"] = "success"
+    run["total_events"] = event_count
+    run["finished_at"] = finished_at
+    store.write_run(run)
+
+    logger.info("舆情扫描完成", extra={
+        "run_id": run_id,
+        "total_events": event_count,
+    })
+    return {"ok": True, "run": store.read_run(run_id)}
 
 
 @router.get("/sentiment/events")
-def sentiment_events_list(run_id: str | None = None, limit: int = 200, q: str | None = None, event_type: str | None = None) -> dict[str, Any]:
-    n = max(1, min(limit, 500))
-    out = list(_SENTIMENT_EVENTS)
-    if run_id:
-        rid = str(run_id).strip()
-        out = [x for x in out if str(x.get("run_id") or "") == rid]
-    if q:
-        kw = str(q).strip().lower()
-        if kw:
-            out = [
-                x
-                for x in out
-                if kw in str(x.get("stock_code") or "").lower()
-                or kw in str(x.get("stock_name") or "").lower()
-                or kw in str(x.get("source_title") or "").lower()
-            ]
-    if event_type and str(event_type).strip() and str(event_type) != "全部":
-        et = str(event_type).strip()
-        out = [x for x in out if str(x.get("event_type") or "") == et]
-    return {"events": out[:n]}
+def sentiment_events_list(
+    run_id: str | None = None,
+    limit: int = 200,
+    q: str | None = None,
+    event_type: str | None = None,
+) -> dict[str, Any]:
+    events = store.list_events(
+        run_id=run_id,
+        limit=limit,
+        q=q,
+        event_type=event_type,
+    )
+    return {"events": events}
 
 
 @router.get("/macro/latest")
 def macro_latest() -> dict[str, Any]:
-    return {
-        "indicators": [
-            {"indicator": "CN_CPI_YOY", "value": 0.3, "date": _now_iso()[:10], "name": "中国 CPI 同比"},
-            {"indicator": "US10Y", "value": 0.043, "date": _now_iso()[:10], "name": "美国10Y国债"},
-        ],
-        "composite": {
-            "composite_fear_greed_index": 52,
-            "overall_sentiment": "中性偏多",
-            "action_suggestion": "维持仓位并跟踪增量信息",
-            "timestamp": _now_iso(),
-        },
-    }
+    return store.get_macro_data()
