@@ -1,41 +1,67 @@
+# 运行时数据
+.ai_quant/
 
-data/
-outputs/
-.openclaw/
-.trae/
-.vercel/
+# 日志文件
+*.log
+
+# 虚拟环境
+venv/
+
+# 输出目录
+output/
+
+# 参考代码
+参考代码/
+
+# 测试临时文件
+test_report*
+
+# Python缓存
 __pycache__/
-.ipynb_checkpoints/
-.nanobot/
-vector_db/
-vector_store/
 *.pyc
 *.pyo
-.env
-.env.*
-env_lianghua/
-venv/
-.venv/
-*.pkl
+*.egg-info/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# node_modules
+node_modules/
+
+# 备份目录
+backup/
+src/
+
+# 构建产物
+dist/
+**/dist/
+
+# 生成的HTML文件
 *.html
-*.faiss
-*.model
+
+# 测试目录
+tests/
+test_*.py
+
+# 生成的schema文件
+current_schema.txt
+
+# 流聊聊天
+streamlit_chat/
+
+# 依赖文件
+requirements.txt
+
+# 打包文件
+*.zip
+
+# 环境变量
+.env
+
+# 数据库文件
 *.db
 *.sqlite
-*.sqlite3
-*.zip
-*.gif
-*.jsonl
-*.pdf
-*.txt
-.DS_Store
-_tmp*
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-coverage/
-node_modules/
-dist/
-build/
-.vite/
+
+# 数据目录
+.data/

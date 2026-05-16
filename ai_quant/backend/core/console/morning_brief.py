@@ -8,6 +8,9 @@ from html import escape
 from typing import Any
 
 from core.db import connect, load_mysql_config, query_dict
+from infra.storage.logging_service import get_logger
+
+logger = get_logger("morning_brief")
 
 
 @dataclass(frozen=True)
@@ -134,11 +137,41 @@ def detect_phase(derivs: dict[str, float]) -> dict[str, Any]:
     }
 
 
+def _is_valid_identifier(name: str) -> bool:
+    """验证是否为有效的SQL标识符（字段名或表名）"""
+    if not name or not isinstance(name, str):
+        return False
+    # 只允许字母、数字、下划线，且必须以字母开头
+    import re
+    return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name))
+
+
+def _is_valid_level(level: int) -> bool:
+    """验证行业级别是否有效"""
+    return level in (1, 2)
+
+
 def list_sectors(level: int) -> list[dict[str, Any]]:
-    field = "sector_level1" if int(level) == 1 else "sector_level2"
+    """获取行业列表"""
+    # 验证级别参数
+    if not _is_valid_level(level):
+        logger.warning(f"无效的行业级别: {level}")
+        return []
+
+    # 使用白名单验证字段名
+    field_mapping = {
+        1: "sector_level1",
+        2: "sector_level2"
+    }
+    field = field_mapping.get(level)
+    if not field or not _is_valid_identifier(field):
+        logger.error(f"无效的字段名: {field}")
+        return []
+
     cfg = load_mysql_config()
     conn = connect(cfg)
     try:
+        # 使用参数化查询
         rows = query_dict(
             conn,
             f"""
@@ -156,26 +189,124 @@ def list_sectors(level: int) -> list[dict[str, Any]]:
                 continue
             out.append({"sector_name": name, "member_count": int(r.get("member_count") or 0)})
         return out
+    except Exception as e:
+        logger.error(f"获取行业列表失败: {e}")
+        return []
     finally:
         conn.close()
 
 
 def get_sector_member_codes(sector_name: str, level: int) -> list[str]:
-    field = "sector_level1" if int(level) == 1 else "sector_level2"
+    """获取行业成员代码"""
+    # 验证级别参数
+    if not _is_valid_level(level):
+        logger.warning(f"无效的行业级别: {level}")
+        return []
+
+    # 使用白名单验证字段名
+    field_mapping = {
+        1: "sector_level1",
+        2: "sector_level2"
+    }
+    field = field_mapping.get(level)
+    if not field or not _is_valid_identifier(field):
+        logger.error(f"无效的字段名: {field}")
+        return []
+
+    # 验证sector_name参数，防止注入
+    if not sector_name or not isinstance(sector_name, str):
+        logger.warning(f"无效的行业名称: {sector_name}")
+        return []
+
     cfg = load_mysql_config()
     conn = connect(cfg)
     try:
+        # 使用参数化查询，sector_name作为参数传递
         rows = query_dict(
             conn,
             f"SELECT stock_code FROM trade_stock_master WHERE {field} = %s ORDER BY stock_code",
             (sector_name,),
         )
         return [str(r.get("stock_code") or "").strip() for r in rows if str(r.get("stock_code") or "").strip()]
+    except Exception as e:
+        logger.error(f"获取行业成员代码失败: {e}")
+        return []
+    finally:
+        conn.close()
+
+
+def batch_get_sector_member_codes(sector_names: list[str], level: int) -> dict[str, list[str]]:
+    """
+    批量获取多个行业的成员代码
+
+    Args:
+        sector_names: 行业名称列表
+        level: 行业级别
+
+    Returns:
+        dict: 行业名称到股票代码列表的映射
+    """
+    # 验证级别参数
+    if not _is_valid_level(level):
+        logger.warning(f"无效的行业级别: {level}")
+        return {}
+
+    # 使用白名单验证字段名
+    field_mapping = {
+        1: "sector_level1",
+        2: "sector_level2"
+    }
+    field = field_mapping.get(level)
+    if not field or not _is_valid_identifier(field):
+        logger.error(f"无效的字段名: {field}")
+        return {}
+
+    # 过滤无效的行业名称
+    valid_sector_names = [name for name in sector_names if name and isinstance(name, str)]
+    if not valid_sector_names:
+        logger.warning("没有有效的行业名称")
+        return {}
+
+    cfg = load_mysql_config()
+    conn = connect(cfg)
+    try:
+        # 使用IN子句批量查询，避免N+1问题
+        placeholders = ",".join(["%s"] * len(valid_sector_names))
+        sql = f"SELECT {field} as sector_name, stock_code FROM trade_stock_master WHERE {field} IN ({placeholders}) ORDER BY {field}, stock_code"
+
+        rows = query_dict(conn, sql, tuple(valid_sector_names))
+
+        # 将结果按行业分组
+        result: dict[str, list[str]] = {}
+        for row in rows:
+            sector_name = str(row.get("sector_name") or "").strip()
+            stock_code = str(row.get("stock_code") or "").strip()
+            if sector_name and stock_code:
+                if sector_name not in result:
+                    result[sector_name] = []
+                result[sector_name].append(stock_code)
+
+        # 确保所有请求的行业都在结果中（即使没有成员）
+        for sector_name in valid_sector_names:
+            if sector_name not in result:
+                result[sector_name] = []
+
+        return result
+    except Exception as e:
+        logger.error(f"批量获取行业成员代码失败: {e}")
+        # 返回空结果，但保留所有行业键
+        return {name: [] for name in valid_sector_names}
     finally:
         conn.close()
 
 
 def load_sector_kline(sector_name: str, level: int, end_date: str | None) -> list[dict[str, Any]]:
+    """加载行业K线数据"""
+    # 验证sector_name参数
+    if not sector_name or not isinstance(sector_name, str):
+        logger.warning(f"无效的行业名称: {sector_name}")
+        return []
+
     conditions = ["sector_name = %s", "sector_level = %s"]
     params: list[Any] = [sector_name, int(level)]
     if end_date:
@@ -191,6 +322,9 @@ def load_sector_kline(sector_name: str, level: int, end_date: str | None) -> lis
     conn = connect(cfg)
     try:
         return query_dict(conn, sql, tuple(params))
+    except Exception as e:
+        logger.error(f"加载行业K线数据失败，sector_name={sector_name}, level={level}: {e}")
+        return []
     finally:
         conn.close()
 
@@ -242,8 +376,14 @@ def _calc_derivatives(close: list[float]) -> dict[str, float]:
 
 
 def rank_industries_with_phase(params: MorningParams, end_date: str | None) -> list[dict[str, Any]]:
-    sectors = list_sectors(params.industry_level)
-    if not sectors:
+    """对行业进行排名和阶段识别"""
+    try:
+        sectors = list_sectors(params.industry_level)
+        if not sectors:
+            logger.warning(f"没有获取到行业数据，level={params.industry_level}")
+            return []
+    except Exception as e:
+        logger.error(f"获取行业列表失败: {e}")
         return []
 
     rows: list[dict[str, Any]] = []
@@ -258,7 +398,12 @@ def rank_industries_with_phase(params: MorningParams, end_date: str | None) -> l
 
     for s in sectors:
         name = str(s.get("sector_name") or "")
-        kline = load_sector_kline(name, params.industry_level, end_date)
+        try:
+            kline = load_sector_kline(name, params.industry_level, end_date)
+        except Exception as e:
+            logger.warning(f"加载行业K线失败，sector={name}: {e}")
+            continue
+
         close: list[float] = []
         amount: list[float] = []
         for r in kline[-max(params.lookback_days, 70) :]:
@@ -275,6 +420,7 @@ def rank_industries_with_phase(params: MorningParams, end_date: str | None) -> l
             per_sector_ret60[name] = float(close[-1] / close[-61] - 1.0)
 
     if not per_sector_ret60:
+        logger.info("没有足够的行业数据进行计算")
         return []
 
     benchmark_ret60 = sum(per_sector_ret60.values()) / float(len(per_sector_ret60))
@@ -306,6 +452,7 @@ def rank_industries_with_phase(params: MorningParams, end_date: str | None) -> l
         )
 
     if not rows:
+        logger.info("没有计算出有效的行业排名")
         return []
 
     mom_z = _zscore(mom_list)
@@ -341,11 +488,20 @@ def rank_industries_with_phase(params: MorningParams, end_date: str | None) -> l
 
 
 def _batch_load_stock_daily(codes: list[str], end_date: str | None, min_days: int) -> dict[str, list[dict[str, Any]]]:
+    """批量加载股票日线数据"""
+    # 验证输入参数
     if not codes:
+        logger.warning("股票代码列表为空")
         return {}
-    ph = ",".join(["%s"] * len(codes))
+
+    valid_codes = [c for c in codes if c and isinstance(c, str) and str(c).strip()]
+    if not valid_codes:
+        logger.warning("没有有效的股票代码")
+        return {}
+
+    ph = ",".join(["%s"] * len(valid_codes))
     conditions = [f"stock_code IN ({ph})"]
-    params: list[Any] = list(codes)
+    params: list[Any] = list(valid_codes)
     if end_date:
         conditions.append("trade_date <= %s")
         params.append(end_date)
@@ -359,6 +515,9 @@ def _batch_load_stock_daily(codes: list[str], end_date: str | None, min_days: in
     conn = connect(cfg)
     try:
         rows = query_dict(conn, sql, tuple(params))
+    except Exception as e:
+        logger.error(f"批量加载股票日线数据失败: {e}")
+        return {}
     finally:
         conn.close()
 
@@ -376,15 +535,34 @@ def pick_stocks_from_industries(
     params: MorningParams,
     end_date: str | None,
 ) -> tuple[list[str], list[dict[str, Any]], list[dict[str, Any]]]:
+    """从行业中选择股票"""
     if not industry_rank:
         return [], [], []
 
+    # 批量获取所有行业的成员代码，避免N+1查询问题
     industry_to_codes: dict[str, list[str]] = {}
+    sector_names = [str(r.get("industry") or "") for r in industry_rank]
+
+    try:
+        # 使用批量查询函数一次性获取所有行业的成员
+        all_sector_codes = batch_get_sector_member_codes(sector_names, params.industry_level)
+
+        # 对每个行业限制样本数量
+        for industry_name, codes in all_sector_codes.items():
+            industry_to_codes[industry_name] = codes[: params.sample_stocks]
+    except Exception as e:
+        logger.error(f"批量获取行业成员代码失败，使用回退方案: {e}")
+        # 回退方案：逐个查询（保留原有逻辑）
+        for r in industry_rank:
+            ind = str(r.get("industry") or "")
+            codes = get_sector_member_codes(ind, params.industry_level)[: params.sample_stocks]
+            industry_to_codes[ind] = codes
+
+    # 构建股票池
     pool: list[str] = []
     for r in industry_rank:
         ind = str(r.get("industry") or "")
-        codes = get_sector_member_codes(ind, params.industry_level)[: params.sample_stocks]
-        industry_to_codes[ind] = codes
+        codes = industry_to_codes.get(ind, [])
         pool.extend(codes)
 
     pool = sorted(set([x for x in pool if x]))
@@ -613,33 +791,64 @@ def md_to_html(md: str) -> str:
 
 
 def run_morning_workflow(state: dict[str, Any]) -> dict[str, Any]:
-    params = normalize_params(state)
-    end_date = state.get("end_date")
-    if end_date is not None:
-        end_date = str(end_date)
+    """运行晨会分析工作流"""
+    try:
+        params = normalize_params(state)
+        end_date = state.get("end_date")
+        if end_date is not None:
+            end_date = str(end_date)
 
-    preset_industry_rank = state.get("industry_rank")
-    preset_picked = state.get("picked_stocks")
-    if isinstance(preset_industry_rank, list) and isinstance(preset_picked, list):
-        industry_rank = preset_industry_rank
-        picked_stocks = preset_picked
-        stock_pool = list(state.get("stock_pool") or [])
-        factor_rank = list(state.get("factor_rank") or [])
-    else:
-        industry_rank = rank_industries_with_phase(params, end_date)
-        stock_pool, factor_rank, picked_stocks = pick_stocks_from_industries(industry_rank, params, end_date)
+        preset_industry_rank = state.get("industry_rank")
+        preset_picked = state.get("picked_stocks")
+        if isinstance(preset_industry_rank, list) and isinstance(preset_picked, list):
+            industry_rank = preset_industry_rank
+            picked_stocks = preset_picked
+            stock_pool = list(state.get("stock_pool") or [])
+            factor_rank = list(state.get("factor_rank") or [])
+        else:
+            try:
+                industry_rank = rank_industries_with_phase(params, end_date)
+            except Exception as e:
+                logger.error(f"行业排名失败: {e}")
+                industry_rank = []
 
-    report = build_report(params.industry_level, industry_rank, picked_stocks)
-    return {
-        "industry_rank": industry_rank,
-        "stock_pool": stock_pool,
-        "factor_rank": factor_rank,
-        "picked_stocks": picked_stocks,
-        **report,
-        "messages": [
-            {"role": "industry", "time": _now_time(), "content": f"Top {len(industry_rank)} 板块: " + ", ".join([x.get('industry', '') for x in industry_rank])},
-            {"role": "stock_picker", "time": _now_time(), "content": f"选中 {len(picked_stocks)} 只: " + ", ".join([x.get('code', '') for x in picked_stocks])},
-            {"role": "report", "time": _now_time(), "content": f"晨报生成 {len(str(report.get('report_md') or ''))} 字节"},
-        ],
-        "generated_at": _now_iso(),
-    }
+            try:
+                stock_pool, factor_rank, picked_stocks = pick_stocks_from_industries(industry_rank, params, end_date)
+            except Exception as e:
+                logger.error(f"从行业中选择股票失败: {e}")
+                stock_pool, factor_rank, picked_stocks = [], [], []
+
+        try:
+            report = build_report(params.industry_level, industry_rank, picked_stocks)
+        except Exception as e:
+            logger.error(f"生成报告失败: {e}")
+            report = {"report_md": "报告生成失败", "report_html": "报告生成失败"}
+
+        return {
+            "industry_rank": industry_rank,
+            "stock_pool": stock_pool,
+            "factor_rank": factor_rank,
+            "picked_stocks": picked_stocks,
+            **report,
+            "messages": [
+                {"role": "industry", "time": _now_time(), "content": f"Top {len(industry_rank)} 板块: " + ", ".join([x.get('industry', '') for x in industry_rank])},
+                {"role": "stock_picker", "time": _now_time(), "content": f"选中 {len(picked_stocks)} 只: " + ", ".join([x.get('code', '') for x in picked_stocks])},
+                {"role": "report", "time": _now_time(), "content": f"晨报生成 {len(str(report.get('report_md') or ''))} 字节"},
+            ],
+            "generated_at": _now_iso(),
+        }
+    except Exception as e:
+        logger.error(f"晨会分析工作流执行失败: {e}")
+        # 返回默认结果，避免整个流程失败
+        return {
+            "industry_rank": [],
+            "stock_pool": [],
+            "factor_rank": [],
+            "picked_stocks": [],
+            "report_md": "工作流执行失败",
+            "report_html": "工作流执行失败",
+            "messages": [
+                {"role": "system", "time": _now_time(), "content": f"错误: {str(e)}"},
+            ],
+            "generated_at": _now_iso(),
+        }

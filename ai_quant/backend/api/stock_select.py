@@ -279,37 +279,37 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
 
         logger.debug(f"查询数据，offset: {offset}, limit: {page_size}")
         data_sql = f"""
-                SELECT
-                    f.stock_code,
-                    m.stock_name,
-                    m.sector_level1,
-                    m.sector_level2,
-                    f.report_date,
-                    f.pe_ttm,
-                    f.pb,
-                    f.market_cap,
-                    f.roe,
-                    f.gross_margin,
-                    f.operating_margin,
-                    f.net_margin,
-                    f.revenue_growth_yoy,
-                    f.profit_growth_yoy,
-                    f.debt_ratio,
-                    f.quick_ratio,
-                    f.total_asset_turnover,
-                    f.revenue,
-                    f.net_profit,
-                    f.eps,
-                    f.free_cash_flow,
-                    f.dividend_yield,
-                    f.ebitda,
-                    f.ev_ebitda
-                FROM trade_stock_financial f
-                LEFT JOIN trade_stock_master m ON f.stock_code = m.stock_code
-                WHERE {where}
-                ORDER BY f.report_date DESC, f.roe DESC
-                LIMIT %s OFFSET %s
-            """
+            SELECT
+                f.stock_code,
+                m.stock_name,
+                m.sector_level1,
+                m.sector_level2,
+                f.report_date,
+                f.pe_ttm,
+                f.pb,
+                f.market_cap,
+                f.roe,
+                f.gross_margin,
+                f.operating_margin,
+                f.net_margin,
+                f.revenue_growth_yoy,
+                f.profit_growth_yoy,
+                f.debt_ratio,
+                f.quick_ratio,
+                f.total_asset_turnover,
+                f.revenue,
+                f.net_profit,
+                f.eps,
+                f.free_cash_flow,
+                f.dividend_yield,
+                f.ebitda,
+                f.ev_ebitda
+            FROM trade_stock_financial f
+            LEFT JOIN trade_stock_master m ON f.stock_code = m.stock_code
+            WHERE {where}
+            ORDER BY f.report_date DESC, f.roe DESC
+            LIMIT %s OFFSET %s
+        """
         rows = query_dict(conn, data_sql, tuple(values + [page_size, offset]))
 
         logger.info("股票筛选完成", extra={

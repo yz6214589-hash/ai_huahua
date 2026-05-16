@@ -11,7 +11,7 @@ import { Badge } from '@/components/Badge'
 import { StockPicker } from '@/components/StockPicker'
 import type { StockSearchItem } from '@/api/types'
 import { ExternalLink, Plus, RefreshCcw, Trash2, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -58,13 +58,13 @@ export default function Reports() {
   const [viewerLoading, setViewerLoading] = useState(false)      // 报告是否正在加载
 
   // 显示提示消息，自动 2.2 秒后消失
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMsg(msg)
     window.setTimeout(() => setToastMsg(null), 2200)
-  }
+  }, [])
 
   // 加载任务列表
-  const loadTasks = async (opts?: { silent?: boolean }) => {
+  const loadTasks = useCallback(async (opts?: { silent?: boolean }) => {
     setLoading(true)
     if (!opts?.silent) setErr(null)
     try {
@@ -82,19 +82,19 @@ export default function Reports() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [q, createdStart, createdEnd])
 
   // 组件挂载时加载任务列表，并设置 3 秒轮询刷新
   useEffect(() => {
     loadTasks()
-    const t = window.setInterval(() => {
+    const timerId = window.setInterval(() => {
       loadTasks({ silent: true })
     }, 3000)
-    return () => window.clearInterval(t)
-  }, [q, createdStart, createdEnd])
+    return () => window.clearInterval(timerId)
+  }, [loadTasks])
 
   // 创建研报任务
-  const createTask = async () => {
+  const createTask = useCallback(async () => {
     if (selectedStocks.length === 0) {
       setErr('请选择至少一只股票')
       return
@@ -114,10 +114,10 @@ export default function Reports() {
     } finally {
       setCreating(false)
     }
-  }
+  }, [selectedStocks, model, useRag, loadTasks])
 
   // 删除任务
-  const delTask = async (taskId: string) => {
+  const delTask = useCallback(async (taskId: string) => {
     setErr(null)
     try {
       await fetchJson<{ ok: boolean }>(`/api/v1/reports/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' })
@@ -125,10 +125,10 @@ export default function Reports() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }
+  }, [loadTasks])
 
   // 重试失败的任务
-  const retryTask = async (taskId: string) => {
+  const retryTask = useCallback(async (taskId: string) => {
     setErr(null)
     setRetrying(taskId)
     try {
@@ -139,10 +139,10 @@ export default function Reports() {
     } finally {
       setRetrying(null)
     }
-  }
+  }, [loadTasks])
 
   // 查看任务生成的报告
-  const viewTask = async (t: ReportTask) => {
+  const viewTask = useCallback(async (t: ReportTask) => {
     // 检查任务状态
     if (t.status === 'failed') {
       showToast(`任务失败：${t.error_message || '未知错误'}`)
@@ -167,7 +167,7 @@ export default function Reports() {
     } finally {
       setViewerLoading(false)
     }
-  }
+  }, [showToast])
 
   // 页面主布局：左侧任务创建区 + 右侧任务列表
   return (

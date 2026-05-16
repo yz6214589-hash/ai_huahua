@@ -497,6 +497,49 @@ class MiniQMTTrader:
         except Exception:
             return False
 
+    def get_market_data_ex(
+        self,
+        stock_list: list[str],
+        period: str = "1d",
+        start_time: str = "",
+        end_time: str = "",
+        count: int = -1,
+        dividend_type: str = "none",
+        fill_data: bool = True,
+    ) -> dict[str, Any]:
+        """
+        获取股票历史行情数据（使用 get_market_data_ex，返回 DataFrame 字典）。
+
+        与 get_market_data 不同，此方法返回 {stock_code: DataFrame} 格式，
+        每个 DataFrame 包含 open/high/low/close/volume/amount 列，索引为时间戳。
+
+        Args:
+            stock_list: 股票代码列表
+            period: K 线周期，默认 "1d"
+            start_time: 开始时间，YYYYMMDD 或 YYYYMMDDHHmmss
+            end_time: 结束时间
+            count: 数量，-1 表示全部
+            dividend_type: 复权类型，"none"/"front"/"back"
+            fill_data: 是否填充空值
+
+        Returns:
+            {stock_code: DataFrame} 字典
+        """
+        try:
+            from xtquant import xtdata
+            return xtdata.get_market_data_ex(
+                field_list=[],
+                stock_list=stock_list,
+                period=period,
+                start_time=start_time,
+                end_time=end_time,
+                count=count,
+                dividend_type=dividend_type,
+                fill_data=fill_data,
+            )
+        except Exception:
+            return {}
+
     def get_market_data(
         self,
         stock_list: list[str],
@@ -535,6 +578,31 @@ class MiniQMTTrader:
             )
         except Exception:
             return {}
+
+    def cancel_all(self) -> list[int]:
+        """
+        撤销所有可撤委托
+
+        Returns:
+            成功撤销的订单ID列表
+        """
+        if not self._connected:
+            return []
+        orders = self._trader.query_stock_orders(self._account) or []
+        cancelable_status = {50, 55}
+        canceled = []
+        for o in orders:
+            status = getattr(o, "order_status", 0) or 0
+            if status in cancelable_status:
+                order_id = getattr(o, "order_id", None)
+                if order_id is not None:
+                    try:
+                        self._trader.cancel_order_stock(self._account, int(order_id))
+                        canceled.append(int(order_id))
+                        time.sleep(0.3)
+                    except Exception:
+                        pass
+        return canceled
 
     # ─────────── 交易接口 ───────────
 

@@ -1,1 +1,0 @@
-{"runId": "c7a10d171cd143a0b092489f40e35e12", "domain": "stock_daily", "startedAt": "2026-05-10T21:42:55", "finishedAt": "2026-05-10T21:42:58", "status": "partial", "dataSourceFinal": "akshare", "fallbackChain": ["akshare"], "rowsWritten": 0, "itemsProcessed": 1, "failedItems": ["600519.SH"], "message": "失败 1 只股票", "userMessage": "失败 1 只股票"}

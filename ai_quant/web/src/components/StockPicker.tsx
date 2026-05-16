@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import type { StockSearchItem } from '@/api/types'
 import { fetchJson } from '@/api/client'
 import { Search, ChevronDown, X, Plus } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 export interface StockPickerProps {
   value?: StockSearchItem | StockSearchItem[] | null
@@ -60,8 +60,9 @@ export function StockPicker({
       ? [value as StockSearchItem]
       : []
 
-  const selectedCodes = new Set(selectedItems.map((it) => it.code))
+  const selectedCodes = useMemo(() => new Set(selectedItems.map((it) => it.code)), [selectedItems])
 
+  // 处理点击外部关闭下拉框
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (containerRef.current && !(containerRef.current as HTMLElement).contains(e.target as Node)) {
@@ -94,7 +95,7 @@ export function StockPicker({
     return () => observer.disconnect()
   }, [open, hasMore, loading, page])
 
-  const loadPage = async (q: string, pageNum: number) => {
+  const loadPage = useCallback(async (q: string, pageNum: number) => {
     loadingMoreRef.current = true
     setLoading(true)
     setErr(null)
@@ -117,9 +118,9 @@ export function StockPicker({
       setLoading(false)
       loadingMoreRef.current = false
     }
-  }
+  }, [])
 
-  const loadMore = async () => {
+  const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || loading || !hasMore) return
     loadingMoreRef.current = true
     setLoading(true)
@@ -140,9 +141,9 @@ export function StockPicker({
       setLoading(false)
       loadingMoreRef.current = false
     }
-  }
+  }, [loading, hasMore, page, query, loadPage])
 
-  const handleToggleOpen = () => {
+  const handleToggleOpen = useCallback(() => {
     if (disabled) return
     if (!open) {
       setQuery('')
@@ -153,24 +154,24 @@ export function StockPicker({
       loadPage('', 0)
     }
     setOpen((v) => !v)
-  }
+  }, [disabled, open, loadPage])
 
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     setResults([])
     setPage(0)
     setHasMore(true)
     setSearched(true)
     loadPage(query, 0)
-  }
+  }, [loadPage, query])
 
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault()
       handleSearch()
     }
-  }
+  }, [handleSearch])
 
-  const selectItem = (item: StockSearchItem) => {
+  const selectItem = useCallback((item: StockSearchItem) => {
     if (isMultiple) {
       if (selectedCodes.has(item.code)) return
       const next = [...selectedItems, item]
@@ -184,9 +185,9 @@ export function StockPicker({
       setHasMore(true)
       setSearched(false)
     }
-  }
+  }, [isMultiple, selectedCodes, selectedItems])
 
-  const removeItem = (code: string, e: React.MouseEvent) => {
+  const removeItem = useCallback((code: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!isMultiple) {
       onChange?.(null)
@@ -194,7 +195,7 @@ export function StockPicker({
     }
     const next = selectedItems.filter((it) => it.code !== code)
     onChange?.(next)
-  }
+  }, [isMultiple, selectedItems, onChange])
 
   return (
     <div ref={containerRef} className={cn('relative', className)}>

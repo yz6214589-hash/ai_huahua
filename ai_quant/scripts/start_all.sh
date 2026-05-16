@@ -33,11 +33,11 @@ FRONTEND_DIR="${PROJECT_ROOT}/web"
 STREAMLIT_DIR="${PROJECT_ROOT}/streamlit_chat"
 
 # 服务配置
-PORT_BACKEND=8010
+PORT_BACKEND=8000
 PORT_FRONTEND=5173
 PORT_STREAMLIT=8501
 
-URL_BACKEND="http://127.0.0.1:8010"
+URL_BACKEND="http://127.0.0.1:8000"
 URL_FRONTEND="http://localhost:5173"
 URL_STREAMLIT="http://localhost:8501"
 
@@ -46,6 +46,7 @@ MODE="dev"
 BACKGROUND=false
 LOG_DIR="${PROJECT_ROOT}/logs"
 LOG_FILE="${LOG_DIR}/startup_$(date '+%Y%m%d_%H%M%S').log"
+VENV_PYTHON="python3"  # 在 check_dependencies 中会被更新为 venv/bin/python3
 
 #==============================================================================
 # 辅助函数
@@ -129,6 +130,16 @@ check_dependencies() {
         log "DONE" "Python 3 已安装 (版本: $python_version)"
     else
         missing="${missing} Python 3"
+    fi
+    
+    # 检测虚拟环境
+    local venv_path="${PROJECT_ROOT}/venv"
+    if [ -f "${venv_path}/bin/python3" ]; then
+        VENV_PYTHON="${venv_path}/bin/python3"
+        log "DONE" "使用虚拟环境 Python: ${VENV_PYTHON}"
+    else
+        VENV_PYTHON="python3"
+        log "WARN" "未找到虚拟环境，将使用系统 Python"
     fi
     
     # 检查 Node.js
@@ -240,7 +251,9 @@ kill_services() {
 start_backend() {
     log "START" "启动后端API服务..."
     
-    local cmd="cd '${BACKEND_DIR}' && PYTHONPATH=. python3 -m uvicorn app:app --host 127.0.0.1 --port ${PORT_BACKEND}"
+    # 注意: 必须从项目根目录启动并使用 backend.app:app，
+    # 因为 app.py 使用了相对导入 (from .api.xxx import ...)
+    local cmd="cd '${PROJECT_ROOT}' && PYTHONPATH=${BACKEND_DIR} ${VENV_PYTHON} -m uvicorn backend.app:app --host 127.0.0.1 --port ${PORT_BACKEND}"
     
     if [ "$MODE" = "dev" ]; then
         cmd="$cmd --reload"
@@ -305,7 +318,7 @@ start_streamlit() {
         return 1
     fi
     
-    local cmd="cd '${STREAMLIT_DIR}' && python3 -m streamlit run app.py --server.port ${PORT_STREAMLIT} --server.headless true"
+    local cmd="cd '${STREAMLIT_DIR}' && ${VENV_PYTHON} -m streamlit run app.py --server.port ${PORT_STREAMLIT} --server.headless true"
     
     if [ "$BACKGROUND" = true ]; then
         eval "$cmd > '${LOG_DIR}/streamlit.log' 2>&1 &"
@@ -338,7 +351,7 @@ show_status() {
     echo ""
     
     # 后端
-    printf "%-20s " "FastAPI 后端服务:8010"
+    printf "%-20s " "FastAPI 后端服务:8000"
     if check_port "$PORT_BACKEND"; then
         local pid=$(get_pid_by_port "$PORT_BACKEND")
         printf "${GREEN}● 运行中${NC} (PID: %s)\n" "$pid"

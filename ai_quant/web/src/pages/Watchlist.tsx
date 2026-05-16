@@ -8,15 +8,16 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical, Minus, Pencil, Pin, Plus, RefreshCcw, Settings, Trash2, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { memo } from 'react'
 
 function fmt(v: number | null | undefined, decimals = 2): string {
   if (v == null) return '—'
   return v.toFixed(decimals)
 }
 
-function ChangeCell({ change, pct }: { change: number | null | undefined; pct: number | null | undefined }) {
+const ChangeCell = memo(function ChangeCell({ change, pct }: { change: number | null | undefined; pct: number | null | undefined }) {
   if (change == null && pct == null) {
     return <span className="text-sm text-zinc-400">—</span>
   }
@@ -28,9 +29,9 @@ function ChangeCell({ change, pct }: { change: number | null | undefined; pct: n
       <div className={cn('text-xs', cls)}>{up ? '+' : ''}{fmt(pct)}%</div>
     </div>
   )
-}
+})
 
-function SortableRow({
+const SortableRow = memo(function SortableRow({
   item,
   snapshot,
   groupNames,
@@ -114,9 +115,9 @@ function SortableRow({
       </div>
     </div>
   )
-}
+})
 
-function GroupManagerModal({
+const GroupManagerModal = memo(function GroupManagerModal({
   groups,
   onClose,
   onCreate,
@@ -133,25 +134,25 @@ function GroupManagerModal({
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingName, setEditingName] = useState('')
 
-  const handleCreate = () => {
+  const handleCreate = useCallback(() => {
     const name = newName.trim()
     if (!name) return
     onCreate(name)
     setNewName('')
-  }
+  }, [newName, onCreate])
 
-  const startEdit = (g: WatchlistGroup) => {
+  const startEdit = useCallback((g: WatchlistGroup) => {
     setEditingId(g.id)
     setEditingName(g.name)
-  }
+  }, [])
 
-  const handleRename = (id: number) => {
+  const handleRename = useCallback((id: number) => {
     const name = editingName.trim()
     if (!name) return
     onRename(id, name)
     setEditingId(null)
     setEditingName('')
-  }
+  }, [editingName, onRename])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -216,7 +217,7 @@ function GroupManagerModal({
       </div>
     </div>
   )
-}
+})
 
 export default function Watchlist() {
   const [groups, setGroups] = useState<WatchlistGroup[]>([])
@@ -236,14 +237,14 @@ export default function Watchlist() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
-  const loadGroups = async () => {
+  const loadGroups = useCallback(async () => {
     try {
       const r = await fetchJson<{ items: WatchlistGroup[] }>('/api/v1/watchlist/groups')
       setGroups(r.items || [])
     } catch { /* ignore */ }
-  }
+  }, [])
 
-  const loadItems = async () => {
+  const loadItems = useCallback(async () => {
     setLoading(true)
     setErr(null)
     try {
@@ -255,9 +256,9 @@ export default function Watchlist() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [activeGroupId])
 
-  const loadSnapshots = async () => {
+  const loadSnapshots = useCallback(async () => {
     if (items.length === 0) return
     setLoadingSnapshot(true)
     try {
@@ -267,16 +268,16 @@ export default function Watchlist() {
       setSnapshots(map)
     } catch { /* ignore */ }
     finally { setLoadingSnapshot(false) }
-  }
+  }, [items])
 
-  useEffect(() => { loadGroups() }, [])
-  useEffect(() => { loadItems() }, [activeGroupId])
-  useEffect(() => { if (items.length > 0) loadSnapshots() }, [items.length])
+  useEffect(() => { loadGroups() }, [loadGroups])
+  useEffect(() => { loadItems() }, [loadItems])
+  useEffect(() => { if (items.length > 0) loadSnapshots() }, [items.length, loadSnapshots])
 
   const pinned = useMemo(() => items.filter((x) => x.pinned), [items])
   const normal = useMemo(() => items.filter((x) => !x.pinned), [items])
 
-  const handleCreateGroup = async (name: string) => {
+  const handleCreateGroup = useCallback(async (name: string) => {
     try {
       await postJson('/api/v1/watchlist/groups', { name })
       toast('success', `分组「${name}」创建成功`)
@@ -284,9 +285,9 @@ export default function Watchlist() {
     } catch (e) {
       toast('error', `分组创建失败：${e instanceof Error ? e.message : String(e)}`)
     }
-  }
+  }, [loadGroups])
 
-  const handleRenameGroup = async (id: number, name: string) => {
+  const handleRenameGroup = useCallback(async (id: number, name: string) => {
     try {
       await postJson(`/api/v1/watchlist/groups/${id}/rename`, { name })
       toast('success', `分组重命名成功`)
@@ -294,9 +295,9 @@ export default function Watchlist() {
     } catch (e) {
       toast('error', `分组重命名失败：${e instanceof Error ? e.message : String(e)}`)
     }
-  }
+  }, [loadGroups])
 
-  const handleDeleteGroup = async (id: number) => {
+  const handleDeleteGroup = useCallback(async (id: number) => {
     try {
       await fetchJson(`/api/v1/watchlist/groups/${id}`, { method: 'DELETE' })
       toast('success', `分组删除成功`)
@@ -305,9 +306,9 @@ export default function Watchlist() {
     } catch (e) {
       toast('error', `分组删除失败：${e instanceof Error ? e.message : String(e)}`)
     }
-  }
+  }, [activeGroupId, loadGroups])
 
-  const add = async (item: StockSearchItem) => {
+  const add = useCallback(async (item: StockSearchItem) => {
     setErr(null)
     try {
       await postJson('/api/v1/watchlist/with-groups', { stock_code: item.code, group_ids: selectedGroupIds })
@@ -316,9 +317,9 @@ export default function Watchlist() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }
+  }, [selectedGroupIds, loadItems])
 
-  const del = async (code: string) => {
+  const del = useCallback(async (code: string) => {
     setErr(null)
     try {
       await fetchJson(`/api/v1/watchlist/${encodeURIComponent(code)}`, { method: 'DELETE' })
@@ -326,9 +327,9 @@ export default function Watchlist() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }
+  }, [loadItems])
 
-  const pin = async (code: string, pinned: boolean) => {
+  const pin = useCallback(async (code: string, pinned: boolean) => {
     setErr(null)
     try {
       await fetchJson(`/api/v1/watchlist/${encodeURIComponent(code)}/pin`, {
@@ -338,14 +339,14 @@ export default function Watchlist() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }
+  }, [loadItems])
 
-  const saveOrder = async (nextPinned: WatchlistItem[], nextNormal: WatchlistItem[]) => {
+  const saveOrder = useCallback(async (nextPinned: WatchlistItem[], nextNormal: WatchlistItem[]) => {
     const ordered = [...nextPinned, ...nextNormal].map((x) => x.stock_code)
     await fetchJson('/api/v1/watchlist/reorder', { method: 'PUT', body: JSON.stringify({ codes: ordered }) })
-  }
+  }, [])
 
-  const onDragEnd = async (event: DragEndEvent) => {
+  const onDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
     const activeId = String(active.id)
@@ -365,10 +366,10 @@ export default function Watchlist() {
       setItems([...pinned, ...nextNormal])
       try { await saveOrder(pinned, nextNormal) } catch (e) { setErr(e instanceof Error ? e.message : String(e)); await loadItems() }
     }
-  }
+  }, [pinned, normal, saveOrder, loadItems])
 
-  const allTab = { id: null, label: `全部 (${items.length})` }
-  const tabs = [allTab, ...groups.map((g) => ({ id: g.id, label: `${g.name}` }))]
+  const allTab = useMemo(() => ({ id: null, label: `全部 (${items.length})` }), [items.length])
+  const tabs = useMemo(() => [allTab, ...groups.map((g) => ({ id: g.id, label: `${g.name}` }))], [allTab, groups])
 
   return (
     <div className="space-y-4">

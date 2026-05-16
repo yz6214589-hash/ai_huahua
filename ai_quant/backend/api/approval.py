@@ -1,11 +1,13 @@
 """
 审批流程API模块
 提供审批流程模板管理、流程实例执行、审批操作等接口
+数据存储使用MySQL数据库
 """
 from __future__ import annotations
 
 from typing import Any, Optional
 from datetime import datetime
+import json
 import uuid
 
 from fastapi import APIRouter, HTTPException
@@ -25,39 +27,41 @@ from api.approval_models import (
     FlowNode,
     FlowEdge,
 )
+from core.db import connect, load_mysql_config, query_dict, execute
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("approval")
 
 router = APIRouter(prefix="/api/v1/approval", tags=["approval"])
 
-flow_templates: dict[str, FlowTemplate] = {}
-flow_instances: dict[str, FlowInstance] = {}
-node_instances: dict[str, NodeInstance] = {}
-approval_records: list[ApprovalRecord] = []
 
-_init_sample_templates()
+def _get_conn():
+    """获取数据库连接"""
+    cfg = load_mysql_config()
+    return connect(cfg)
 
 
-def _init_sample_templates():
-    """初始化示例流程模板"""
-    sample_template = FlowTemplate(
-        id="template_001",
-        name="交易风控审批",
-        description="股票交易风控审批流程",
-        status=FlowStatus.ACTIVE,
-        nodes=[
-            FlowNode(id="node_start", type=NodeType.START, label="开始", x=100, y=200),
-            FlowNode(id="node_approver_1", type=NodeType.APPROVER, label="风控经理审批", x=300, y=200,
-                    approver_type="role", approver_id="risk_manager", approver_name="风控经理"),
-            FlowNode(id="node_end", type=NodeType.END, label="结束", x=500, y=200),
-        ],
-        edges=[
-            FlowEdge(id="edge_1", source="node_start", target="node_approver_1"),
-            FlowEdge(id="edge_2", source="node_approver_1", target="node_end"),
+def _ensure_default_template(conn):
+    """确保默认审批模板存在"""
+    existing = query_dict(conn, "SELECT id FROM trade_approval_template WHERE id = %s", ("template_001",))
+    if not existing:
+        nodes = [
+            {"id": "node_start", "type": "start", "label": "开始", "x": 100, "y": 200},
+            {"id": "node_approver_1", "type": "approver", "label": "风控经理审批", "x": 300, "y": 200,
+             "approver_type": "role", "approver_id": "risk_manager", "approver_name": "风控经理"},
+            {"id": "node_end", "type": "end", "label": "结束", "x": 500, "y": 200},
         ]
-    )
-    flow_templates[sample_template.id] = sample_template
+        edges = [
+            {"id": "edge_1", "source": "node_start", "target": "node_approver_1"},
+            {"id": "edge_2", "source": "node_approver_1", "target": "node_end"},
+        ]
+        execute(
+            conn,
+            """INSERT INTO trade_approval_template (id, name, description, status, nodes, edges)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            ("template_001", "交易风控审批", "股票交易风控审批流程", "active",
+             json.dumps(nodes, ensure_ascii=False), json.dumps(edges, ensure_ascii=False))
+        )
 
 
 class FlowTemplateCreate(BaseModel):
@@ -82,74 +86,186 @@ def get_templates(
     page_size: int = 10
 ) -> dict[str, Any]:
     """获取审批流程模板列表"""
-    templates = list(flow_templates.values())
-    if status:
-        templates = [t for t in templates if t.status.value == status]
-    templates.sort(key=lambda x: x.updated_at, reverse=True)
-    total = len(templates)
-    start = (page - 1) * page_size
-    end = start + page_size
-    items = templates[start:end]
-    return {
-        "items": [t.model_dump() for t in items],
-        "total": total,
-        "page": page,
-        "page_size": page_size
-    }
+    conn = _get_conn()
+    try:
+        _ensure_default_template(conn)
+        conditions = ["1=1"]
+        params: list = []
+        if status:
+            conditions.append("status = %s")
+            params.append(status)
+        where = " AND ".join(conditions)
+
+        count_result = query_dict(
+            conn,
+            f"SELECT COUNT(*) as total FROM trade_approval_template WHERE {where}",
+            tuple(params)
+        )
+        total = count_result[0]["total"] if count_result else 0
+
+        offset = (page - 1) * page_size
+        rows = query_dict(
+            conn,
+            f"""SELECT * FROM trade_approval_template WHERE {where}
+                ORDER BY updated_at DESC LIMIT %s OFFSET %s""",
+            tuple(params + [page_size, offset])
+        )
+
+        items = []
+        for row in rows:
+            if row.get("nodes") and isinstance(row["nodes"], str):
+                try:
+                    row["nodes"] = json.loads(row["nodes"])
+                except Exception:
+                    row["nodes"] = []
+            if row.get("edges") and isinstance(row["edges"], str):
+                try:
+                    row["edges"] = json.loads(row["edges"])
+                except Exception:
+                    row["edges"] = []
+            for key in ("created_at", "updated_at"):
+                if row.get(key):
+                    row[key] = str(row[key])
+            items.append(row)
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }
+    except Exception as e:
+        logger.error("获取审批流程模板列表失败", extra={"error": str(e)})
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}
+    finally:
+        conn.close()
 
 
 @router.get("/templates/{template_id}")
 def get_template(template_id: str) -> dict[str, Any]:
     """获取流程模板详情"""
-    if template_id not in flow_templates:
-        raise HTTPException(status_code=404, detail="模板不存在")
-    return flow_templates[template_id].model_dump()
+    conn = _get_conn()
+    try:
+        rows = query_dict(conn, "SELECT * FROM trade_approval_template WHERE id = %s", (template_id,))
+        if not rows:
+            raise HTTPException(status_code=404, detail="模板不存在")
+        row = rows[0]
+        if row.get("nodes") and isinstance(row["nodes"], str):
+            try:
+                row["nodes"] = json.loads(row["nodes"])
+            except Exception:
+                row["nodes"] = []
+        if row.get("edges") and isinstance(row["edges"], str):
+            try:
+                row["edges"] = json.loads(row["edges"])
+            except Exception:
+                row["edges"] = []
+        for key in ("created_at", "updated_at"):
+            if row.get(key):
+                row[key] = str(row[key])
+        return row
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("获取流程模板详情失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"获取模板详情失败: {str(e)}")
+    finally:
+        conn.close()
 
 
 @router.post("/templates")
 def create_template(request: FlowTemplateCreate) -> dict[str, Any]:
     """创建流程模板"""
-    template_id = f"template_{uuid.uuid4().hex[:8]}"
-    template = FlowTemplate(
-        id=template_id,
-        name=request.name,
-        description=request.description,
-        status=FlowStatus.DRAFT,
-        nodes=[
-            FlowNode(id="start", type=NodeType.START, label="开始", x=100, y=200),
-            FlowNode(id="end", type=NodeType.END, label="结束", x=500, y=200),
-        ],
-        edges=[
-            FlowEdge(id="start_to_end", source="start", target="end")
+    conn = _get_conn()
+    try:
+        template_id = f"template_{uuid.uuid4().hex[:8]}"
+        nodes = [
+            {"id": "start", "type": "start", "label": "开始", "x": 100, "y": 200},
+            {"id": "end", "type": "end", "label": "结束", "x": 500, "y": 200},
         ]
-    )
-    flow_templates[template_id] = template
-    return {"id": template_id, "template": template.model_dump()}
+        edges = [
+            {"id": "start_to_end", "source": "start", "target": "end"}
+        ]
+        execute(
+            conn,
+            """INSERT INTO trade_approval_template (id, name, description, status, nodes, edges)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (template_id, request.name, request.description, "draft",
+             json.dumps(nodes, ensure_ascii=False), json.dumps(edges, ensure_ascii=False))
+        )
+        return {"id": template_id, "template": {
+            "id": template_id, "name": request.name, "description": request.description,
+            "status": "draft", "nodes": nodes, "edges": edges
+        }}
+    except Exception as e:
+        logger.error("创建流程模板失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"创建模板失败: {str(e)}")
+    finally:
+        conn.close()
 
 
 @router.put("/templates/{template_id}")
 def update_template(template_id: str, request: FlowTemplateUpdate) -> dict[str, Any]:
     """更新流程模板"""
-    if template_id not in flow_templates:
-        raise HTTPException(status_code=404, detail="模板不存在")
-    template = flow_templates[template_id]
-    if request.name is not None:
-        template.name = request.name
-    if request.description is not None:
-        template.description = request.description
-    if request.status is not None:
-        template.status = FlowStatus(request.status)
-    template.updated_at = datetime.now()
-    return {"template": template.model_dump()}
+    conn = _get_conn()
+    try:
+        existing = query_dict(conn, "SELECT id FROM trade_approval_template WHERE id = %s", (template_id,))
+        if not existing:
+            raise HTTPException(status_code=404, detail="模板不存在")
+
+        updates = []
+        params: list = []
+        if request.name is not None:
+            updates.append("name = %s")
+            params.append(request.name)
+        if request.description is not None:
+            updates.append("description = %s")
+            params.append(request.description)
+        if request.status is not None:
+            updates.append("status = %s")
+            params.append(request.status)
+        if request.nodes is not None:
+            updates.append("nodes = %s")
+            params.append(json.dumps(request.nodes, ensure_ascii=False))
+        if request.edges is not None:
+            updates.append("edges = %s")
+            params.append(json.dumps(request.edges, ensure_ascii=False))
+
+        if updates:
+            params.append(template_id)
+            sql = f"UPDATE trade_approval_template SET {', '.join(updates)} WHERE id = %s"
+            execute(conn, sql, tuple(params))
+
+        return {"message": "更新成功"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("更新流程模板失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"更新模板失败: {str(e)}")
+    finally:
+        conn.close()
 
 
 @router.delete("/templates/{template_id}")
 def delete_template(template_id: str) -> dict[str, Any]:
     """删除流程模板"""
-    if template_id not in flow_templates:
-        raise HTTPException(status_code=404, detail="模板不存在")
-    del flow_templates[template_id]
-    return {"message": "删除成功"}
+    conn = _get_conn()
+    try:
+        existing = query_dict(conn, "SELECT id FROM trade_approval_template WHERE id = %s", (template_id,))
+        if not existing:
+            raise HTTPException(status_code=404, detail="模板不存在")
+        execute(conn, "DELETE FROM trade_approval_node_instance WHERE instance_id IN (SELECT id FROM trade_approval_instance WHERE template_id = %s)", (template_id,))
+        execute(conn, "DELETE FROM trade_approval_record WHERE instance_id IN (SELECT id FROM trade_approval_instance WHERE template_id = %s)", (template_id,))
+        execute(conn, "DELETE FROM trade_approval_instance WHERE template_id = %s", (template_id,))
+        execute(conn, "DELETE FROM trade_approval_template WHERE id = %s", (template_id,))
+        return {"message": "删除成功"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("删除流程模板失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"删除模板失败: {str(e)}")
+    finally:
+        conn.close()
 
 
 @router.get("/instances")
@@ -160,106 +276,225 @@ def get_instances(
     page_size: int = 10
 ) -> dict[str, Any]:
     """获取审批流程实例列表"""
-    instances = list(flow_instances.values())
-    if status:
-        instances = [i for i in instances if i.status == status]
-    if applicant_id:
-        instances = [i for i in instances if i.applicant_id == applicant_id]
-    instances.sort(key=lambda x: x.created_at, reverse=True)
-    total = len(instances)
-    start = (page - 1) * page_size
-    end = start + page_size
-    items = instances[start:end]
-    return {
-        "items": [i.model_dump() for i in items],
-        "total": total,
-        "page": page,
-        "page_size": page_size
-    }
+    conn = _get_conn()
+    try:
+        conditions = ["1=1"]
+        params: list = []
+        if status:
+            conditions.append("status = %s")
+            params.append(status)
+        if applicant_id:
+            conditions.append("applicant_id = %s")
+            params.append(applicant_id)
+        where = " AND ".join(conditions)
+
+        count_result = query_dict(
+            conn,
+            f"SELECT COUNT(*) as total FROM trade_approval_instance WHERE {where}",
+            tuple(params)
+        )
+        total = count_result[0]["total"] if count_result else 0
+
+        offset = (page - 1) * page_size
+        rows = query_dict(
+            conn,
+            f"""SELECT * FROM trade_approval_instance WHERE {where}
+                ORDER BY created_at DESC LIMIT %s OFFSET %s""",
+            tuple(params + [page_size, offset])
+        )
+
+        items = []
+        for row in rows:
+            if row.get("form_data") and isinstance(row["form_data"], str):
+                try:
+                    row["form_data"] = json.loads(row["form_data"])
+                except Exception:
+                    row["form_data"] = {}
+            for key in ("created_at", "updated_at"):
+                if row.get(key):
+                    row[key] = str(row[key])
+            items.append(row)
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }
+    except Exception as e:
+        logger.error("获取审批流程实例列表失败", extra={"error": str(e)})
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}
+    finally:
+        conn.close()
 
 
 @router.get("/instances/{instance_id}")
 def get_instance(instance_id: str) -> dict[str, Any]:
     """获取流程实例详情"""
-    if instance_id not in flow_instances:
-        raise HTTPException(status_code=404, detail="实例不存在")
-    instance = flow_instances[instance_id]
-    nodes = get_instance_nodes(instance_id)
-    return {
-        "instance": instance.model_dump(),
-        "nodes": nodes
-    }
+    conn = _get_conn()
+    try:
+        instances = query_dict(conn, "SELECT * FROM trade_approval_instance WHERE id = %s", (instance_id,))
+        if not instances:
+            raise HTTPException(status_code=404, detail="实例不存在")
+        instance = instances[0]
+        if instance.get("form_data") and isinstance(instance["form_data"], str):
+            try:
+                instance["form_data"] = json.loads(instance["form_data"])
+            except Exception:
+                instance["form_data"] = {}
+        for key in ("created_at", "updated_at"):
+            if instance.get(key):
+                instance[key] = str(instance[key])
 
+        nodes = query_dict(
+            conn,
+            "SELECT * FROM trade_approval_node_instance WHERE instance_id = %s ORDER BY created_at",
+            (instance_id,)
+        )
+        for node in nodes:
+            for key in ("created_at", "completed_at"):
+                if node.get(key):
+                    node[key] = str(node[key])
 
-def get_instance_nodes(instance_id: str) -> list[dict]:
-    """获取实例的节点列表"""
-    nodes = [n for n in node_instances.values() if n.instance_id == instance_id]
-    nodes.sort(key=lambda x: x.created_at)
-    return [n.model_dump() for n in nodes]
+        return {
+            "instance": instance,
+            "nodes": nodes
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("获取流程实例详情失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"获取实例详情失败: {str(e)}")
+    finally:
+        conn.close()
 
 
 @router.post("/instances")
 def create_instance(request: ApprovalFormData) -> dict[str, Any]:
     """发起审批流程"""
-    if request.template_id not in flow_templates:
-        raise HTTPException(status_code=404, detail="模板不存在")
-    template = flow_templates[request.template_id]
-    if template.status != FlowStatus.ACTIVE:
-        raise HTTPException(status_code=400, detail="模板未启用")
-    instance_id = f"instance_{uuid.uuid4().hex[:8]}"
-    instance = FlowInstance(
-        id=instance_id,
-        template_id=template.id,
-        template_name=template.name,
-        title=request.title,
-        applicant_id="current_user",
-        applicant_name="当前用户",
-        status="pending",
-        form_data=request.form_data
-    )
-    flow_instances[instance_id] = instance
-    return {"id": instance_id, "instance": instance.model_dump()}
+    conn = _get_conn()
+    try:
+        templates = query_dict(conn, "SELECT * FROM trade_approval_template WHERE id = %s", (request.template_id,))
+        if not templates:
+            raise HTTPException(status_code=404, detail="模板不存在")
+        template = templates[0]
+        if template.get("status") != "active":
+            raise HTTPException(status_code=400, detail="模板未启用")
+
+        instance_id = f"instance_{uuid.uuid4().hex[:8]}"
+        form_data_json = json.dumps(request.form_data, ensure_ascii=False) if request.form_data else "{}"
+
+        execute(
+            conn,
+            """INSERT INTO trade_approval_instance (id, template_id, template_name, title, applicant_id, applicant_name, status, form_data)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (instance_id, template["id"], template["name"], request.title,
+             "current_user", "当前用户", "pending", form_data_json)
+        )
+
+        if template.get("nodes") and isinstance(template["nodes"], str):
+            try:
+                template_nodes = json.loads(template["nodes"])
+            except Exception:
+                template_nodes = []
+        else:
+            template_nodes = template.get("nodes", [])
+
+        for node_def in template_nodes:
+            if node_def.get("type") == "approver":
+                node_instance_id = f"ni_{uuid.uuid4().hex[:8]}"
+                execute(
+                    conn,
+                    """INSERT INTO trade_approval_node_instance
+                       (id, instance_id, node_id, node_label, node_type, assignee_type, assignee_id, assignee_name, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (node_instance_id, instance_id, node_def.get("id", ""),
+                     node_def.get("label", ""), node_def.get("type", "approver"),
+                     node_def.get("approver_type"), node_def.get("approver_id"),
+                     node_def.get("approver_name"), "pending")
+                )
+
+        return {"id": instance_id, "instance": {
+            "id": instance_id, "template_id": template["id"],
+            "template_name": template["name"], "title": request.title,
+            "applicant_id": "current_user", "applicant_name": "当前用户",
+            "status": "pending", "form_data": request.form_data
+        }}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("发起审批流程失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"发起审批流程失败: {str(e)}")
+    finally:
+        conn.close()
 
 
 @router.post("/instances/{instance_id}/approve")
 def approve_instance(instance_id: str, request: ApprovalActionRequest) -> dict[str, Any]:
     """执行审批操作"""
-    if instance_id not in flow_instances:
-        raise HTTPException(status_code=404, detail="实例不存在")
-    instance = flow_instances[instance_id]
-    if instance.status not in ["pending", "processing"]:
-        raise HTTPException(status_code=400, detail="流程已结束")
-    if request.node_instance_id not in node_instances:
-        raise HTTPException(status_code=404, detail="节点实例不存在")
-    node_instance = node_instances[request.node_instance_id]
-    record = ApprovalRecord(
-        id=f"record_{uuid.uuid4().hex[:8]}",
-        instance_id=instance_id,
-        node_instance_id=request.node_instance_id,
-        node_label=node_instance.node_label,
-        approver_id="current_user",
-        approver_name="当前用户",
-        action=request.action,
-        comment=request.comment,
-        attachment_url=request.attachment_url
-    )
-    approval_records.append(record)
-    if request.action == ApprovalAction.APPROVE:
-        node_instance.status = NodeStatus.APPROVED
-        instance.status = "approved"
-    elif request.action == ApprovalAction.REJECT:
-        node_instance.status = NodeStatus.REJECTED
-        instance.status = "rejected"
-    elif request.action == ApprovalAction.RETURN:
-        node_instance.status = NodeStatus.RETURNED
-        instance.status = "returned"
-    node_instance.completed_at = datetime.now()
-    instance.updated_at = datetime.now()
-    return {
-        "instance": instance.model_dump(),
-        "node_instance": node_instance.model_dump(),
-        "record": record.model_dump()
-    }
+    conn = _get_conn()
+    try:
+        instances = query_dict(conn, "SELECT * FROM trade_approval_instance WHERE id = %s", (instance_id,))
+        if not instances:
+            raise HTTPException(status_code=404, detail="实例不存在")
+        instance = instances[0]
+        if instance["status"] not in ("pending", "processing"):
+            raise HTTPException(status_code=400, detail="流程已结束")
+
+        nodes = query_dict(
+            conn,
+            "SELECT * FROM trade_approval_node_instance WHERE id = %s",
+            (request.node_instance_id,)
+        )
+        if not nodes:
+            raise HTTPException(status_code=404, detail="节点实例不存在")
+        node_instance = nodes[0]
+
+        record_id = f"record_{uuid.uuid4().hex[:8]}"
+        execute(
+            conn,
+            """INSERT INTO trade_approval_record (record_id, instance_id, node_instance_id, node_label, approver_id, approver_name, action, comment, attachment_url)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (record_id, instance_id, request.node_instance_id, node_instance.get("node_label", ""),
+             "current_user", "当前用户", request.action.value, request.comment, request.attachment_url)
+        )
+
+        if request.action == ApprovalAction.APPROVE:
+            new_node_status = "approved"
+            new_instance_status = "approved"
+        elif request.action == ApprovalAction.REJECT:
+            new_node_status = "rejected"
+            new_instance_status = "rejected"
+        elif request.action == ApprovalAction.RETURN:
+            new_node_status = "returned"
+            new_instance_status = "returned"
+        else:
+            new_node_status = "pending"
+            new_instance_status = instance["status"]
+
+        execute(
+            conn,
+            "UPDATE trade_approval_node_instance SET status = %s, completed_at = NOW() WHERE id = %s",
+            (new_node_status, request.node_instance_id)
+        )
+        execute(
+            conn,
+            "UPDATE trade_approval_instance SET status = %s, updated_at = NOW() WHERE id = %s",
+            (new_instance_status, instance_id)
+        )
+
+        return {
+            "instance": {"id": instance_id, "status": new_instance_status},
+            "node_instance": {"id": request.node_instance_id, "status": new_node_status},
+            "record": {"id": record_id, "action": request.action.value}
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("执行审批操作失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"执行审批操作失败: {str(e)}")
+    finally:
+        conn.close()
 
 
 @router.get("/records")
@@ -270,22 +505,51 @@ def get_records(
     page_size: int = 10
 ) -> dict[str, Any]:
     """获取审批记录列表"""
-    records = approval_records
-    if instance_id:
-        records = [r for r in records if r.instance_id == instance_id]
-    if approver_id:
-        records = [r for r in records if r.approver_id == approver_id]
-    records.sort(key=lambda x: x.created_at, reverse=True)
-    total = len(records)
-    start = (page - 1) * page_size
-    end = start + page_size
-    items = records[start:end]
-    return {
-        "items": [r.model_dump() for r in items],
-        "total": total,
-        "page": page,
-        "page_size": page_size
-    }
+    conn = _get_conn()
+    try:
+        conditions = ["1=1"]
+        params: list = []
+        if instance_id:
+            conditions.append("instance_id = %s")
+            params.append(instance_id)
+        if approver_id:
+            conditions.append("approver_id = %s")
+            params.append(approver_id)
+        where = " AND ".join(conditions)
+
+        count_result = query_dict(
+            conn,
+            f"SELECT COUNT(*) as total FROM trade_approval_record WHERE {where}",
+            tuple(params)
+        )
+        total = count_result[0]["total"] if count_result else 0
+
+        offset = (page - 1) * page_size
+        rows = query_dict(
+            conn,
+            f"""SELECT * FROM trade_approval_record WHERE {where}
+                ORDER BY created_at DESC LIMIT %s OFFSET %s""",
+            tuple(params + [page_size, offset])
+        )
+
+        items = []
+        for row in rows:
+            for key in ("created_at",):
+                if row.get(key):
+                    row[key] = str(row[key])
+            items.append(row)
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }
+    except Exception as e:
+        logger.error("获取审批记录列表失败", extra={"error": str(e)})
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}
+    finally:
+        conn.close()
 
 
 @router.get("/pending")
@@ -295,27 +559,62 @@ def get_pending_approvals(
     page_size: int = 10
 ) -> dict[str, Any]:
     """获取待审批任务列表"""
-    pending_nodes = [
-        n for n in node_instances.values()
-        if n.status == NodeStatus.PENDING
-        and (assignee_id is None or n.assignee_id == assignee_id)
-    ]
-    pending_nodes.sort(key=lambda x: x.created_at, reverse=True)
-    total = len(pending_nodes)
-    start = (page - 1) * page_size
-    end = start + page_size
-    items = pending_nodes[start:end]
-    result = []
-    for node in items:
-        instance = flow_instances.get(node.instance_id)
-        if instance:
-            result.append({
-                "node_instance": node.model_dump(),
-                "instance": instance.model_dump()
+    conn = _get_conn()
+    try:
+        conditions = ["n.status = 'pending'"]
+        params: list = []
+        if assignee_id:
+            conditions.append("n.assignee_id = %s")
+            params.append(assignee_id)
+        where = " AND ".join(conditions)
+
+        count_result = query_dict(
+            conn,
+            f"""SELECT COUNT(*) as total FROM trade_approval_node_instance n WHERE {where}""",
+            tuple(params)
+        )
+        total = count_result[0]["total"] if count_result else 0
+
+        offset = (page - 1) * page_size
+        node_rows = query_dict(
+            conn,
+            f"""SELECT n.* FROM trade_approval_node_instance n WHERE {where}
+                ORDER BY n.created_at DESC LIMIT %s OFFSET %s""",
+            tuple(params + [page_size, offset])
+        )
+
+        items = []
+        for node in node_rows:
+            for key in ("created_at", "completed_at"):
+                if node.get(key):
+                    node[key] = str(node[key])
+            inst_id = node.get("instance_id")
+            instance = None
+            if inst_id:
+                inst_rows = query_dict(conn, "SELECT * FROM trade_approval_instance WHERE id = %s", (inst_id,))
+                if inst_rows:
+                    instance = inst_rows[0]
+                    if instance.get("form_data") and isinstance(instance["form_data"], str):
+                        try:
+                            instance["form_data"] = json.loads(instance["form_data"])
+                        except Exception:
+                            instance["form_data"] = {}
+                    for key in ("created_at", "updated_at"):
+                        if instance.get(key):
+                            instance[key] = str(instance[key])
+            items.append({
+                "node_instance": node,
+                "instance": instance
             })
-    return {
-        "items": result,
-        "total": total,
-        "page": page,
-        "page_size": page_size
-    }
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }
+    except Exception as e:
+        logger.error("获取待审批任务列表失败", extra={"error": str(e)})
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}
+    finally:
+        conn.close()

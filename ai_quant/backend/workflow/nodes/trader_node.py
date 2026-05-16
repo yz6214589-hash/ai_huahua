@@ -3,7 +3,7 @@ trader_node -- 交易执行节点
 
 Trader 是团队的交易执行官，负责：
 1. 根据批准状态决定是否下单
-2. 调用 MiniQMT 接口执行交易
+2. 通过 QMT Gateway 接口执行交易
 3. 默认 dry-run 模式，不真实下单
 
 输入：state["trade_signal"], state["approved"]
@@ -79,22 +79,43 @@ def trader_node(state: TradingState) -> dict:
         }]}
 
     try:
-        from core.execution import create_execution_task
-        task_payload = {
-            "symbol": stock,
-            "side": direction,
-            "total_qty": qty,
-            "num_steps": 1,
-            "strategy": signal.get("strategy", "macd"),
-        }
-        task_result = create_execution_task(task_payload)
+        from infra import qmt_gateway_client
+
+        if direction == "buy":
+            resp = qmt_gateway_client.buy(
+                stock_code=stock,
+                volume=qty,
+                price=price,
+                strategy_name=signal.get("strategy", ""),
+            )
+        elif direction == "sell":
+            resp = qmt_gateway_client.sell(
+                stock_code=stock,
+                volume=qty,
+                price=price,
+                strategy_name=signal.get("strategy", ""),
+            )
+        else:
+            result = {
+                "dry_run": True,
+                "order_id": None,
+                "submitted_at": datetime.now().isoformat(timespec="seconds"),
+                "note": f"未知交易方向: {direction}",
+            }
+            return {"trade_result": TradeResult(**result), "messages": [{
+                "role": "trader",
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "content": result["note"],
+            }]}
+
+        order_id = resp.get("order_id")
         result = {
             "dry_run": False,
-            "order_id": task_result.get("task_id"),
+            "order_id": order_id,
             "submitted_at": datetime.now().isoformat(timespec="seconds"),
-            "note": f"已提交: {direction} {qty} @ {price}",
+            "note": f"已提交: {direction} {stock} {qty}股 @ {price} 编号:{order_id}",
         }
-        print(f"[Trader] 委托编号 {task_result.get('task_id')}")
+        print(f"[Trader] 委托编号 {order_id}")
     except Exception as e:
         result = {
             "dry_run": True,
@@ -102,6 +123,7 @@ def trader_node(state: TradingState) -> dict:
             "submitted_at": datetime.now().isoformat(timespec="seconds"),
             "note": f"下单失败: {e}",
         }
+        print(f"[Trader] 下单失败: {e}")
 
     return {"trade_result": TradeResult(**result), "messages": [{
         "role": "trader",

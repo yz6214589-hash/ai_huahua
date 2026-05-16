@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
+import { memo } from 'react'
 
-export function Tabs({
+export const Tabs = memo(function Tabs({
   value,
   onChange,
   items,
@@ -26,5 +27,5 @@ export function Tabs({
       ))}
     </div>
   )
-}
+})
 

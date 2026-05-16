@@ -2,6 +2,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 
 const TABS = [
+  { key: 'signals', label: '信号中心', path: '/opportunity/signals' },
   { key: 'unusual', label: '异动监控', path: '/opportunity/unusual' },
   { key: 'limitup', label: '涨停追踪', path: '/opportunity/limitup' },
   { key: 'sector', label: '板块轮动', path: '/opportunity/sector' },

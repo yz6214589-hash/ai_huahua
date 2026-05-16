@@ -14,18 +14,21 @@ interface TradeRecord {
   amount: number
   strategy: string
   status: 'filled' | 'partial' | 'cancelled' | 'rejected'
+  account: '实盘' | '模拟盘'
   remark?: string
 }
 
 const MOCK: TradeRecord[] = [
-  { id: 'T001', timestamp: '2024-12-16 14:32:15', symbol: '600519.SH', name: '贵州茅台', side: 'buy', qty: 100, price: 1852.3, amount: 185230, strategy: 'TWAP', status: 'filled' },
-  { id: 'T002', timestamp: '2024-12-16 14:28:05', symbol: '300750.SZ', name: '宁德时代', side: 'buy', qty: 200, price: 295.8, amount: 59160, strategy: 'VWAP', status: 'filled' },
-  { id: 'T003', timestamp: '2024-12-16 11:05:42', symbol: '688256.SH', name: '寒武纪', side: 'buy', qty: 300, price: 128.5, amount: 38550, strategy: 'TWAP', status: 'filled' },
-  { id: 'T004', timestamp: '2024-12-16 10:52:18', symbol: '002415.SZ', name: '海康威视', side: 'buy', qty: 500, price: 42.5, amount: 21250, strategy: 'RL', status: 'partial', remark: '部分成交，剩余 200 股' },
-  { id: 'T005', timestamp: '2024-12-16 09:45:30', symbol: '000858.SZ', name: '五粮液', side: 'buy', qty: 150, price: 158.2, amount: 23730, strategy: 'TWAP', status: 'filled' },
-  { id: 'T006', timestamp: '2024-12-15 15:10:05', symbol: '600036.SH', name: '招商银行', side: 'sell', qty: 1000, price: 38.2, amount: 38200, strategy: 'VWAP', status: 'filled' },
-  { id: 'T007', timestamp: '2024-12-15 13:20:00', symbol: '002466.SZ', name: '天齐锂业', side: 'buy', qty: 200, price: 68.4, amount: 13680, strategy: 'TWAP', status: 'rejected', remark: '风控拒绝：超过单笔限额' },
-  { id: 'T008', timestamp: '2024-12-15 10:30:15', symbol: '002475.SZ', name: '立讯精密', side: 'sell', qty: 300, price: 44.8, amount: 13440, strategy: 'RL', status: 'cancelled', remark: '用户取消' },
+  { id: 'T001', timestamp: '2024-12-16 14:32:15', symbol: '600519.SH', name: '贵州茅台', side: 'buy', qty: 100, price: 1852.3, amount: 185230, strategy: 'TWAP', status: 'filled', account: '实盘' },
+  { id: 'T002', timestamp: '2024-12-16 14:28:05', symbol: '300750.SZ', name: '宁德时代', side: 'buy', qty: 200, price: 295.8, amount: 59160, strategy: 'VWAP', status: 'filled', account: '实盘' },
+  { id: 'T003', timestamp: '2024-12-16 11:05:42', symbol: '688256.SH', name: '寒武纪', side: 'buy', qty: 300, price: 128.5, amount: 38550, strategy: 'TWAP', status: 'filled', account: '实盘' },
+  { id: 'T004', timestamp: '2024-12-16 10:52:18', symbol: '002415.SZ', name: '海康威视', side: 'buy', qty: 500, price: 42.5, amount: 21250, strategy: 'RL', status: 'partial', account: '实盘', remark: '部分成交，剩余 200 股' },
+  { id: 'T005', timestamp: '2024-12-16 09:45:30', symbol: '000858.SZ', name: '五粮液', side: 'buy', qty: 150, price: 158.2, amount: 23730, strategy: 'TWAP', status: 'filled', account: '实盘' },
+  { id: 'T006', timestamp: '2024-12-15 15:10:05', symbol: '600036.SH', name: '招商银行', side: 'sell', qty: 1000, price: 38.2, amount: 38200, strategy: 'VWAP', status: 'filled', account: '实盘' },
+  { id: 'S001', timestamp: '2024-12-16 14:30:00', symbol: '600519.SH', name: '贵州茅台', side: 'buy', qty: 50, price: 1850.0, amount: 92500, strategy: '模拟-均线策略', status: 'filled', account: '模拟盘' },
+  { id: 'S002', timestamp: '2024-12-16 13:15:00', symbol: '002594.SZ', name: '比亚迪', side: 'buy', qty: 200, price: 200.0, amount: 40000, strategy: '模拟-均线策略', status: 'filled', account: '模拟盘' },
+  { id: 'T007', timestamp: '2024-12-15 13:20:00', symbol: '002466.SZ', name: '天齐锂业', side: 'buy', qty: 200, price: 68.4, amount: 13680, strategy: 'TWAP', status: 'rejected', account: '实盘', remark: '风控拒绝：超过单笔限额' },
+  { id: 'T008', timestamp: '2024-12-15 10:30:15', symbol: '002475.SZ', name: '立讯精密', side: 'sell', qty: 300, price: 44.8, amount: 13440, strategy: 'RL', status: 'cancelled', account: '实盘', remark: '用户取消' },
 ]
 
 const STATUS_MAP: Record<string, { label: string; tone: 'green' | 'amber' | 'red' | 'blue' | 'zinc' }> = {
@@ -43,11 +46,13 @@ function fmt(v: string) {
 export default function ExecutionRecords() {
   const [filterSide, setFilterSide] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [filterAccount, setFilterAccount] = useState<string>('all')
   const [filterCode, setFilterCode] = useState('')
 
   const filtered = MOCK.filter((r) => {
     if (filterSide !== 'all' && r.side !== filterSide) return false
     if (filterStatus !== 'all' && r.status !== filterStatus) return false
+    if (filterAccount !== 'all' && r.account !== filterAccount) return false
     if (filterCode && !r.symbol.includes(filterCode) && !r.name.includes(filterCode)) return false
     return true
   })
@@ -101,6 +106,15 @@ export default function ExecutionRecords() {
           <option value="cancelled">已取消</option>
           <option value="rejected">已拒绝</option>
         </select>
+        <select
+          value={filterAccount}
+          onChange={(e) => setFilterAccount(e.target.value)}
+          className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 outline-none focus:border-zinc-400"
+        >
+          <option value="all">全部账户</option>
+          <option value="实盘">实盘</option>
+          <option value="模拟盘">模拟盘</option>
+        </select>
         <input
           value={filterCode}
           onChange={(e) => setFilterCode(e.target.value)}
@@ -111,7 +125,7 @@ export default function ExecutionRecords() {
       </div>
 
       <Card>
-        <CardHeader title="交易明细" />
+        <CardHeader><h3 className="text-lg font-semibold">交易明细</h3></CardHeader>
         <CardBody className="p-0">
           <div className="overflow-auto">
             <table className="w-full text-left text-sm">
@@ -119,6 +133,7 @@ export default function ExecutionRecords() {
                 <tr>
                   <th className="px-4 py-2">时间</th>
                   <th className="px-4 py-2">股票</th>
+                  <th className="px-4 py-2">账户</th>
                   <th className="px-4 py-2">方向</th>
                   <th className="px-4 py-2 text-right">数量</th>
                   <th className="px-4 py-2 text-right">价格</th>
@@ -130,7 +145,7 @@ export default function ExecutionRecords() {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td className="px-4 py-12 text-center text-zinc-500" colSpan={9}>暂无交易记录</td></tr>
+                  <tr><td className="px-4 py-12 text-center text-zinc-500" colSpan={10}>暂无交易记录</td></tr>
                 ) : filtered.map((r) => {
                   const st = STATUS_MAP[r.status] || { label: r.status, tone: 'zinc' as const }
                   return (
@@ -139,6 +154,13 @@ export default function ExecutionRecords() {
                       <td className="px-4 py-2">
                         <div className="text-sm font-medium text-zinc-900">{r.symbol}</div>
                         <div className="text-xs text-zinc-500">{r.name}</div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                          r.account === '实盘' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                        }`}>
+                          {r.account}
+                        </span>
                       </td>
                       <td className="px-4 py-2">
                         <Badge tone={r.side === 'buy' ? 'green' : 'red'}>{r.side === 'buy' ? '买入' : '卖出'}</Badge>

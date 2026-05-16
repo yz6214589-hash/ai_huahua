@@ -3,8 +3,8 @@ import type { SentimentEvent, SentimentRun, StockSearchItem } from '@/api/types'
 import { Badge } from '@/components/Badge'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { StockPicker } from '@/components/StockPicker'
-import { ExternalLink, PlayCircle, Settings2, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ExternalLink, PlayCircle, Settings2, X, Plus, Trash2, RefreshCw, Bell } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
 
 function fmtDateTime(v: string | null | undefined) {
   if (!v) return '—'
@@ -12,19 +12,23 @@ function fmtDateTime(v: string | null | undefined) {
   return s.length > 10 ? s.slice(0, 19).replace('T', ' ') : s
 }
 
-function EventTypeBadge({ t }: { t: string }) {
-  const tone = t === '利好' ? 'green' : t === '利空' ? 'red' : t === '政策' ? 'blue' : 'zinc'
-  return <Badge tone={tone}>{t || '—'}</Badge>
-}
-
 function RunStatusBadge({ s }: { s: string }) {
-  const tone = s === 'success' ? 'green' : s === 'failed' ? 'red' : s === 'running' ? 'amber' : 'zinc'
+  const tone = (s === 'success' ? 'green' : s === 'failed' ? 'red' : s === 'running' ? 'amber' : 'default') as any
   const label = s === 'waiting' ? '等待' : s === 'running' ? '运行中' : s === 'success' ? '完成' : s === 'failed' ? '失败' : s
   return <Badge tone={tone}>{label}</Badge>
 }
 
+const MARKET_HOURS = ['9:30', '10:30', '11:30', '13:00', '14:00', '15:00']
+const FREQ_OPTIONS = [
+  { value: '1h', label: '每小时' },
+  { value: '2h', label: '每2小时' },
+  { value: '4h', label: '每4小时' },
+  { value: 'daily', label: '每日固定时间' },
+  { value: 'custom', label: '自定义Cron' },
+]
+
 export default function WatchSentiment() {
-  const [schedule, setSchedule] = useState<{ enabled: boolean; cron: string; timezone: string } | null>(null)
+  const [schedule, setSchedule] = useState<{ enabled: boolean; cron: string; timezone: string; frequency: string; market_time: string; fixed_time: string } | null>(null)
   const [scheduleSaving, setScheduleSaving] = useState(false)
 
   const [manualSelected, setManualSelected] = useState<StockSearchItem[]>([])
@@ -38,16 +42,42 @@ export default function WatchSentiment() {
   const [filterEventType, setFilterEventType] = useState<'全部' | '利好' | '利空' | '政策'>('全部')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'events' | 'grouped' | 'history'>('events')
+
+  const [watchlist, setWatchlist] = useState<{ code: string; name: string }[]>([])
+  const [customCode, setCustomCode] = useState('')
+  const [customName, setCustomName] = useState('')
+
+  const [notifyEnabled, setNotifyEnabled] = useState(false)
+  const [notifyThreshold, setNotifyThreshold] = useState(0.3)
+
+  const [showScheduleEditor, setShowScheduleEditor] = useState(false)
+  const [editFreq, setEditFreq] = useState('daily')
+  const [editMarketTime, setEditMarketTime] = useState('14:00')
+  const [editFixedTime, setEditFixedTime] = useState('15:10')
+  const [editCustomCron, setEditCustomCron] = useState('0 10 15 * * ?')
 
   const loadSchedule = async () => {
-    const r = await fetchJson<{ enabled: boolean; cron: string; timezone: string }>('/api/v1/sentiment/schedule')
-    setSchedule(r)
+    try {
+      const r = await fetchJson<any>('/api/v1/sentiment/schedule')
+      setSchedule(r)
+      setEditFreq(r.frequency || 'daily')
+      setEditMarketTime(r.market_time || '14:00')
+      setEditFixedTime(r.fixed_time || '15:10')
+      setEditCustomCron(r.cron || '0 10 15 * * ?')
+    } catch {
+      //
+    }
   }
 
   const loadRuns = async () => {
-    const r = await fetchJson<{ runs: SentimentRun[] }>('/api/v1/sentiment/runs?limit=20')
-    setRuns(r.runs || [])
-    setLatestRun((r.runs || [])[0] || null)
+    try {
+      const r = await fetchJson<{ runs: SentimentRun[] }>('/api/v1/sentiment/runs?limit=20')
+      setRuns(r.runs || [])
+      setLatestRun((r.runs || [])[0] || null)
+    } catch {
+      //
+    }
   }
 
   const loadEvents = async (runId?: string) => {
@@ -56,7 +86,7 @@ export default function WatchSentiment() {
     try {
       const params = new URLSearchParams()
       if (runId) params.set('run_id', runId)
-      params.set('limit', '100')
+      params.set('limit', '200')
       const r = await fetchJson<{ events: SentimentEvent[] }>(`/api/v1/sentiment/events?${params.toString()}`)
       setEvents(r.events || [])
     } catch (e) {
@@ -66,14 +96,61 @@ export default function WatchSentiment() {
     }
   }
 
+  const loadWatchlist = async () => {
+    try {
+      const r = await fetchJson<{ items: { code: string; name: string }[] }>('/api/v1/watchlist')
+      setWatchlist(r.items || [])
+    } catch {
+      //
+    }
+  }
+
+  useEffect(() => { loadSchedule(); loadRuns(); loadWatchlist() }, [])
+  useEffect(() => { loadEvents() }, [])
+  useEffect(() => { if (latestRun?.run_id) loadEvents(latestRun.run_id) }, [latestRun?.run_id])
+
   const toggleSchedule = async () => {
     if (!schedule) return
     setScheduleSaving(true)
     try {
-      await fetchJson(`/api/v1/sentiment/schedule`, {
+      await fetchJson('/api/v1/sentiment/schedule', {
         method: 'PUT',
         body: JSON.stringify({ enabled: !schedule.enabled, cron: schedule.cron, timezone: schedule.timezone }),
       })
+      await loadSchedule()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setScheduleSaving(false)
+    }
+  }
+
+  const saveScheduleConfig = async () => {
+    setScheduleSaving(true)
+    try {
+      let cron = editCustomCron
+      if (editFreq === 'daily') {
+        const [h, m] = editFixedTime.split(':')
+        cron = `0 ${m} ${h} * * ?`
+      } else if (editFreq === '1h') {
+        cron = '0 0 * * * ?'
+      } else if (editFreq === '2h') {
+        cron = '0 0 */2 * * ?'
+      } else if (editFreq === '4h') {
+        cron = '0 0 */4 * * ?'
+      }
+      await fetchJson('/api/v1/sentiment/schedule', {
+        method: 'PUT',
+        body: JSON.stringify({
+          enabled: schedule?.enabled ?? true,
+          cron,
+          timezone: 'Asia/Shanghai',
+          frequency: editFreq,
+          market_time: editMarketTime,
+          fixed_time: editFixedTime,
+        }),
+      })
+      setShowScheduleEditor(false)
       await loadSchedule()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -109,11 +186,21 @@ export default function WatchSentiment() {
     }
   }
 
-  const clearManual = () => setManualSelected([])
+  const addCustomStock = () => {
+    if (!customCode) return
+    setWatchlist(prev => {
+      if (prev.find(s => s.code === customCode)) return prev
+      return [...prev, { code: customCode, name: customName || customCode }]
+    })
+    setCustomCode('')
+    setCustomName('')
+  }
 
-  useEffect(() => { loadSchedule(); loadRuns() }, [])
-  useEffect(() => { loadEvents() }, [])
-  useEffect(() => { loadEvents(latestRun?.run_id) }, [latestRun?.run_id])
+  const removeCustomStock = (code: string) => {
+    setWatchlist(prev => prev.filter(s => s.code !== code))
+  }
+
+  const clearManual = () => setManualSelected([])
 
   const filteredEvents = events.filter((e) => {
     if (filterQ && !(e.stock_code + (e.stock_name || '')).toLowerCase().includes(filterQ.toLowerCase())) return false
@@ -121,17 +208,36 @@ export default function WatchSentiment() {
     return true
   })
 
+  const groupedByStock = events.reduce<Record<string, { stock_name: string; events: SentimentEvent[]; positive: number; negative: number; neutral: number }>>((acc, e) => {
+    const key = e.stock_code
+    if (!acc[key]) {
+      acc[key] = { stock_name: e.stock_name || e.stock_code, events: [], positive: 0, negative: 0, neutral: 0 }
+    }
+    acc[key].events.push(e)
+    if (e.event_type === '利好') acc[key].positive++
+    else if (e.event_type === '利空') acc[key].negative++
+    else acc[key].neutral++
+    return acc
+  }, {})
+
+  const sortedGroups = Object.entries(groupedByStock).sort(([, a], [, b]) => b.negative - a.negative)
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title="任务与调度" right={<RunStatusBadge s={schedule?.enabled ? 'success' : 'failed'} />} />
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">任务与调度</h3>
+              <RunStatusBadge s={schedule?.enabled ? 'success' : 'failed'} />
+            </div>
+          </CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <div className="text-xs text-zinc-500">扫描频率</div>
                 <div className="mt-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900">
-                  每日收盘后（15:10）
+                  {editFreq === 'daily' ? `每日 ${editFixedTime}` : editFreq === '1h' ? '每小时' : editFreq === '2h' ? '每2小时' : editFreq === '4h' ? '每4小时' : schedule?.cron || '每日收盘后(15:10)'}
                 </div>
               </div>
               <div>
@@ -157,58 +263,92 @@ export default function WatchSentiment() {
                 <PlayCircle className="h-4 w-4" />
                 立即扫描自选股
               </button>
+              <button
+                onClick={() => setShowScheduleEditor(!showScheduleEditor)}
+                className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                <Settings2 className="h-4 w-4" />
+                定时配置
+              </button>
             </div>
+            {showScheduleEditor && (
+              <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 space-y-3">
+                <div>
+                  <label className="text-xs text-zinc-500">执行频率</label>
+                  <select value={editFreq} onChange={e => setEditFreq(e.target.value)}
+                    className="mt-1 w-full rounded border border-zinc-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900">
+                    {FREQ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                {editFreq === 'daily' && (
+                  <div>
+                    <label className="text-xs text-zinc-500">每日执行时间</label>
+                    <input type="time" value={editFixedTime} onChange={e => setEditFixedTime(e.target.value)}
+                      className="mt-1 w-full rounded border border-zinc-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900" />
+                  </div>
+                )}
+                {editFreq === 'custom' && (
+                  <div>
+                    <label className="text-xs text-zinc-500">Cron表达式</label>
+                    <input type="text" value={editCustomCron} onChange={e => setEditCustomCron(e.target.value)}
+                      className="mt-1 w-full rounded border border-zinc-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900 font-mono" />
+                  </div>
+                )}
+                <div>
+                  <label className="text-xs text-zinc-500">开盘时段快捷设置</label>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {MARKET_HOURS.map(t => (
+                      <button key={t} onClick={() => setEditFixedTime(t)}
+                        className={`rounded px-2 py-1 text-xs transition ${editFixedTime === t ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'}`}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowScheduleEditor(false)} className="rounded border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50">取消</button>
+                  <button onClick={saveScheduleConfig} disabled={scheduleSaving}
+                    className="rounded bg-zinc-900 px-3 py-1.5 text-xs text-white hover:bg-zinc-800 disabled:opacity-50">保存</button>
+                </div>
+              </div>
+            )}
             <div className="mt-2 text-xs text-zinc-500">事件识别默认关键词，可在「手动分析股票」里开启 LLM 精检。</div>
           </CardBody>
         </Card>
 
         <Card>
-          <CardHeader
-            title="手动分析股票"
-            right={
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">手动分析股票</h3>
               <div className="flex items-center gap-2">
-                <button onClick={clearManual} className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
-                  <X className="h-4 w-4" />清空
-                </button>
-                <button
-                  onClick={runManual}
-                  disabled={manualSelected.length === 0}
-                  className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-800 disabled:opacity-60"
-                >
-                  <PlayCircle className="h-4 w-4" />立即分析
-                </button>
+                <button onClick={clearManual} className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50"><X className="h-3 w-3" />清空</button>
+                <button onClick={runManual} disabled={manualSelected.length === 0}
+                  className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1.5 text-xs text-white hover:bg-zinc-800 disabled:opacity-60"><PlayCircle className="h-3 w-3" />立即分析</button>
               </div>
-            }
-          />
+            </div>
+          </CardHeader>
           <CardBody>
-            <StockPicker
-              mode="multiple"
-              value={manualSelected}
-              onChange={(v) => setManualSelected((v as StockSearchItem[]) || [])}
-              placeholder="搜索股票代码或名称"
-            />
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <StockPicker mode="multiple" value={manualSelected} onChange={(v) => setManualSelected((v as StockSearchItem[]) || [])} placeholder="搜索股票代码或名称" />
+            <div className="mt-3 grid grid-cols-3 gap-3">
               <label className="block">
                 <div className="text-xs text-zinc-500">days</div>
-                <select
-                  value={manualDays}
-                  onChange={(e) => setManualDays(parseInt(e.target.value, 10))}
-                  className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-zinc-400"
-                >
-                  <option value={3}>3</option>
-                  <option value={7}>7</option>
-                  <option value={14}>14</option>
+                <select value={manualDays} onChange={e => setManualDays(parseInt(e.target.value, 10))}
+                  className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none">
+                  <option value={3}>3</option><option value={7}>7</option><option value={14}>14</option>
                 </select>
               </label>
               <label className="block">
-                <div className="text-xs text-zinc-500">LLM 精检</div>
-                <select
-                  value={manualUseLlm ? '1' : '0'}
-                  onChange={(e) => setManualUseLlm(e.target.value === '1')}
-                  className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-zinc-400"
-                >
-                  <option value="0">关闭（默认）</option>
-                  <option value="1">开启</option>
+                <div className="text-xs text-zinc-500">LLM精检</div>
+                <select value={manualUseLlm ? '1' : '0'} onChange={e => setManualUseLlm(e.target.value === '1')}
+                  className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none">
+                  <option value="0">关闭</option><option value="1">开启</option>
+                </select>
+              </label>
+              <label className="block">
+                <div className="text-xs text-zinc-500">通知阈值</div>
+                <select value={notifyThreshold} onChange={e => setNotifyThreshold(Number(e.target.value))}
+                  className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none">
+                  <option value={0.3}>得分&lt;0.3</option><option value={0.5}>得分&lt;0.5</option><option value={0.7}>得分&lt;0.7</option>
                 </select>
               </label>
             </div>
@@ -216,110 +356,194 @@ export default function WatchSentiment() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader title="事件列表（最近一次 Run）" />
-        <CardBody>
-          {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{err}</div> : null}
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block flex-1">
-              <div className="text-xs text-zinc-500">股票/公司筛选</div>
-              <input
-                value={filterQ}
-                onChange={(e) => setFilterQ(e.target.value)}
-                placeholder="例如：600519 或 贵州茅台"
-                className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-zinc-400"
-              />
-            </label>
-            <label className="block w-[160px]">
-              <div className="text-xs text-zinc-500">事件类型</div>
-              <select
-                value={filterEventType}
-                onChange={(e) => setFilterEventType(e.target.value as typeof filterEventType)}
-                className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-zinc-400"
-              >
-                <option value="全部">全部</option>
-                <option value="利好">利好</option>
-                <option value="利空">利空</option>
-                <option value="政策">政策</option>
-              </select>
-            </label>
-          </div>
-          <div className="mt-3 overflow-auto rounded-lg border border-zinc-200 bg-white">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-50 text-xs text-zinc-500">
-                <tr>
-                  <th className="px-3 py-2">股票</th>
-                  <th className="px-3 py-2">事件类型</th>
-                  <th className="px-3 py-2">事件类别</th>
-                  <th className="px-3 py-2">策略建议</th>
-                  <th className="px-3 py-2">影响推断</th>
-                  <th className="px-3 py-2">置信度</th>
-                  <th className="px-3 py-2">紧急度</th>
-                  <th className="px-3 py-2">来源</th>
-                  <th className="px-3 py-2">原文链接</th>
-                  <th className="px-3 py-2">触发时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td className="px-3 py-6 text-sm text-zinc-500" colSpan={10}>加载中…</td></tr>
-                ) : filteredEvents.length === 0 ? (
-                  <tr><td className="px-3 py-6 text-sm text-zinc-500" colSpan={10}>暂无舆情数据</td></tr>
-                ) : (
-                  filteredEvents.map((e) => (
-                    <tr key={e.id} className="border-t border-zinc-100">
-                      <td className="px-3 py-2 text-sm text-zinc-900">{e.stock_code} {e.stock_name || ''}</td>
-                      <td className="px-3 py-2"><EventTypeBadge t={e.event_type} /></td>
-                      <td className="px-3 py-2 text-xs text-zinc-700">{e.event_category || '—'}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-700">{e.signal || '—'}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-700">{e.impact || '—'}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-700">{e.confidence != null ? `${(e.confidence * 100).toFixed(0)}%` : '—'}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-700">{e.urgency || '—'}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-700">{e.source_type || '—'}</td>
-                      <td className="px-3 py-2">
-                        {e.source_url ? (
-                          <a href={e.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-zinc-700 hover:text-zinc-900">
-                            <ExternalLink className="h-3.5 w-3.5" />查看
-                          </a>
-                        ) : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-zinc-500">{e.published_at ? fmtDateTime(e.published_at) : '—'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <details className="mt-3">
-            <summary className="cursor-pointer text-sm text-zinc-500">任务运行记录（最近 20 次）</summary>
-            <div className="mt-2 overflow-auto rounded-lg border border-zinc-200 bg-white">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-zinc-50 text-xs text-zinc-500">
-                  <tr>
-                    <th className="px-3 py-2">RunID</th>
-                    <th className="px-3 py-2">触发方式</th>
-                    <th className="px-3 py-2">创建时间</th>
-                    <th className="px-3 py-2">结束时间</th>
-                    <th className="px-3 py-2">事件数</th>
-                    <th className="px-3 py-2">状态</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {runs.map((r) => (
-                    <tr key={r.run_id} className="border-t border-zinc-100">
-                      <td className="px-3 py-2 text-xs text-zinc-900">{r.run_id}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-900">{r.trigger}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-700">{fmtDateTime(r.created_at)}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-700">{fmtDateTime(r.finished_at)}</td>
-                      <td className="px-3 py-2 text-xs text-zinc-900">{r.total_events ?? 0}</td>
-                      <td className="px-3 py-2"><RunStatusBadge s={r.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">股票列表管理</h3>
+              <span className="text-xs text-zinc-500">{watchlist.length}只</span>
             </div>
-          </details>
+          </CardHeader>
+          <CardBody>
+            <div className="flex gap-2 mb-3">
+              <input type="text" value={customCode} onChange={e => setCustomCode(e.target.value)} placeholder="股票代码" className="flex-1 rounded border border-zinc-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900" />
+              <input type="text" value={customName} onChange={e => setCustomName(e.target.value)} placeholder="名称" className="flex-1 rounded border border-zinc-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900" />
+              <button onClick={addCustomStock} className="rounded bg-zinc-900 px-2.5 py-1.5 text-xs text-white hover:bg-zinc-800"><Plus className="h-3 w-3" /></button>
+            </div>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {watchlist.map(s => (
+                <div key={s.code} className="flex items-center justify-between rounded bg-zinc-50 px-2.5 py-1.5">
+                  <div><span className="text-xs font-medium text-zinc-900">{s.code}</span><span className="ml-1.5 text-xs text-zinc-500">{s.name}</span></div>
+                  <button onClick={() => removeCustomStock(s.code)} className="rounded p-0.5 text-zinc-400 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
+                </div>
+              ))}
+              {watchlist.length === 0 && <div className="py-4 text-center text-xs text-zinc-500">暂无自选股</div>}
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h3 className="text-sm font-semibold">监控结果</h3>
+                <div className="flex gap-1">
+                  {([
+                    { key: 'events', label: '事件列表' },
+                    { key: 'grouped', label: '按股票分组' },
+                    { key: 'history', label: '运行历史' },
+                  ] as const).map(tab => (
+                    <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                      className={`rounded px-2 py-1 text-xs font-medium transition ${activeTab === tab.key ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody>
+            {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{err}</div> : null}
+
+            {activeTab === 'events' && (
+              <div>
+                <div className="mb-3 flex items-center gap-3">
+                  <input value={filterQ} onChange={e => setFilterQ(e.target.value)} placeholder="搜索股票" className="flex-1 rounded border border-zinc-200 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900" />
+                  <select value={filterEventType} onChange={e => setFilterEventType(e.target.value as any)}
+                    className="rounded border border-zinc-200 px-2 py-1.5 text-xs focus:outline-none">
+                    <option value="全部">全部</option><option value="利好">利好</option><option value="利空">利空</option><option value="政策">政策</option>
+                  </select>
+                  <span className="text-xs text-zinc-500">{filteredEvents.length}条</span>
+                </div>
+                <div className="overflow-auto max-h-80">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-zinc-50 text-zinc-500">
+                      <tr>
+                        <th className="px-2 py-1.5">股票</th>
+                        <th className="px-2 py-1.5">类型</th>
+                        <th className="px-2 py-1.5">类别</th>
+                        <th className="px-2 py-1.5">建议</th>
+                        <th className="px-2 py-1.5">置信度</th>
+                        <th className="px-2 py-1.5">紧急度</th>
+                        <th className="px-2 py-1.5">来源</th>
+                        <th className="px-2 py-1.5">时间</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {loading ? (
+                        <tr><td className="px-2 py-4 text-center text-zinc-500" colSpan={8}>加载中...</td></tr>
+                      ) : filteredEvents.length === 0 ? (
+                        <tr><td className="px-2 py-4 text-center text-zinc-500" colSpan={8}>暂无舆情数据</td></tr>
+                      ) : filteredEvents.map(e => (
+                        <tr key={e.id} className={`hover:bg-zinc-50 ${e.event_type === '利空' ? 'bg-red-50/50' : ''}`}>
+                          <td className="px-2 py-1.5 text-zinc-900">{e.stock_code}<span className="ml-1 text-zinc-400">{e.stock_name}</span></td>
+                          <td className="px-2 py-1.5">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                              e.event_type === '利好' ? 'bg-green-100 text-green-700' : e.event_type === '利空' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                            }`}>{e.event_type || '—'}</span>
+                          </td>
+                          <td className="px-2 py-1.5 text-zinc-600">{e.event_category || '—'}</td>
+                          <td className="px-2 py-1.5 text-zinc-600">{e.signal || '—'}</td>
+                          <td className="px-2 py-1.5 text-zinc-600">{e.confidence != null ? `${(e.confidence * 100).toFixed(0)}%` : '—'}</td>
+                          <td className="px-2 py-1.5 text-zinc-600">{e.urgency || '—'}</td>
+                          <td className="px-2 py-1.5 text-zinc-600">{e.source_type || '—'}</td>
+                          <td className="px-2 py-1.5 text-zinc-400">{e.published_at ? fmtDateTime(e.published_at) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'grouped' && (
+              <div className="space-y-3 max-h-80 overflow-y-auto">
+                {sortedGroups.map(([code, group]) => (
+                  <div key={code} className={`rounded-lg border p-3 ${group.negative > 0 ? 'border-red-200 bg-red-50' : 'border-zinc-200'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-zinc-900">{group.stock_name}</span>
+                        <span className="text-xs text-zinc-500">{code}</span>
+                        {group.negative > 0 && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{group.negative}条负面</span>}
+                      </div>
+                      <div className="flex gap-3 text-xs text-zinc-500">
+                        <span className="text-green-600">正:{group.positive}</span>
+                        <span className="text-red-600">负:{group.negative}</span>
+                        <span>中:{group.neutral}</span>
+                        <span>共:{group.events.length}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      {group.events.slice(0, 3).map(e => (
+                        <span key={e.id} className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${
+                          e.event_type === '利好' ? 'bg-green-100 text-green-700' : e.event_type === '利空' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {e.event_category || e.event_type}
+                        </span>
+                      ))}
+                      {group.events.length > 3 && <span className="text-xs text-zinc-400">+{group.events.length - 3}更多</span>}
+                    </div>
+                  </div>
+                ))}
+                {sortedGroups.length === 0 && <div className="py-4 text-center text-xs text-zinc-500">暂无数据</div>}
+              </div>
+            )}
+
+            {activeTab === 'history' && (
+              <div className="overflow-auto max-h-80">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-zinc-50 text-zinc-500">
+                    <tr>
+                      <th className="px-2 py-1.5">RunID</th>
+                      <th className="px-2 py-1.5">触发方式</th>
+                      <th className="px-2 py-1.5">创建时间</th>
+                      <th className="px-2 py-1.5">事件数</th>
+                      <th className="px-2 py-1.5">状态</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {runs.map(r => (
+                      <tr key={r.run_id} className="hover:bg-zinc-50">
+                        <td className="px-2 py-1.5 text-zinc-900 font-mono">{r.run_id}</td>
+                        <td className="px-2 py-1.5 text-zinc-600">{r.trigger}</td>
+                        <td className="px-2 py-1.5 text-zinc-500">{fmtDateTime(r.created_at)}</td>
+                        <td className="px-2 py-1.5 text-zinc-900">{r.total_events ?? 0}</td>
+                        <td className="px-2 py-1.5"><RunStatusBadge s={r.status} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {runs.length === 0 && <div className="py-4 text-center text-xs text-zinc-500">暂无运行记录</div>}
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader><h3 className="text-sm font-semibold">通知设置</h3></CardHeader>
+        <CardBody>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Bell className="h-4 w-4 text-zinc-400" />
+              <div>
+                <div className="text-sm font-medium text-zinc-900">负面舆情通知</div>
+                <div className="text-xs text-zinc-500">当检测到重大负面舆情时发送系统通知</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <select value={notifyThreshold} onChange={e => setNotifyThreshold(Number(e.target.value))}
+                className="rounded border border-zinc-200 px-2 py-1.5 text-xs focus:outline-none">
+                <option value={0.3}>情感得分&lt;0.3触发</option>
+                <option value={0.5}>情感得分&lt;0.5触发</option>
+                <option value={0.7}>情感得分&lt;0.7触发</option>
+              </select>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input type="checkbox" className="peer sr-only" checked={notifyEnabled} onChange={() => setNotifyEnabled(!notifyEnabled)} />
+                <div className="h-5 w-9 rounded-full bg-zinc-200 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-zinc-900 peer-checked:after:translate-x-full" />
+              </label>
+            </div>
+          </div>
         </CardBody>
       </Card>
     </div>

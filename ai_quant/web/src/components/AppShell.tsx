@@ -5,13 +5,14 @@
  */
 
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { ChartCandlestick, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Gauge, GitBranch, Shield, Star, Workflow, Target, Zap } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { BarChart3, ChartCandlestick, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Gauge, GitBranch, LineChart, Shield, Star, Workflow, Target, Zap } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { AssistantDrawer } from '@/components/AssistantDrawer'
 import { ToastContainer } from '@/components/Toast'
 import { StockPicker } from '@/components/StockPicker'
 import type { StockSearchItem } from '@/api/types'
+import { memo } from 'react'
 
 // 判断当前时间是否为中国股市开盘时间
 // 开盘时间：工作日 9:30-11:30 和 13:00-15:00
@@ -39,7 +40,7 @@ function isCnMarketOpen(now: Date): boolean {
 }
 
 // 侧边栏组件，包含导航菜单和折叠功能
-function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+const Sidebar = memo(function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   // 导航菜单项配置
   const items = [
     { to: '/home', label: '首页', icon: Gauge },
@@ -49,6 +50,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
     { to: '/stock-select', label: '选股', icon: Target },
     { to: '/opportunity', label: '机会捕捉', icon: Zap },
     { to: '/risk', label: '风控中心', icon: Shield },
+    { to: '/performance', label: '绩效报告', icon: BarChart3 },
     { to: '/execution', label: '交易终端', icon: Workflow },
     { to: '/reports', label: '智能研报', icon: FileText },
     { to: '/workflow', label: '工作流', icon: GitBranch },
@@ -111,10 +113,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       </div>
     </aside>
   )
-}
+})
 
 // 顶部栏组件，包含页面标题、全局搜索和快捷操作
-function Topbar() {
+const Topbar = memo(function Topbar() {
   const navigate = useNavigate()
   const location = useLocation()
   const [selectedStock, setSelectedStock] = useState<StockSearchItem | null>(null)
@@ -131,9 +133,24 @@ function Topbar() {
     if (location.pathname.startsWith('/stock-select')) return '选股'
     if (location.pathname.startsWith('/opportunity')) return '机会捕捉'
     if (location.pathname.startsWith('/watchlist')) return '自选股'
+    if (location.pathname.startsWith('/risk')) return '风控中心'
+    if (location.pathname.startsWith('/performance')) return '绩效报告'
+    if (location.pathname.startsWith('/execution')) return '交易终端'
     if (location.pathname.startsWith('/stock/')) return '个股详情'
     return '首页'
   }, [location.pathname])
+
+  // 处理股票选择变化
+  const handleStockChange = useCallback((val: StockSearchItem | StockSearchItem[] | null) => {
+    setSelectedStock(val as StockSearchItem | null)
+  }, [])
+
+  // 跳转到股票详情页
+  const handleViewStock = useCallback(() => {
+    if (selectedStock) {
+      navigate(`/stock/${selectedStock.code}`)
+    }
+  }, [selectedStock, navigate])
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-3 md:px-6">
@@ -147,17 +164,13 @@ function Topbar() {
         <div className="w-full md:w-72">
           <StockPicker
             value={selectedStock}
-            onChange={(val) => setSelectedStock(val as StockSearchItem | null)}
+            onChange={handleStockChange}
             mode="single"
             placeholder="搜索股票代码或名称"
           />
         </div>
         <button
-          onClick={() => {
-            if (selectedStock) {
-              navigate(`/stock/${selectedStock.code}`)
-            }
-          }}
+          onClick={handleViewStock}
           disabled={!selectedStock}
           className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -167,17 +180,22 @@ function Topbar() {
       </div>
     </header>
   )
-}
+})
 
 // 应用外壳主组件，整合侧边栏、顶部栏和页面内容
 export default function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
+  // 切换侧边栏折叠状态
+  const handleToggleSidebar = useCallback(() => {
+    setSidebarCollapsed((v) => !v)
+  }, [])
+
   return (
     <div className="min-h-screen bg-zinc-50">
       <div className="flex">
         {/* 侧边栏，可折叠 */}
-        <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((v) => !v)} />
+        <Sidebar collapsed={sidebarCollapsed} onToggle={handleToggleSidebar} />
         {/* 主内容区域 */}
         <div className="flex min-h-screen flex-1 flex-col">
           <Topbar />

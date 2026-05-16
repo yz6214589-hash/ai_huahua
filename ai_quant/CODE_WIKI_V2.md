@@ -2,172 +2,460 @@
 
 ## 项目概述
 
-AI Quant 是一个统一的 AI 量化交易系统，整合了多个专业 AI Agent（Charles、Zoe、Ethan、Kris、CEO）协同工作，提供数据获取、技术分析、信号生成、交易执行和风险管理的完整量化交易能力。
+AI Quant 是一个统一的 AI 量化交易系统，整合了多个专业 AI Agent（Charles、Zoe、Ethan、Kris、CEO）协同工作，提供数据采集、技术分析、信号生成、交易执行、风险管理和智能研报生成的完整量化交易能力。项目采用前后端分离架构，后端基于 FastAPI，前端基于 React + TypeScript + Vite，同时集成 Streamlit AI 对话界面。
 
 ### 核心功能模块
 
 | 模块 | 功能描述 | 技术实现 |
 |------|---------|---------|
-| **智能研报** | 基于 RAG + FAISS 向量检索与 LLM 生成结构化研报 | PyPDF2 + SQLite + FAISS + DashScope |
-| **晨会简报** | 每日自动聚合市场数据生成晨会摘要 | LangGraph 工作流编排 |
-| **交易执行** | QMT 直连接入与云端网关代理 | MiniQMT + FastAPI |
-| **风控审批** | 7层风控规则检查与审计日志 | Kris Agent |
-| **技术分析** | RSI、MACD、KDJ 等技术指标计算 | Zoe Service |
-| **AI 对话** | 自然语言量化交互入口 | Router Agent + Streamlit |
+| 数据采集 | 从 MySQL 数据库采集股票日线、财务数据、新闻、宏观指标等 | PyMySQL + 批量调度 |
+| 技术分析 | RSI、MACD、KDJ、布林带等技术指标计算 | Zoe Service + TA-Lib 脚本 |
+| 智能研报 | 基于 RAG + FAISS 向量检索与 LLM 生成结构化研报 | LangChain + SQLite + FAISS + DashScope/DeepSeek |
+| 晨会简报 | 每日自动聚合市场数据，进行板块轮动分析与选股 | LangGraph 工作流编排 |
+| 交易执行 | 策略执行任务管理与 MiniQMT 网关代理 | FastAPI + 子进程脚本 |
+| 风控审批 | 多层级风控规则检查与审计日志 | Kris RiskManager |
+| AI 对话 | 自然语言量化交互入口，支持工具调用 | DeepAgent Engine + LangChain |
+| 交易工作流 | Charles(投研) -> Zoe(信号) -> Kris(风控) -> Human(审批) -> Trader(下单) | LangGraph StateGraph |
 
 ### 技术栈
 
 | 组件 | 技术选型 | 说明 |
 |------|---------|------|
-| 后端 API | FastAPI + Pydantic | 高性能异步 API 服务 |
-| 前端 | React + TypeScript + Vite | 现代化 React 应用 |
-| UI 框架 | TailwindCSS + Radix UI | 原子化 CSS + 无障碍组件 |
-| 状态管理 | Zustand | 轻量级状态管理 |
-| 图表 | ECharts | 金融数据可视化 |
-| 对话界面 | Streamlit | AI 对话机器人 |
-| AI 框架 | LangGraph | Agent 工作流编排 |
-| 数据库 | MySQL | 主数据存储 |
-| 向量检索 | FAISS | RAG 向量索引 |
+| 后端 API | FastAPI + Pydantic v2 | 高性能异步 API 服务 |
+| 前端 | React 18 + TypeScript + Vite 6 | 现代化 React 应用 |
+| UI 框架 | TailwindCSS 3 + clsx + tailwind-merge | 原子化 CSS |
+| 状态管理 | Zustand 5 | 轻量级状态管理 |
+| 图表 | ECharts + echarts-for-react | 金融数据可视化 |
+| AI 框架 | LangGraph 0.4 | Agent 工作流编排 |
+| 数据库 | MySQL (腾讯云 CDB) | 主数据存储 |
+| 向量检索 | FAISS + SQLite | RAG 向量索引 |
+| LLM 模型 | DashScope(通义千问) / DeepSeek | 研报生成与对话 |
+| ASGI 服务器 | Uvicorn 0.34 | 高性能 ASGI 服务 |
 
 ---
 
 ## 项目架构
 
+### 整体架构图
+
 ```
-ai_quant/
-├── backend/                          # 后端服务
-│   ├── ai_quant_api/                 # 统一 API 服务
-│   │   ├── ai/                       # AI Agent 模块
-│   │   │   ├── agents/               # Agent 实现
-│   │   │   │   ├── quant_team_agent.py    # 量化团队 Agent
-│   │   │   │   └── router_agent.py        # 意图路由 Agent
-│   │   │   ├── graphs/               # 工作流图定义
-│   │   │   │   └── morning_brief_graph.py  # 晨会简报工作流
-│   │   │   └── tools/                # 工具定义
-│   │   ├── api/                      # API 路由层
-│   │   │   ├── health.py             # 健康检查
-│   │   │   ├── summary.py            # 数据汇总
-│   │   │   ├── data_charles.py       # 数据查询
-│   │   │   ├── jobs.py               # 任务调度
-│   │   │   ├── reports.py            # 研报生成
-│   │   │   ├── analysis_zoe.py       # 技术分析
-│   │   │   ├── execution_ethan.py    # 交易执行
-│   │   │   ├── risk_kris.py          # 风险管理
-│   │   │   ├── console_ceo.py        # CEO 控制台
-│   │   │   ├── watchlist.py          # 自选股管理
-│   │   │   ├── trading_qmt.py        # QMT 交易
-│   │   │   └── agent.py              # AI Agent 入口
-│   │   ├── services/                 # 服务集成层
-│   │   │   ├── charles/              # Charles 数据服务
-│   │   │   │   └── integration.py    # 数据集成
-│   │   │   ├── zoe/                  # Zoe 分析服务
-│   │   │   │   ├── integration.py    # 分析集成
-│   │   │   │   └── tech_signals.py   # 技术指标
-│   │   │   ├── ethan/                # Ethan 执行服务
-│   │   │   │   ├── integration.py    # 执行集成
-│   │   │   │   ├── models.py         # 数据模型
-│   │   │   │   └── store.py          # 内存存储
-│   │   │   ├── kris/                 # Kris 风控服务
-│   │   │   │   └── integration.py    # 风控集成
-│   │   │   ├── ceo/                  # CEO 协调服务
-│   │   │   │   ├── integration.py    # 协调集成
-│   │   │   │   └── morning_brief.py  # 晨会简报
-│   │   │   └── reports/              # 研报服务
-│   │   │       └── rag.py            # RAG 检索
-│   │   ├── runtime/                  # 运行时支持
-│   │   │   ├── report_store.py       # 报告任务存储
-│   │   │   └── job_store.py          # Agent 运行记录
-│   │   ├── models/                   # 数据模型
-│   │   ├── app.py                    # FastAPI 应用入口
-│   │   ├── config.py                 # 配置管理
-│   │   └── db.py                     # 数据库操作
-│   ├── run_server.py                 # 服务启动脚本
-│   └── tests/                        # 后端测试
-├── web/                              # React 前端
-│   ├── src/
-│   │   ├── api/                      # API 客户端
-│   │   │   ├── client.ts            # HTTP 请求封装
-│   │   │   └── types.ts             # TypeScript 类型
-│   │   ├── components/               # 通用组件
-│   │   │   ├── AppShell.tsx         # 应用外壳布局
-│   │   │   ├── AssistantDrawer.tsx  # AI 助手抽屉
-│   │   │   ├── Badge.tsx            # 徽章组件
-│   │   │   ├── Card.tsx             # 卡片组件
-│   │   │   ├── Empty.tsx            # 空状态组件
-│   │   │   ├── StatusBadge.tsx      # 状态徽章
-│   │   │   └── Tabs.tsx             # 标签页组件
-│   │   ├── pages/                    # 页面组件
-│   │   │   ├── Home.tsx             # 首页
-│   │   │   ├── Jobs.tsx             # 任务管理
-│   │   │   ├── Reports.tsx          # 研报中心
-│   │   │   ├── Sentiment.tsx        # 舆情分析
-│   │   │   ├── Data.tsx             # 数据中心
-│   │   │   ├── Watchlist.tsx        # 自选股
-│   │   │   ├── StockDetail.tsx      # 股票详情
-│   │   │   ├── Execution.tsx         # 交易执行
-│   │   │   ├── Risk.tsx             # 风险管理
-│   │   │   ├── Strategy.tsx         # 策略管理
-│   │   │   ├── Morning.tsx           # 晨会简报
-│   │   │   └── Chat.tsx             # AI 对话
-│   │   ├── hooks/                    # 自定义 Hooks
-│   │   ├── lib/                      # 工具函数
-│   │   └── App.tsx                   # 应用入口
-│   └── package.json
-├── streamlit_chat/                   # Streamlit 对话机器人
-│   ├── app.py                        # 主应用
-│   └── lib/
-│       ├── api_client.py             # API 客户端
-│       └── theme.py                  # 主题配置
-├── qmt_gateway/                      # QMT 网关服务
-│   ├── app.py                        # FastAPI 应用
-│   ├── miniqmt_trader.py             # MiniQMT 交易封装
-│   └── run_server.py                 # 服务启动
-└── scripts/                           # 启动脚本
-    ├── start_all.ps1                 # PowerShell 一键启动
-    └── start_all.cmd                 # CMD 一键启动
+用户请求 (React Frontend / API Client)
+    |
+    v
+FastAPI Application (backend/app.py)
+    |
+    +-- Middleware: CORS / Rate Limit / API Key Guard / HTTP Access Log
+    |
+    +-- API Routers (/api/v1/*)
+    |     +-- health / summary / data / watchlist / jobs
+    |     +-- reports / analysis / sentiment / execution
+    |     +-- trading / risk / console / agent / conversation
+    |
+    +-- Agent Layer (agents/)
+    |     +-- Router Agent (意图路由)
+    |     +-- Quant Team Agent (量化助手)
+    |     +-- Report Agent (研报生成)
+    |     +-- Deep Agent (通用智能体)
+    |
+    +-- Workflow Layer (workflow/)
+    |     +-- Trading Team Graph (LangGraph)
+    |     |     Charles -> Zoe -> Kris -> Human -> Trader
+    |     +-- Morning Brief Graph (LangGraph)
+    |     |     Collect -> Run
+    |
+    +-- Core Services (core/)
+    |     +-- analysis (技术分析 & 信号生成)
+    |     +-- execution (执行任务管理)
+    |     +-- console/morning_brief (晨会简报)
+    |     +-- risk (风控审批 & 审计)
+    |     +-- jobs (数据采集调度)
+    |     +-- db (MySQL 连接管理)
+    |
+    +-- Infrastructure (infra/)
+    |     +-- reports/rag (RAG 向量检索)
+    |     +-- storage/report_store (报告任务持久化)
+    |     +-- storage/job_store (Agent 运行记录)
+    |     +-- storage/logging_service (统一日志服务)
+    |     +-- qmt_gateway_client (QMT 网关客户端)
+    |
+    +-- LLM Engine (llm/)
+          +-- deepagent_engine (DeepAgent 引擎)
+          +-- clients/deepseek_client (DeepSeek 客户端)
+          +-- skills/* (LLM 技能脚本)
+          +-- tools/* (工具定义与执行)
+
+外部依赖:
+    MySQL (腾讯云 huahua_trade)
+    QMT Gateway (MiniQMT 代理服务)
+    DashScope API / DeepSeek API
+    FAISS + SQLite (RAG 本地索引)
+```
+
+### 数据流向 — 交易工作流
+
+```
+用户指定标的和资金
+    |
+    v
+Charles Node (投研情报官)
+    |-- web_search: 联网搜索基本面、行业动态
+    |-- stock_price: 获取实时K线数据
+    |-- financial_analysis: 财务比率分析
+    |-- 输出: InvestmentView(stance, confidence, summary, catalysts, risks)
+    |
+    v
+Zoe Node (信号官)
+    |-- strategy-backtest: 运行 MACD 策略回测
+    |-- 结合 Charles 观点判断方向与仓位
+    |-- 输出: TradeSignal(direction, quantity, price, reason)
+    |
+    v
+Kris Node (风控官)
+    |-- 黑名单检查 / 资金限制 / ATR 波动率检查
+    |-- 输出: RiskVerdict(decision, reason, suggested_max_pct)
+    |
+    v
+Human Node (人在回路)
+    |-- 展示交易信号与风控结论
+    |-- 自动模式默认批准
+    |-- 输出: approved(boolean)
+    |
+    v
+Trader Node (交易执行)
+    |-- dry-run 模式(默认) / 真实下单
+    |-- 输出: TradeResult(order_id, submitted_at)
+    |
+    v
+END
+```
+
+### 数据流向 — 晨会简报
+
+```
+用户触发晨会请求
+    |
+    v
+Router Agent (路由)
+    |-- 识别"晨会"关键词
+    |-- 路由到 morning_brief_graph
+    |
+    v
+Collect Node (参数初始化)
+    |-- 设置行业层级、回溯天数、采样数等默认参数
+    |
+    v
+Run Node (执行晨会分析)
+    |-- 1. list_sectors: 从 MySQL 获取板块列表
+    |-- 2. load_sector_kline: 获取板块K线数据
+    |-- 3. _calc_derivatives: 计算 ROC/MA/MACD 等衍生指标
+    |-- 4. detect_phase: 判断板块所处阶段(主升/钝化/主跌/抄底)
+    |-- 5. rank_industries_with_phase: z-score 综合打分排序
+    |-- 6. pick_stocks_from_industries: 多因子选股
+    |-- 7. build_report: 生成 Markdown + HTML 报告
+    |
+    v
+END (返回报告)
 ```
 
 ---
 
-## 核心模块详解
+## 目录结构
 
-### 1. 后端 API 模块 (ai_quant_api)
+```
+ai_quant/
+├── backend/                          # 后端服务
+│   ├── api/                          # API 路由层 (FastAPI Router)
+│   │   ├── health.py                 # 健康检查
+│   │   ├── summary.py                # 数据汇总
+│   │   ├── data_charles.py           # 数据查询(多数据集分页)
+│   │   ├── data_status.py            # 数据状态
+│   │   ├── watchlist.py              # 自选股管理
+│   │   ├── stock_detail.py           # 个股详情
+│   │   ├── stock_select.py           # 选股策略
+│   │   ├── jobs.py                   # 任务调度(JIRA Runner)
+│   │   ├── reports.py                # 研报生成(任务管理)
+│   │   ├── analysis_zoe.py           # 技术分析与信号
+│   │   ├── sentiment.py              # 舆情与宏观
+│   │   ├── execution_ethan.py        # 交易执行
+│   │   ├── trading_qmt.py            # QMT 交易
+│   │   ├── risk_kris.py              # 风险管理
+│   │   ├── console_ceo.py            # CEO 控制台
+│   │   ├── agent.py                  # AI Agent 入口
+│   │   ├── conversation_api.py       # 对话会话管理
+│   │   ├── logs.py                   # 日志查询
+│   │   ├── approval.py              # 风控审批(旧版)
+│   │   ├── approval_models.py        # 审批数据模型
+│   │   ├── signals.py                # 信号接口
+│   │   ├── sim_account.py            # 模拟账户
+│   │   ├── performance.py            # 绩效分析
+│   │   └── mainforce.py             # 主力资金识别
+│   ├── agents/                       # AI Agent 实现
+│   │   ├── router_agent.py           # 意图路由 Agent
+│   │   ├── quant_team_agent.py       # 量化团队 Agent
+│   │   ├── report_agent.py           # 研报生成 Agent(五步法)
+│   │   └── deepagent_agent.py        # DeepAgent 封装
+│   ├── workflow/                     # LangGraph 工作流
+│   │   ├── trading_state.py          # 交易状态定义(TypedDict)
+│   │   ├── trading_team_graph.py     # 交易团队工作流图
+│   │   ├── morning_brief_graph.py    # 晨会简报工作流图
+│   │   └── nodes/                    # 工作流节点
+│   │       ├── charles_node.py       # 投研情报官节点
+│   │       ├── zoe_node.py           # 信号官节点
+│   │       ├── kris_node.py          # 风控官节点
+│   │       ├── human_node.py         # 人工审批节点
+│   │       └── trader_node.py        # 交易执行节点
+│   ├── core/                         # 核心业务逻辑
+│   │   ├── db.py                     # MySQL 连接管理 & CRUD
+│   │   ├── analysis/                 # 技术分析模块
+│   │   │   ├── service.py            # 信号/样本查询服务
+│   │   │   └── tech_signals.py       # 技术指标计算
+│   │   ├── execution/                # 执行模块
+│   │   │   ├── models.py             # 执行任务 Pydantic 模型
+│   │   │   ├── service.py            # 执行任务管理
+│   │   │   └── store.py              # 内存存储(InMemoryStore)
+│   │   ├── console/                  # 控制台模块
+│   │   │   ├── morning_brief.py      # 晨会简报核心逻辑
+│   │   │   └── service.py           # CEO 控制台服务
+│   │   ├── jobs/                     # 数据采集任务
+│   │   │   ├── runner.py             # 任务运行器(调度各domain)
+│   │   │   ├── common.py             # JobStats 数据模型
+│   │   │   └── domains/              # 各领域采集实现
+│   │   │       ├── stock_daily.py     # 股票日线
+│   │   │       ├── stock_financial.py # 财务数据
+│   │   │       ├── stock_financial_qmt.py # QMT 财务数据
+│   │   │       ├── stock_news.py     # 股票新闻
+│   │   │       ├── macro_indicator.py # 宏观指标
+│   │   │       ├── rate_daily.py     # 利率数据
+│   │   │       ├── calendar.py       # 日历数据
+│   │   │       ├── catalyst.py       # 催化剂事件
+│   │   │       ├── report_consensus.py # 研报共识
+│   │   │       ├── sentiment_monitor.py # 舆情监控
+│   │   │       └── stock_sw_industry_simple.py # 申万行业分类
+│   │   └── risk/                    # 风控模块
+│   │       └── service.py            # RiskManager 风控审批
+│   ├── infra/                        # 基础设施
+│   │   ├── reports/                  # 研报基础设施
+│   │   │   └── rag.py                # RAG 向量检索(FAISS+SQLite)
+│   │   ├── storage/                  # 存储服务
+│   │   │   ├── report_store.py       # 报告任务持久化
+│   │   │   ├── job_store.py          # Agent 运行记录
+│   │   │   └── logging_service.py    # 统一日志服务
+│   │   └── qmt_gateway_client.py     # QMT 网关 HTTP 客户端
+│   ├── llm/                          # LLM 相关
+│   │   ├── deepagent_engine.py       # DeepAgent 对话引擎
+│   │   ├── clients/                  # LLM 客户端
+│   │   │   └── deepseek_client.py    # DeepSeek API 客户端
+│   │   ├── skills/                   # LLM 技能目录
+│   │   │   ├── write-report/         # 研报撰写(五步法)
+│   │   │   ├── web-search-qwen/     # 联网搜索(通义)
+│   │   │   ├── web-search-universal/ # 通用搜索
+│   │   │   ├── read-pdf/            # PDF 解析与查询
+│   │   │   ├── stock-price/         # 股票行情
+│   │   │   ├── financial-analysis/   # 财务分析
+│   │   │   ├── compare-reports/      # 报告对比
+│   │   │   ├── sentiment-analysis/   # 舆情情绪分析
+│   │   │   ├── strategy-backtest/    # 策略回测
+│   │   │   ├── strategy-recommend/   # 策略推荐
+│   │   │   ├── trade-order/          # 交易下单
+│   │   │   ├── miniqmt-kline/       # MiniQMT K线
+│   │   │   ├── talib/               # TA-Lib 指标
+│   │   │   ├── backtrader/          # Backtrader 回测
+│   │   │   ├── bond-credit-review/   # 债券信用评审
+│   │   │   ├── blog-post/           # 博客文章
+│   │   │   ├── investment-research/  # 投资研究
+│   │   │   ├── query-writing/       # 查询编写
+│   │   │   ├── schema-exploration/   # 模式探索
+│   │   │   └── biz-skill-creator/   # 业务技能创建器
+│   │   └── tools/                    # 工具定义
+│   │       └── tools/                # 工具函数(__init__.py)
+│   ├── models/                       # 数据模型
+│   │   └── models/__init__.py
+│   ├── common/                       # 公共模块
+│   │   ├── response.py               # 统一响应格式(ok/fail)
+│   │   ├── pagination.py             # 分页标准化
+│   │   └── errors.py                 # ApiError 异常类
+│   ├── migrations/                   # 数据库迁移脚本
+│   │   ├── 002_expanded_schema.sql
+│   │   ├── 003_add_created_at_field.sql
+│   │   ├── 004_add_pe_pb_market_cap.sql
+│   │   ├── 005_add_sim_account.sql
+│   │   ├── 005_add_sw_industry.sql
+│   │   ├── 005_add_sw_industry_simple.sql
+│   │   ├── 005_create_performance_tables.sql
+│   │   ├── 006_add_sim_indexes.sql
+│   │   ├── 006_create_signal_tables.sql
+│   │   ├── 006_risk_management.sql
+│   │   ├── 006_risk_management_sqlite.sql
+│   │   ├── 007_risk_management_extended.sql
+│   │   ├── 007_sentiment_monitor.sql
+│   │   ├── 008_add_performance_fields.sql
+│   │   ├── 008_create_signal_tables.sqlite.sql
+│   │   ├── 009_mainforce_identification.sql
+│   │   ├── 009_mainforce_identification_final.sql
+│   │   ├── 009_mainforce_identification_simple.sql
+│   │   ├── 009_mainforce_identification_sqlite.sql
+│   │   └── add_watchlist_groups.sql
+│   ├── scripts/                      # 工具脚本
+│   │   └── report_tasks_cli.py       # 研报任务 CLI
+│   ├── tests/                        # 测试
+│   │   ├── test_api_smoke.py
+│   │   ├── test_bugfix_regressions.py
+│   │   ├── test_ethan_embedded.py
+│   │   ├── test_logging_service.py
+│   │   ├── test_morning_brief_embedded.py
+│   │   ├── test_mysql_config.py
+│   │   ├── test_qmt_gateway_proxy.py
+│   │   ├── test_reports_api.py
+│   │   ├── test_reports_rag.py
+│   │   └── test_zoe_signals_logic.py
+│   ├── migrations_sqlite.py          # SQLite 迁移脚本
+│   ├── app.py                        # FastAPI 应用工厂
+│   ├── config.py                     # Settings 配置管理
+│   ├── run_server.py                 # 服务启动入口
+│   └── pytest.ini                    # Pytest 配置
+├── web/                              # React 前端
+│   ├── src/
+│   │   ├── App.tsx                   # React Router 路由配置
+│   │   ├── main.tsx                  # 应用入口
+│   │   ├── index.css                 # 全局样式(Tailwind)
+│   │   ├── api/                      # API 客户端层
+│   │   │   ├── client.ts             # HTTP 请求封装(fetchJson/postJson)
+│   │   │   ├── types.ts              # TypeScript 类型定义
+│   │   │   ├── approval.ts           # 审批 API
+│   │   │   └── mainforce.ts          # 主力资金 API
+│   │   ├── components/               # 通用 UI 组件
+│   │   │   ├── AppShell.tsx          # 应用外壳(侧边栏+顶栏)
+│   │   │   ├── AssistantDrawer.tsx   # AI 助手抽屉
+│   │   │   ├── Badge.tsx             # 徽章组件
+│   │   │   ├── Button.tsx            # 按钮组件
+│   │   │   ├── Card.tsx              # 卡片组件
+│   │   │   ├── Empty.tsx             # 空状态组件
+│   │   │   ├── ErrorBoundary.tsx     # 错误边界
+│   │   │   ├── StatusBadge.tsx       # 状态徽章
+│   │   │   ├── StockPicker.tsx       # 股票选择器
+│   │   │   ├── Tabs.tsx              # 标签页组件
+│   │   │   └── Toast.tsx             # 吐司通知
+│   │   ├── pages/                    # 页面组件
+│   │   │   ├── Home.tsx              # 首页
+│   │   │   ├── Dashboard.tsx         # 仪表盘
+│   │   │   ├── InfoAccess.tsx        # 信息获取(父页面)
+│   │   │   ├── Jobs.tsx              # 数据采集任务
+│   │   │   ├── JobDetail.tsx         # 任务详情
+│   │   │   ├── WatchSentiment.tsx    # 舆情监控
+│   │   │   ├── MacroData.tsx         # 宏观数据
+│   │   │   ├── FinancialHot.tsx      # 财经热点
+│   │   │   ├── DataDelivery.tsx      # 数据投送
+│   │   │   ├── Watchlist.tsx         # 自选股
+│   │   │   ├── Reports.tsx           # 研报中心
+│   │   │   ├── StockDetail.tsx       # 个股详情
+│   │   │   ├── Execution.tsx         # 执行监控(父页面)
+│   │   │   ├── ExecutionTasks.tsx    # 执行任务列表
+│   │   │   ├── ExecutionPositions.tsx # 持仓查询
+│   │   │   ├── ExecutionRecords.tsx  # 成交记录
+│   │   │   ├── Risk.tsx              # 风险管理(父页面)
+│   │   │   ├── RiskApprove.tsx       # 风控审批
+│   │   │   ├── RiskRules.tsx         # 风控规则
+│   │   │   ├── RiskAudit.tsx         # 风控审计
+│   │   │   ├── StrategyAnalysis.tsx  # 策略分析(父页面)
+│   │   │   ├── StrategyLibrary.tsx   # 策略库
+│   │   │   ├── StrategyInstances.tsx # 策略实例
+│   │   │   ├── StrategyBacktest.tsx  # 策略回测
+│   │   │   ├── StockSelect.tsx       # 选股(父页面)
+│   │   │   ├── StockSelectFundamental.tsx # 基本面选股
+│   │   │   ├── StockSelectFactor.tsx # 因子选股
+│   │   │   ├── StockSelectML.tsx     # ML选股
+│   │   │   ├── Opportunity.tsx       # 机会挖掘(父页面)
+│   │   │   ├── OpportunityUnusual.tsx # 异常机会
+│   │   │   ├── OpportunityLimitUp.tsx # 涨停机会
+│   │   │   ├── OpportunitySector.tsx # 板块机会
+│   │   │   ├── MainForceIdentification.tsx # 主力识别
+│   │   │   ├── WorkFlow.tsx          # 工作流(父页面)
+│   │   │   ├── WorkFlowTeam.tsx      # 团队交易工作流
+│   │   │   ├── WorkFlowMorning.tsx   # 晨会工作流
+│   │   │   ├── WorkFlowDragon.tsx    # 多空线工作流
+│   │   │   └── NotFound.tsx          # 404 页面
+│   │   ├── hooks/
+│   │   │   └── useTheme.ts           # 主题 Hook
+│   │   └── lib/
+│   │       └── utils.ts              # 工具函数
+│   ├── e2e/                          # E2E 测试
+│   │   ├── basic.spec.ts
+│   │   ├── full_system_test.spec.ts
+│   │   ├── report_e2e_tests.spec.ts
+│   │   ├── trading_api.spec.ts
+│   │   └── api_test_runner.py
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── vitest.config.ts
+│   ├── playwright.config.ts
+│   ├── tsconfig.json
+│   └── tailwind.config.js
+├── docs/                             # 文档
+│   ├── PRD.md                        # 产品需求文档
+│   ├── USER_GUIDE.md                 # 用户使用指南
+│   ├── AI_QUANT_LOGGING_SYSTEM_DESIGN.md # 日志系统设计
+│   ├── diagrams/                     # 架构图 (PlantUML/drawio)
+│   └── screenshots/                  # 系统截图
+├── .env                              # 环境变量配置
+├── .dockerignore
+├── CODE_WIKI_V2.md                   # 本文档
+├── README.md                         # 项目 README
+└── backup/                           # 备份
+```
 
-#### 1.1 应用入口 (app.py)
+---
 
-**文件位置**: `backend/ai_quant_api/app.py`
+## 后端模块详解
 
-FastAPI 应用工厂，负责：
-- 创建 FastAPI 应用实例
-- 配置 CORS 中间件
-- 配置速率限制中间件（基于 IP）
-- 配置 API 密钥认证
-- 注册所有 API 路由
+### 1. 应用入口 (app.py)
 
-**关键配置**:
-- 速率限制：10秒内最多200次请求（可配置）
-- CORS：支持多源配置（禁止通配符）
-- API 密钥：用于接口认证（可选）
+**文件位置**: [backend/app.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/app.py)
 
-**注册的路由**:
-- `/api/health` - 健康检查
-- `/api/summary` - 数据汇总
-- `/api/data/*` - 数据查询
-- `/api/watchlist/*` - 监控列表
-- `/api/jobs/*` - 任务管理
-- `/api/reports/*` - 研报生成
-- `/api/analysis/*` - 分析服务
-- `/api/execution/*` - 交易执行
-- `/api/risk/*` - 风险管理
-- `/api/trading/*` - QMT 交易
-- `/api/console/*` - CEO 控制台
-- `/api/agent/*` - AI Agent
+FastAPI 应用工厂函数 `create_app()`，完成以下初始化：
 
-#### 1.2 配置管理 (config.py)
+- 初始化日志系统 (`init_logging()`)
+- 加载应用配置 (`config.get_settings()`)
+- 配置 CORS 中间件 (禁止通配符)
+- 配置速率限制中间件 (基于 IP，默认 10 秒内最多 200 次)
+- 配置 API 密钥认证中间件
+- 配置 HTTP 访问日志中间件
+- 注册所有业务路由（17 个 Router）
+- 启动时: 初始化任务调度器 + 速率限制状态清理
+- 关闭时: 关闭任务调度器 + 关闭日志系统
 
-**文件位置**: `backend/ai_quant_api/config.py`
+**注册的路由列表**:
 
-配置管理模块，使用不可变数据类定义配置。
+| 前缀 | Router | 功能 |
+|------|--------|------|
+| `/api/v1/health` | health_router | 健康检查 |
+| `/api/v1/summary` | summary_router | 数据汇总 |
+| `/api/v1/data-status` | data_status_router | 数据状态 |
+| `/api/v1/data` | data_router | 数据查询 |
+| `/api/v1/watchlist` | watchlist_router | 自选股 |
+| `/api/v1/stock-detail` | stock_detail_router | 个股详情 |
+| `/api/v1/stock-select` | stock_select_router | 选股 |
+| `/api/v1/jobs` | jobs_router | 任务调度 |
+| `/api/v1/reports` | reports_router | 研报生成 |
+| `/api/v1/analysis` | analysis_router | 技术分析 |
+| `/api/v1/sentiment` | sentiment_router | 舆情宏观 |
+| `/api/v1/execution` | execution_router | 交易执行 |
+| `/api/v1/trading` | trading_router | QMT 交易 |
+| `/api/v1/risk` | risk_router | 风险管理 |
+| `/api/v1/console` | console_router | CEO 控制台 |
+| `/api/v1/logs` | logs_router | 日志查询 |
+| `/api/v1/agent` | agent_router | AI 智能体 |
+| `/api/v1/conversation` | conversation_router | 对话会话 |
+| `/api/v1/approval` | approval_router | 旧版审批 |
+| `/api/v1/mainforce` | mainforce_router | 主力资金 |
+| `/api/v1/signals` | signals_router | 信号 |
+| `/api/v1/sim-account` | sim_account_router | 模拟账户 |
+| `/api/v1/performance` | performance_router | 绩效 |
+
+### 2. 配置管理 (config.py)
+
+**文件位置**: [backend/config.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/config.py)
+
+使用 `frozen=True` 的 dataclass 确保配置不可变：
 
 ```python
 @dataclass(frozen=True)
@@ -175,911 +463,583 @@ class Settings:
     app_name: str = "AI Quant Unified API"
     cors_origins: tuple[str, ...] = ("http://localhost:5173",)
     api_key: str = ""
+
+@dataclass(frozen=True)
+class LoggingSettings:
+    log_dir: Path          # 日志文件存储目录
+    log_level: str         # 日志级别
+    max_bytes: int         # 单文件最大字节数 (默认 10MB)
+    backup_count: int      # 备份文件数
+    console_enabled: bool  # 是否输出到控制台
+    file_enabled: bool     # 是否输出到文件
 ```
 
 **环境变量**:
-- `AI_QUANT_CORS_ORIGINS` - CORS 允许的源，多个用逗号分隔
-- `AI_QUANT_API_KEY` - API 访问密钥
 
-#### 1.3 数据库操作 (db.py)
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `AI_QUANT_CORS_ORIGINS` | `http://localhost:5173` | CORS 来源(逗号分隔) |
+| `AI_QUANT_API_KEY` | - | API 访问密钥 |
+| `AI_QUANT_RATE_LIMIT_WINDOW_SECONDS` | `10` | 速率限制时间窗口(秒) |
+| `AI_QUANT_RATE_LIMIT_MAX` | `200` | 速率限制最大请求数 |
+| `AI_QUANT_LOG_DIR` | `.ai_quant/logs` | 日志目录 |
+| `AI_QUANT_LOG_LEVEL` | `INFO` | 日志级别 |
+| `AI_QUANT_LOG_MAX_BYTES` | `10485760` | 日志文件大小限制 |
+| `AI_QUANT_LOG_BACKUP_COUNT` | `5` | 日志备份数 |
+| `AI_QUANT_LOG_CONSOLE` | `true` | 控制台日志开关 |
+| `AI_QUANT_LOG_FILE` | `true` | 文件日志开关 |
+| `AI_QUANT_REPORT_USE_LLM` | `0` | 启用 LLM 研报 |
+| `AI_QUANT_REPORT_TIMEOUT_SECONDS` | `300` | 研报超时(秒) |
+| `AI_QUANT_REPORT_LLM_TIMEOUT_SECONDS` | `90` | LLM 超时(秒) |
+| `AI_QUANT_REPORT_TASK_STORE_DIR` | `.ai_quant/report_tasks` | 报告任务存储目录 |
+| `AI_QUANT_CHARLES_JOB_STORE_DIR` | - | Charles 任务存储目录 |
+| `AI_QUANT_QMT_GATEWAY_BASE` | - | QMT 网关地址 |
+| `AI_QUANT_QMT_GATEWAY_TOKEN` | - | QMT 网关 Token |
+| `DASHSCOPE_API_KEY` | - | 通义千问 API Key |
+| `DEEPSEEK_API_KEY` | - | DeepSeek API Key |
 
-**文件位置**: `backend/ai_quant_api/db.py`
+**数据库配置(支持三种格式)**:
 
-提供 MySQL 数据库的连接管理和基础 CRUD 操作。
+| 格式前缀 | 示例 |
+|---------|------|
+| `WUCAI_SQL_*` | `WUCAI_SQL_HOST`, `WUCAI_SQL_PORT` |
+| `DB_*` | `DB_HOST`, `DB_PORT` |
+| `MYSQL_*` | `MYSQL_HOST`, `MYSQL_PORT` |
 
-**关键函数**:
+### 3. 数据库模块 (core/db.py)
 
-| 函数名 | 功能 | 说明 |
-|--------|------|------|
-| `load_mysql_config()` | 加载数据库配置 | 支持多种环境变量格式 |
-| `connect()` | 建立数据库连接 | 配置自动提交和字典游标 |
-| `query_dict()` | 执行查询 | 返回字典列表 |
-| `execute()` | 执行单条 SQL | 返回影响行数 |
-| `executemany()` | 批量执行 SQL | 提高大量插入效率 |
+**文件位置**: [backend/core/db.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/core/db.py)
 
-**环境变量支持**:
-- `WUCAI_SQL_*` - 微财内部格式
-- `DB_*` - 通用格式
-- `MYSQL_*` - MySQL 标准格式
+基于 PyMySQL 的数据库操作层：
+
+| 函数 | 功能 | 说明 |
+|------|------|------|
+| `load_mysql_config()` | 加载 MySQL 配置 | 从环境变量读取(支持3种命名格式) |
+| `connect(cfg)` | 建立连接 | 自动提交 + DictCursor |
+| `query_dict(conn, sql, params)` | 执行查询 | 参数化查询防 SQL 注入 |
+| `execute(conn, sql, params)` | 执行写操作 | 返回影响行数 |
+| `executemany(conn, sql, rows)` | 批量写入 | 提高大量插入效率 |
+
+### 4. API 路由层
+
+#### 4.1 数据查询 API (api/data_charles.py)
+
+**文件位置**: [backend/api/data_charles.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/data_charles.py)
+
+提供多数据集的分页查询与导出功能。
+
+**支持的 datasets**: `trade_stock_daily`, `trade_stock_financial`, `trade_stock_news`, `trade_macro_indicator`, `trade_rate_daily`, `trade_report_consensus`, `trade_calendar_event`
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | `/api/v1/data/summary` | 数据源摘要 |
+| GET | `/api/v1/data/{dataset}` | 分页查询(支持 stock_code/trade_date 过滤) |
+| POST | `/api/v1/export` | 导出 CSV/JSON |
+
+#### 4.2 技术分析 API (api/analysis_zoe.py)
+
+**文件位置**: [backend/api/analysis_zoe.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/analysis_zoe.py)
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | `/api/v1/analysis/status` | 分析服务状态 |
+| GET | `/api/v1/analysis/stocks/sample` | 样本股票列表 |
+| GET | `/api/v1/analysis/signals` | 股票技术信号 |
+
+技术指标(由 `tech_signals.py` 计算): RSI6/12/24, MA5/10/20/60, MACD(DIF/DEA/BAR), 布林带, KDJ
+
+#### 4.3 研报生成 API (api/reports.py)
+
+**文件位置**: [backend/api/reports.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/reports.py)
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | `/api/v1/reports/tasks` | 查询研报任务列表 |
+| POST | `/api/v1/reports/tasks` | 创建研报任务 |
+| DELETE | `/api/v1/reports/tasks/{task_id}` | 删除任务 |
+| POST | `/api/v1/reports/tasks/{task_id}/retry` | 重试失败任务 |
+| GET | `/api/v1/reports/tasks/{task_id}/view` | 查看研报内容 |
+| GET | `/api/v1/reports/rag/status` | RAG 索引状态 |
+| POST | `/api/v1/reports/rag/ingest` | 触发 RAG 索引构建 |
+| GET | `/api/v1/reports/rag/query` | RAG 语义检索 |
+
+**研报生成模式**: qwen(通义千问), qwen_with_rag(RAG 增强), deepseek_with_web(DeepSeek+联网)
+**任务状态**: waiting -> running -> success/failed
+
+#### 4.4 任务调度 API (api/jobs.py)
+
+**文件位置**: [backend/api/jobs.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/jobs.py)
+
+支持的 Job 域: `stock_daily`, `stock_financial`, `stock_news`, `macro_indicator`, `rate_daily`, `calendar`, `report_consensus`, `catalyst`, `sentiment_monitor`
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | `/api/v1/jobs/runs` | 任务运行记录 |
+| POST | `/api/v1/jobs/runs` | 创建运行记录 |
+| GET | `/api/v1/jobs/schedules` | 调度配置查询 |
+| PUT | `/api/v1/jobs/schedules/{domain}` | 更新调度配置 |
+
+#### 4.5 执行 API (api/execution_ethan.py)
+
+**文件位置**: [backend/api/execution_ethan.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/execution_ethan.py)
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | `/api/v1/execution/status` | 服务状态 |
+| POST | `/api/v1/execution/tasks` | 创建执行任务 |
+| GET | `/api/v1/execution/tasks` | 任务列表 |
+| GET | `/api/v1/execution/tasks/{task_id}` | 任务详情 |
+
+**执行策略**: twap(时间加权), vwap(量加权), rl(强化学习)
+**任务状态**: draft -> running -> stopped/finished/failed
+
+#### 4.6 风控 API (api/risk_kris.py)
+
+**文件位置**: [backend/api/risk_kris.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/risk_kris.py)
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | `/api/v1/risk/status` | 服务状态 |
+| POST | `/api/v1/risk/approve` | 订单风控审批 |
+| GET | `/api/v1/risk/audit` | 审计日志 |
+
+**风控检查流程**: 总资产验证 -> 交易方向 -> 金额校验 -> ATR 波动率 -> 数量检查 -> 最终审批
+**决策类型**: APPROVE(批准), WARN(警告), REJECT(拒绝)
+
+#### 4.7 其他 API 端点
+
+| 文件 | 前缀 | 主要功能 |
+|------|------|---------|
+| [api/sentiment.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/sentiment.py) | `/api/v1/sentiment` | 舆情监控与宏观指标 |
+| [api/trading_qmt.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/trading_qmt.py) | `/api/v1/trading` | QMT 交易(连接/下单/撤单) |
+| [api/watchlist.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/watchlist.py) | `/api/v1/watchlist` | 自选股 CRUD |
+| [api/stock_detail.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/stock_detail.py) | `/api/v1/stock-detail` | 个股详情与行情 |
+| [api/stock_select.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/stock_select.py) | `/api/v1/stock-select` | 选股策略(基本面/因子/ML) |
+| [api/console_ceo.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/console_ceo.py) | `/api/v1/console` | CEO 控制台(系统总览/晨会触发) |
+| [api/agent.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/agent.py) | `/api/v1/agent` | AI Agent 入口(运行/流式/工具) |
+| [api/conversation_api.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/conversation_api.py) | `/api/v1/conversation` | 对话会话管理 |
+| [api/logs.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/logs.py) | `/api/v1/logs` | 日志查询 |
+| [api/mainforce.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/mainforce.py) | `/api/v1/mainforce` | 主力资金识别 |
+| [api/signals.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/signals.py) | `/api/v1/signals` | 信号管理 |
+| [api/sim_account.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/sim_account.py) | `/api/v1/sim-account` | 模拟账户 |
+| [api/performance.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/api/performance.py) | `/api/v1/performance` | 绩效分析 |
 
 ---
 
-### 2. API 路由层
+### 5. Agent 模块
 
-#### 2.1 数据 API (api/data_charles.py)
+#### 5.1 路由 Agent (agents/router_agent.py)
 
-**文件位置**: `backend/ai_quant_api/api/data_charles.py`
+**文件位置**: [backend/agents/router_agent.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/agents/router_agent.py)
 
-数据查询接口，对接 Charles 数据服务。
+根据用户输入进行关键词路由：
 
-**支持的数据集**:
-
-| 数据集名称 | 说明 | 主键字段 |
-|-----------|------|---------|
-| `trade_stock_daily` | 股票日线行情 | stock_code, trade_date |
-| `trade_stock_financial` | 股票财务数据 | stock_code, report_date |
-| `trade_stock_news` | 股票新闻 | stock_code, published_at |
-| `trade_macro_indicator` | 宏观指标 | indicator_date |
-| `trade_rate_daily` | 利率日线 | rate_date |
-| `trade_report_consensus` | 研报共识 | stock_code, broker |
-| `trade_calendar_event` | 交易日历事件 | event_date |
-
-**端点列表**:
-
-| 方法 | 路径 | 功能 |
-|------|------|------|
-| GET | `/api/data/summary` | 获取数据源摘要 |
-| GET | `/api/data/{dataset}` | 分页查询数据集 |
-| POST | `/api/export` | 导出 CSV/JSON |
-
-**查询特性**:
-- SQL 注入防护
-- 支持批量股票代码查询（逗号分隔）
-- 支持日期范围查询
-- 流式 CSV 导出（避免内存溢出）
-
-#### 2.2 研报 API (api/reports.py)
-
-**文件位置**: `backend/ai_quant_api/api/reports.py`
-
-智能研报生成核心模块。
-
-**关键流程**:
-
-1. **任务创建**: 创建研报任务，生成唯一 task_id
-2. **后台处理**: 使用后台 worker 线程异步生成研报
-3. **RAG 检索**: 如果启用 RAG，执行向量检索获取背景材料
-4. **LLM 生成**: 调用 DashScope API 生成 Markdown 研报
-5. **状态跟踪**: 支持轮询任务状态，检测超时
-
-**端点列表**:
-
-| 方法 | 路径 | 功能 |
-|------|------|------|
-| GET | `/api/reports/tasks` | 查询研报任务列表 |
-| POST | `/api/reports/tasks` | 创建研报任务 |
-| DELETE | `/api/reports/tasks/{task_id}` | 删除研报任务 |
-| POST | `/api/reports/tasks/{task_id}/retry` | 重试失败任务 |
-| GET | `/api/reports/tasks/{task_id}/view` | 查看研报内容 |
-| GET | `/api/reports/rag/status` | RAG 索引状态 |
-| POST | `/api/reports/rag/ingest` | 触发 RAG 索引构建 |
-| GET | `/api/reports/rag/query` | RAG 语义检索 |
-
-**任务状态**:
-- `waiting` - 等待执行
-- `running` - 执行中
-- `success` - 执行成功
-- `failed` - 执行失败
-
-**支持的模型**:
-- `qwen-max` - 通义千问旗舰模型
-- `deepseek` - DeepSeek-V3 模型
-
-#### 2.3 任务调度 API (api/jobs.py)
-
-**文件位置**: `backend/ai_quant_api/api/jobs.py`
-
-任务调度管理接口。
-
-**支持的 Job 域**:
-- `stock_daily` - 股票每日数据
-- `stock_financial` - 股票财务数据
-- `stock_news` - 股票新闻
-- `macro_indicator` - 宏观指标
-- `rate_daily` - 利率日度数据
-- `calendar` - 日历数据
-- `report_consensus` - 研报共识
-- `catalyst` - 催化剂事件
-
-**端点列表**:
-
-| 方法 | 路径 | 功能 |
-|------|------|------|
-| GET | `/api/jobs/runs` | 查询任务运行记录 |
-| POST | `/api/jobs/runs` | 创建任务运行记录 |
-| GET | `/api/jobs/schedules` | 查询调度配置 |
-| PUT | `/api/jobs/schedules/{domain}` | 更新调度配置 |
-
-**特性**:
-- 支持 Cron 表达式配置
-- 任务超时检测（默认 900 秒）
-- 自动标记僵尸任务为失败
-
-#### 2.4 分析 API (api/analysis_zoe.py)
-
-**文件位置**: `backend/ai_quant_api/api/analysis_zoe.py`
-
-技术分析和信号生成接口。
-
-**端点列表**:
-
-| 方法 | 路径 | 功能 |
-|------|------|------|
-| GET | `/api/analysis/status` | 获取分析服务状态 |
-| GET | `/api/analysis/stocks/sample` | 获取样本股票列表 |
-| GET | `/api/analysis/signals` | 获取股票技术信号 |
-
-**技术指标**:
-- RSI（相对强弱指数）
-- MA（移动平均线）
-- MACD（指数平滑异同移动平均线）
-- KDJ（随机指标）
-- 布林带
-
-#### 2.5 执行 API (api/execution_ethan.py)
-
-**文件位置**: `backend/ai_quant_api/api/execution_ethan.py`
-
-交易执行接口，对接 Ethan 执行服务。
-
-**端点列表**:
-
-| 方法 | 路径 | 功能 |
-|------|------|------|
-| GET | `/api/execution/status` | 获取执行服务状态 |
-| POST | `/api/execution/tasks` | 创建执行任务 |
-| GET | `/api/execution/tasks` | 列出所有执行任务 |
-| GET | `/api/execution/tasks/{task_id}` | 获取指定任务详情 |
-
-**执行策略**:
-- TWAP（时间加权平均价格）
-- VWAP（成交量加权平均价格）
-- RL（强化学习）
-
-#### 2.6 风控 API (api/risk_kris.py)
-
-**文件位置**: `backend/ai_quant_api/api/risk_kris.py`
-
-风险管理接口，对接 Kris 风控服务。
-
-**端点列表**:
-
-| 方法 | 路径 | 功能 |
-|------|------|------|
-| GET | `/api/risk/status` | 获取风控服务状态 |
-| POST | `/api/risk/approve` | 订单风控审批 |
-| GET | `/api/risk/audit` | 获取风控审计日志 |
-
-**风控检查层级**:
-1. 总资产验证
-2. 交易方向验证
-3. 金额验证
-4. 波动率检查
-5. 负面新闻检查
-6. 硬性持仓限制
-7. 最大持仓比例警告
-
-#### 2.7 其他 API
-
-| 文件 | 路径前缀 | 说明 |
+| 输入 | 路由目标 | 原因 |
 |------|---------|------|
-| `api/health.py` | `/api/health` | 健康检查 |
-| `api/summary.py` | `/api/summary` | 数据汇总 |
-| `api/watchlist.py` | `/api/watchlist` | 监控列表管理 |
-| `api/trading_qmt.py` | `/api/trading` | QMT 交易接口 |
-| `api/console_ceo.py` | `/api/console` | CEO 控制台 |
-| `api/agent.py` | `/api/agent` | AI Agent 入口 |
+| 空/None | `none` | 空输入 |
+| 包含"晨会" | `graph:morning_brief` | 关键词匹配 |
+| 其他 | `tool:quant_assistant` | 默认路由 |
 
----
+#### 5.2 量化团队 Agent (agents/quant_team_agent.py)
 
-### 3. 服务集成层
+**文件位置**: [backend/agents/quant_team_agent.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/agents/quant_team_agent.py)
 
-#### 3.1 Charles 服务 (services/charles/)
+处理通用量化任务，根据用户输入中的关键词进行子模块路由：
 
-**文件位置**: `backend/ai_quant_api/services/charles/integration.py`
-
-数据服务集成层，对接 Charles 数据模块。
-
-**关键函数**:
-
-| 函数名 | 返回类型 | 说明 |
+| 关键词 | 路由模块 | 说明 |
 |--------|---------|------|
-| `get_job_store_dir()` | `str` | 获取任务存储目录 |
-| `list_job_runs()` | `list[dict]` | 列出任务运行记录 |
-| `write_job_run()` | `dict` | 写入任务运行记录 |
-| `get_summary()` | `dict` | 获取数据源摘要 |
-| `get_watchlist()` | `dict` | 获取监控列表 |
-| `add_watchlist_item()` | `dict` | 添加自选股 |
-| `delete_watchlist_item()` | `dict` | 删除自选股 |
-| `search_stocks()` | `dict` | 搜索股票 |
+| 数据/汇总/概览 | Charles | 数据查询 |
+| 执行/下单/买入/卖出 | Ethan + Kris | 交易执行 |
+| 风控/审批/风险 | Kris | 风控审批 |
+| 报告/分析/个股 | Charles + Zoe | 分析报告 |
 
-#### 3.2 Zoe 服务 (services/zoe/)
+#### 5.3 研报 Agent (agents/report_agent.py)
 
-**文件位置**: `backend/ai_quant_api/services/zoe/integration.py`
+**文件位置**: [backend/agents/report_agent.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/agents/report_agent.py)
 
-分析服务集成层，对接 Zoe 分析模块。
+基于国泰君安"五步法"方法论生成深度研报：
 
-**关键函数**:
+1. **信息差** — 市场还不知道/忽视了什么？
+2. **逻辑差** — 市场的推理错在哪里？
+3. **预期差** — 一致预期 vs 实际偏离多大？
+4. **催化剂** — 什么事件会引爆重估？
+5. **结论+风险闭环** — 最终判断 + 哪里可能出错？
 
-| 函数名 | 参数 | 返回类型 | 说明 |
-|--------|------|---------|------|
-| `get_status()` | - | `dict` | 获取分析服务状态 |
-| `get_sample_codes()` | limit | `dict` | 获取样本股票代码 |
-| `get_signals()` | stock_code, start, end | `dict` | 获取技术信号 |
+**可用工具**: web_search, query_pdf(RAG), stock_price, financial_analysis, compare_reports, sentiment_analysis
+**支持模型**: qwen-plus(默认), deepseek-chat
+**迭代机制**: 多轮工具调用(默认最多4轮)收集信息后生成最终研报
 
-**技术指标计算** (`services/zoe/tech_signals.py`):
-- RSI 计算
-- 移动平均线计算
-- MACD 计算
-- KDJ 计算
-- 布林带计算
+#### 5.4 DeepAgent (agents/deepagent_agent.py + llm/deepagent_engine.py)
 
-#### 3.3 Ethan 服务 (services/ethan/)
+**文件位置**: [backend/agents/deepagent_agent.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/agents/deepagent_agent.py)
 
-**文件位置**: `backend/ai_quant_api/services/ethan/integration.py`
+通用智能体引擎，支持：
+- 多轮对话(基于 thread_id)
+- 自动工具调用(从 tools 注册表加载)
+- LangChain ChatTongyi 集成
+- 对话历史管理(最多保留 20 条)
 
-执行服务集成层，对接 Ethan 执行模块。
-
-**关键函数**:
-
-| 函数名 | 参数 | 返回类型 | 说明 |
-|--------|------|---------|------|
-| `get_status()` | - | `dict` | 获取执行服务状态 |
-| `create_execution_task()` | payload | `dict` | 创建执行任务 |
-| `list_execution_tasks()` | - | `dict` | 列出所有任务 |
-| `get_execution_task()` | task_id | `dict` | 获取任务详情 |
-
-**数据模型** (`services/ethan/models.py`):
-- `ExecutionTask` - 执行任务数据类
-- `TaskStatus` - 任务状态枚举
-
-**内存存储** (`services/ethan/store.py`):
-- 使用内存字典存储任务
-- 线程安全的任务管理
-
-#### 3.4 Kris 服务 (services/kris/)
-
-**文件位置**: `backend/ai_quant_api/services/kris/integration.py`
-
-风控服务集成层，对接 Kris 风控模块。
-
-**关键函数**:
-
-| 函数名 | 参数 | 返回类型 | 说明 |
-|--------|------|---------|------|
-| `status()` | - | `dict` | 获取风控服务状态 |
-| `approve()` | payload | `dict` | 执行订单风控审批 |
-| `audit()` | last_n | `dict` | 获取审计日志 |
-
-**决策类型**:
-- `APPROVE` - 批准
-- `WARN` - 警告（带建议参数）
-- `REJECT` - 拒绝
-
-#### 3.5 CEO 服务 (services/ceo/)
-
-**文件位置**: `backend/ai_quant_api/services/ceo/integration.py`
-
-协调服务集成层，对接 CEO 协调模块。
-
-**关键函数**:
-
-| 函数名 | 参数 | 返回类型 | 说明 |
-|--------|------|---------|------|
-| `get_status()` | - | `dict` | 获取系统状态 |
-| `get_overview()` | - | `dict` | 获取系统总览 |
-| `trigger_morning()` | payload | `dict` | 触发晨会流程 |
-
-**晨会简报** (`services/ceo/morning_brief.py`):
-- 聚合市场数据
-- 生成晨会摘要
-- 输出格式化报告
+**可用工具**: web_search, get_kline(行情), run_backtest(回测), place_order(下单), query_account(账户)等
 
 ---
 
-### 4. AI Agent 模块
+### 6. 工作流模块 (workflow/)
 
-#### 4.1 路由 Agent (ai/agents/router_agent.py)
+#### 6.1 交易团队工作流 (trading_team_graph.py)
 
-**文件位置**: `backend/ai_quant_api/ai/agents/router_agent.py`
+**文件位置**: [backend/workflow/trading_team_graph.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/workflow/trading_team_graph.py)
 
-意图路由，根据用户输入决定调用哪个 Agent 或工作流。
-
-**路由规则**:
-
-```python
-def route_intent(user_input: str) -> dict[str, Any]:
-    """根据用户输入路由到对应的处理模块"""
-    text = (user_input or "").strip().lower()
-    
-    # 空输入
-    if not text or text == "none":
-        return {"target": "none", "reason": "empty_input"}
-    
-    # 晨会关键词
-    if "晨会" in text:
-        return {"target": "graph:morning_brief", "reason": "matched_keyword"}
-    
-    # 默认路由到量化助手
-    return {"target": "tool:quant_assistant", "reason": "default_route"}
-```
-
-**路由策略**:
-- 空输入 → `none`
-- 包含"晨会"关键词 → 晨会简报工作流
-- 其他 → 默认量化助手
-
-#### 4.2 量化团队 Agent (ai/agents/quant_team_agent.py)
-
-**文件位置**: `backend/ai_quant_api/ai/agents/quant_team_agent.py`
-
-量化团队主 Agent，协调各专业 Agent 工作。
-
-**关键函数**:
-
-```python
-def run_quant_assistant(user_input: str) -> dict[str, Any]:
-    """运行量化助手，处理通用量化任务"""
-    return {
-        "message": f"已接收任务：{user_input}",
-        "modules": ["charles", "zoe", "ethan", "kris", "ceo"],
-    }
-```
-
-**团队成员**:
-- Charles - 数据服务
-- Zoe - 分析服务
-- Ethan - 执行服务
-- Kris - 风控服务
-- CEO - 协调服务
-
-#### 4.3 晨会简报工作流 (ai/graphs/morning_brief_graph.py)
-
-**文件位置**: `backend/ai_quant_api/ai/graphs/morning_brief_graph.py`
-
-基于 LangGraph 的晨会简报生成工作流。
-
-**工作流结构**:
+基于 LangGraph StateGraph 的交易决策流水线：
 
 ```
-START → collect → summarize → END
+START -> charles -> zoe -> kris -> (条件判断: 否决? -> zoe_retry/zoe | 通过? -> human)
+                                          -> human -> (条件判断: 批准? -> trader | 否决? -> END)
+                                                      -> trader -> END
 ```
 
-**关键函数**:
+**状态定义** ([trading_state.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/workflow/trading_state.py)):
 
-| 函数名 | 输入 | 输出 | 说明 |
-|--------|------|------|------|
-| `build_graph()` | 无 | `CompiledStateGraph` | 构建并编译工作流图 |
-| `collect()` | state | dict | 收集晨会信息 |
-| `summarize()` | state | dict | 生成晨会摘要 |
+| 字段 | 类型 | 所有权 | 说明 |
+|------|------|--------|------|
+| `investment_view` | `InvestmentView` | Charles | 投研观点(立场/信心/摘要/催化剂/风险) |
+| `trade_signal` | `TradeSignal` | Zoe | 交易信号(方向/数量/价格/策略) |
+| `risk_verdict` | `RiskVerdict` | Kris | 风控决议(决策/理由/建议仓位) |
+| `approved` | `Optional[bool]` | Human | 人工审批结果 |
+| `trade_result` | `TradeResult` | Trader | 下单回执 |
+| `retry_count` | `int` | 公共 | 重试计数 |
+| `messages` | `Annotated[list, add]` | 公共 | 审计消息列表 |
 
-**数据收集**:
-- 股票市场状态
-- 行业涨跌情况
-- 重点关注个股
-- 宏观事件提醒
+**重试机制**: 当 Kris 连续否决达到 `max_retry`(默认2) 上限时终止流程
+
+#### 6.2 晨会简报工作流 (morning_brief_graph.py)
+
+**文件位置**: [backend/workflow/morning_brief_graph.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/workflow/morning_brief_graph.py)
+
+```
+START -> collect(参数初始化) -> run(晨会分析) -> END
+```
+
+晨会核心分析流程 ([core/console/morning_brief.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/core/console/morning_brief.py)):
+
+1. `normalize_params()` - 参数规范化
+2. `list_sectors()` - 从 MySQL 加载板块列表
+3. `load_sector_kline()` - 加载板块 K 线(close_idx/total_amount)
+4. `_calc_strength_indicators()` - 强度指标(MOM_21/VOL_RATIO)
+5. `_calc_derivatives()` - 衍生指标(ROC/MA_SLOPE/MACD_HIST)
+6. `detect_phase()` - 拐点探测(主升加速/高位钝化/主跌/左侧抄底/中性)
+7. `rank_industries_with_phase()` - Z-Score 综合打分排序
+8. `pick_stocks_from_industries()` - 多因子选股(alpha打分)
+9. `build_report()` - 生成 Markdown + HTML 报告
 
 ---
 
-### 5. 运行时支持
+### 7. 核心业务模块
 
-#### 5.1 报告任务存储 (runtime/report_store.py)
+#### 7.1 技术分析 (core/analysis/)
 
-**文件位置**: `backend/ai_quant_api/runtime/report_store.py`
+- [service.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/core/analysis/service.py): 信号生成入口，从 MySQL 读取日线数据，调用 `tech_signals.generate_signals()`
+- [tech_signals.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/core/analysis/tech_signals.py): 技术指标计算，含 RSI/MA/MACD/KDJ/布林带
 
-报告任务的全生命周期管理。
+#### 7.2 执行模块 (core/execution/)
 
-**核心功能**:
-- 任务创建、状态跟踪和更新
-- 本地文件系统持久化存储
-- 可选的 MySQL 数据库备份
-- 从报告输出和日志中引导加载历史任务
+- [models.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/core/execution/models.py): Pydantic 数据模型 (ExecutionTask/ExecutionConstraints/StrategyType)
+- [service.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/core/execution/service.py): 任务 CRUD
+- [store.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/core/execution/store.py): 线程安全的内存存储 (InMemoryStore)
 
-**关键函数**:
+#### 7.3 风控模块 (core/risk/)
 
-| 函数名 | 说明 |
-|--------|------|
-| `create_task()` | 创建新的报告生成任务 |
-| `update_task()` | 更新指定任务的字段 |
-| `get_task()` | 获取指定任务记录 |
-| `delete_task()` | 删除指定任务 |
-| `list_tasks()` | 列出所有任务记录 |
+- [service.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/core/risk/service.py): RiskManager 类，含 `approve_verbose()` 多层级风控检查，`_audit()` 审计日志记录
 
-**存储位置**:
-- 本地：`{project_root}/.ai_quant/report_tasks/*.json`
-- MySQL：`ai_quant_report_tasks` 表
+**7 层风控检查**:
 
-**特性**:
-- 并发安全的任务读写（使用线程锁）
-- 自动从文件系统和日志中恢复任务状态
-- 支持 RAG 增强的报告生成模式
-- 原子写入确保数据一致性
+| 层级 | 检查项 | 规则 |
+|------|--------|------|
+| 1 | 总资产验证 | total_asset > 0 |
+| 2 | 交易方向验证 | direction in (buy, sell) |
+| 3 | 金额验证 | amount > 0 |
+| 4 | ATR 波动率 | 波动率 >= 6% 时降低仓位至 5% |
+| 5 | 数量验证 | quantity > 0 |
+| 6 | 黑名单检查 | 不含 ST/退市 |
+| 7 | 最大订单金额 | amount <= capital * 50% |
 
-#### 5.2 Agent 运行记录存储 (runtime/job_store.py)
+#### 7.4 数据采集调度 (core/jobs/)
 
-**文件位置**: `backend/ai_quant_api/runtime/job_store.py`
+- [runner.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/core/jobs/runner.py): `run_domain()` 根据 domain 名称分发到对应采集实现
+- [common.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/core/jobs/common.py): JobStats 数据模型
 
-Agent 执行运行的历史记录管理。
-
-**核心功能**:
-- 运行记录的添加和查询
-- 内存中的运行历史存储（最多保留 50 条）
-- 线程安全的并发访问控制
-
-**关键函数**:
-
-| 函数名 | 说明 |
-|--------|------|
-| `append_run()` | 添加新的运行记录到历史列表 |
-| `list_runs()` | 获取所有运行记录的列表 |
+**支持的数据域**: stock_daily, stock_financial, stock_financial_qmt, stock_news, macro_indicator, rate_daily, calendar, report_consensus, catalyst, sentiment_monitor, stock_sw_industry_simple
 
 ---
 
-### 6. QMT 网关服务 (qmt_gateway)
+### 8. 基础设施模块
 
-#### 6.1 应用入口 (qmt_gateway/app.py)
+#### 8.1 统一日志服务 (infra/storage/logging_service.py)
 
-**文件位置**: `qmt_gateway/app.py`
+**文件位置**: [backend/infra/storage/logging_service.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/infra/storage/logging_service.py)
 
-基于 FastAPI 的 QMT 网关服务。
+基于 Python logging + RotatingFileHandler 的统一日志系统：
 
-**端点列表**:
+| 组件 | 说明 |
+|------|------|
+| `LoggerManager` | 单例管理器，管理所有模块的 logger 实例 |
+| `UnifiedFormatter` | 统一格式: `[时间] [模块] [级别] 消息 key=value` |
+| `get_logger(name)` | 获取指定模块的 logger(自动创建文件处理器) |
+| `init_logging()` | 应用启动时初始化 |
+| `shutdown_logging()` | 应用关闭时清理 |
 
-| 方法 | 路径 | 功能 |
+**特性**: 敏感信息脱敏(API Key/手机号/身份证)、文件轮转(10MB/5个备份)、模块级隔离
+
+#### 8.2 报告任务存储 (infra/storage/report_store.py)
+
+**文件位置**: [backend/infra/storage/report_store.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/infra/storage/report_store.py)
+
+| 函数 | 功能 |
+|------|------|
+| `create_task()` | 创建报告任务(含唯一 task_id) |
+| `update_task()` | 更新任务字段 |
+| `get_task()` | 获取任务记录 |
+| `delete_task()` | 删除任务 |
+| `list_tasks()` | 列出所有任务 |
+
+**持久化**: JSON 文件存储于 `.ai_quant/report_tasks/`，可选 MySQL 备份
+**引导加载**: 启动时从文件系统和日志中恢复历史任务
+
+#### 8.3 RAG 检索 (infra/reports/rag.py)
+
+**文件位置**: [backend/infra/reports/rag.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/infra/reports/rag.py)
+
+基于 FAISS + SQLite 的 RAG 向量检索：
+
+| 函数 | 功能 |
+|------|------|
+| `ingest_pdfs()` | 解析 PDF 文件，分块后写入 SQLite |
+| `build_faiss_index()` | 使用 DashScope Embedding 构建 FAISS 向量索引 |
+| `rag_query()` | 语义检索(含 stock_code 过滤) |
+| `rag_status()` | 索引状态(文档数/块数/索引就绪) |
+
+**存储结构**: SQLite (`documents` 表 + `chunks` 表), FAISS 索引 (`vector_store/index.faiss`)
+
+#### 8.4 Agent 运行记录 (infra/storage/job_store.py)
+
+**文件位置**: [backend/infra/storage/job_store.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/infra/storage/job_store.py)
+
+内存中的 Agent 运行记录存储，最多保留 50 条，线程安全。
+
+#### 8.5 QMT 网关客户端 (infra/qmt_gateway_client.py)
+
+**文件位置**: [backend/infra/qmt_gateway_client.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/infra/qmt_gateway_client.py)
+
+基于 urllib 的 QMT 网关 HTTP 客户端：
+
+| 环境变量 | 说明 |
+|---------|------|
+| `AI_QUANT_QMT_GATEWAY_BASE` | 网关基础 URL |
+| `AI_QUANT_QMT_GATEWAY_TOKEN` | 网关认证 Token |
+| `AI_QUANT_QMT_GATEWAY_TIMEOUT` | 超时时间(默认 5s) |
+
+---
+
+### 9. 公共模块 (common/)
+
+| 文件 | 组件 | 说明 |
 |------|------|------|
-| GET | `/health` | 健康检查 |
-| POST | `/connect` | 建立 QMT 连接 |
-| POST | `/disconnect` | 断开 QMT 连接 |
-| GET | `/state` | 查询 QMT 状态 |
-| GET | `/asset` | 查询账户资产 |
-| GET | `/positions` | 查询持仓 |
-| GET | `/orders` | 查询订单 |
-| GET | `/trades` | 查询成交 |
-| GET | `/events` | 查询事件 |
-| POST | `/buy` | 买入下单 |
-| POST | `/sell` | 卖出下单 |
-| POST | `/cancel` | 撤销订单 |
-
-#### 6.2 MiniQMT 交易封装 (qmt_gateway/miniqmt_trader.py)
-
-**文件位置**: `qmt_gateway/miniqmt_trader.py`
-
-封装 XtQuant Python SDK，提供交易功能。
-
-**关键功能**:
-- 连接管理
-- 资产查询
-- 持仓查询
-- 订单管理
-- 成交查询
-- 风险检查
-
-**回调机制**:
-- `on_disconnected` - 连接断开
-- `on_account_status` - 账户状态变化
-- `on_stock_order` - 订单回报
-- `on_stock_trade` - 成交回报
-- `on_order_error` - 订单错误
-- `on_cancel_error` - 撤单错误
+| [response.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/common/response.py) | `ok()` / `fail()` | 统一 API 响应格式: `{success, code, message, data}` |
+| [pagination.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/common/pagination.py) | `normalize_page()` | 分页参数标准化(默认 page=1, pageSize=50, max=200) |
+| [errors.py](file:///Users/apple/Desktop/ai_huahua/ai_quant/backend/common/errors.py) | `ApiError` | 异常数据类(code/message/http_status/details) |
 
 ---
 
-### 7. 前端模块 (web)
+### 10. LLM 技能模块 (llm/skills/)
 
-#### 7.1 应用入口 (App.tsx)
+每个技能目录包含 `SKILL.md` 描述文件和 `scripts/` 下的可执行 Python 脚本：
 
-**文件位置**: `web/src/App.tsx`
+| 技能名称 | 脚本 | 功能 |
+|---------|------|------|
+| write-report | `report_generator.py`, `five_step_analysis.py`, `prompts.py` | 研报撰写(五步法) |
+| web-search-qwen | `search_market.py` | 联网搜索市场信息 |
+| web-search-universal | `search.py` | 通用网页搜索 |
+| read-pdf | `build_index.py`, `query_report.py`, `parse_pdf_basic.py`, `parse_pdf_ocr.py`, `fetch_financial_data.py` | PDF 解析与 RAG 查询 |
+| stock-price | `get_kline.py` | 股票K线数据获取 |
+| financial-analysis | `ratio_analysis.py`, `peer_compare.py` | 财务比率与同行对比分析 |
+| compare-reports | `cross_period.py`, `cross_company.py` | 跨期/跨公司报告对比 |
+| sentiment-analysis | `sentiment_scorer.py`, `news_fetcher.py`, `event_detector.py`, `polymarket_monitor.py` | 舆情情绪评分与事件检测 |
+| strategy-backtest | `run_backtest.py` | 策略回测 |
+| strategy-recommend | `recommend.py` | 策略推荐 |
+| trade-order | `place_order.py`, `query_account.py`, `miniqmt_trader.py` | 交易下单与账户查询 |
+| miniqmt-kline | `get_kline.py` | MiniQMT K线获取 |
+| talib | `calc_indicators.py` | TA-Lib 技术指标计算 |
+| backtrader | `run_backtest.py` | Backtrader 回测框架 |
+| bond-credit-review | - | 债券信用评审 |
+| blog-post | - | 博客文章生成 |
+| investment-research | - | 投资研究 |
+| query-writing | - | SQL/查询编写 |
+| schema-exploration | - | 数据库模式探索 |
+| biz-skill-creator | - | 业务技能创建器 |
 
-React Router 路由配置。
+---
 
-**页面路由**:
+### 11. 前端模块 (web)
 
-| 路径 | 组件 | 说明 |
+#### 11.1 技术栈
+
+| 依赖 | 版本 | 用途 |
 |------|------|------|
-| `/` | Home | 首页 |
-| `/jobs` | Jobs | 任务管理 |
-| `/reports` | Reports | 报告中心 |
-| `/sentiment` | Sentiment | 情绪分析 |
-| `/sentiment/runs/:runId` | SentimentRunDetail | 情绪分析运行详情 |
-| `/sentiment/stocks/:code` | SentimentStockDetail | 情绪分析股票详情 |
-| `/data` | Data | 数据中心 |
-| `/watchlist` | Watchlist | 监控列表 |
-| `/stock/:code` | StockDetail | 股票详情 |
-| `/execution` | Execution | 交易执行 |
-| `/risk` | Risk | 风险管理 |
-| `/strategy` | Strategy | 策略管理 |
-| `/morning` | Morning | 晨会简报 |
-| `/chat` | Chat | AI 对话 |
+| react | ^18.3.1 | UI 框架 |
+| react-router-dom | ^7.3.0 | 路由管理 |
+| zustand | ^5.0.3 | 状态管理 |
+| echarts | ^5.6.0 | 金融图表 |
+| echarts-for-react | ^3.0.3 | React ECharts 封装 |
+| tailwind-merge | ^3.0.2 | Tailwind CSS 工具 |
+| lucide-react | ^0.511.0 | 图标库 |
+| react-markdown | ^10.1.0 | Markdown 渲染 |
+| remark-gfm | ^4.0.1 | GFM Markdown 扩展 |
+| @dnd-kit | ^6/10 | 拖拽排序 |
+| clsx | ^2.1.1 | 条件类名 |
+| tailwindcss | ^3.4.17 | CSS 框架 |
+| vite | ^6.3.5 | 构建工具 |
+| vitest | ^2.1.9 | 单元测试 |
+| playwright | ^1.60.0 | E2E 测试 |
 
-#### 7.2 API 客户端 (api/client.ts)
+#### 11.2 应用路由 (App.tsx)
 
-**文件位置**: `web/src/api/client.ts`
+**文件位置**: [web/src/App.tsx](file:///Users/apple/Desktop/ai_huahua/ai_quant/web/src/App.tsx)
 
-HTTP 客户端封装。
-
-**关键函数**:
-
-```typescript
-export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T>
-export async function postJson<T>(url: string, body: unknown): Promise<T>
-export async function fetchText(url: string, init?: RequestInit): Promise<string>
+```
+/ -> /home (重定向)
+/home                       - 首页仪表盘
+/info-access/               - 信息获取(父页面)
+  /data-collection          - 数据采集任务
+  /data-collection/detail   - 任务详情
+  /sentiment                - 舆情监控
+  /macro                    - 宏观数据
+  /financial-hot            - 财经热点
+  /data-delivery            - 数据投送
+/reports                    - 研报中心
+/watchlist                  - 自选股
+/stock/:code                - 个股详情
+/execution/                 - 执行监控(父页面)
+  /tasks                    - 执行任务列表
+  /positions                - 持仓查询
+  /records                  - 成交记录
+/risk/                      - 风险管理(父页面)
+  /approve                  - 风控审批
+  /rules                    - 风控规则
+  /audit                    - 风控审计
+/strategy/                  - 策略分析(父页面)
+  /library                  - 策略库
+  /instances                - 策略实例
+  /backtest                 - 策略回测
+/stock-select/              - 选股(父页面)
+  /fundamental              - 基本面选股
+  /factor                   - 因子选股
+  /ml                       - ML选股
+/opportunity/               - 机会挖掘(父页面)
+  /unusual                  - 异常机会
+  /limitup                  - 涨停机会
+  /sector                   - 板块机会
+/workflow/                  - 工作流(父页面)
+  /team                     - 团队交易工作流
+  /morning                  - 晨会工作流
+  /dragon                   - 多空线工作流
 ```
 
-#### 7.3 类型定义 (api/types.ts)
+#### 11.3 关键组件
 
-**文件位置**: `web/src/api/types.ts`
-
-TypeScript 类型定义。
-
-**核心类型**:
-
-| 类型名 | 说明 |
-|--------|------|
-| `DataSource` | 数据源类型枚举 |
-| `JobDomain` | 任务领域枚举 |
-| `JobStatus` | 任务状态枚举 |
-| `JobRunResult` | 任务运行结果 |
-| `JobSchedule` | 任务调度配置 |
-| `DatasetName` | 数据集名称枚举 |
-| `SummaryResponse` | 数据汇总响应 |
-| `PagedRows<T>` | 分页数据结构 |
-| `WatchlistItem` | 监控列表项 |
-| `StockSnapshot` | 股票快照数据 |
-| `StockTechnicalRow` | 技术指标数据 |
-
-**技术指标字段**:
-- `ma5`, `ma10`, `ma20`, `ma60` - 移动平均线
-- `rsi6`, `rsi12`, `rsi24` - RSI 相对强弱指数
-- `macd_dif`, `macd_dea`, `macd_bar` - MACD 指标
-- `boll_upper`, `boll_mid`, `boll_lower` - 布林带
-- `kdj_k`, `kdj_d`, `kdj_j` - KDJ 随机指标
-
-#### 7.4 应用外壳 (components/AppShell.tsx)
-
-**文件位置**: `web/src/components/AppShell.tsx`
-
-布局组件，包含侧边栏和顶部栏。
-
-**功能特性**:
-- 可折叠侧边栏
-- 顶部搜索框
-- 市场开盘状态检测（A 股开盘时间判断）
-- 导航菜单
-
-**导航菜单项**:
-- 首页总览
-- 数据中心
-- 自选股
-- 任务管理
-- 研报中心
-- 舆情监控
-- 策略分析
-- 风控中心
-- 执行监控
-- 晨会简报
-- AI 对话
-
-#### 7.5 页面组件
+**通用组件**:
 
 | 组件 | 文件 | 说明 |
 |------|------|------|
-| Chat | `pages/Chat.tsx` | AI 对话页面，支持消息发送/接收、内容复制 |
-| Reports | `pages/Reports.tsx` | 研报生成页面，任务创建、状态轮询、Markdown 查看 |
-| Execution | `pages/Execution.tsx` | 执行监控页面，TWAP/VWAP/RL 策略任务管理 |
-| Morning | `pages/Morning.tsx` | 晨会简报页面，一键生成市场摘要 |
+| AppShell | [AppShell.tsx](file:///Users/apple/Desktop/ai_huahua/ai_quant/web/src/components/AppShell.tsx) | 布局框架(可折叠侧边栏+顶栏+市场状态) |
+| AssistantDrawer | [AssistantDrawer.tsx](file:///Users/apple/Desktop/ai_huahua/ai_quant/web/src/components/AssistantDrawer.tsx) | AI 助手侧边滑出面板 |
+| ErrorBoundary | [ErrorBoundary.tsx](file:///Users/apple/Desktop/ai_huahua/ai_quant/web/src/components/ErrorBoundary.tsx) | React 错误边界 |
+| StockPicker | [StockPicker.tsx](file:///Users/apple/Desktop/ai_huahua/ai_quant/web/src/components/StockPicker.tsx) | 股票搜索选择器 |
+| Toast | [Toast.tsx](file:///Users/apple/Desktop/ai_huahua/ai_quant/web/src/components/Toast.tsx) | 提示通知组件 |
+
+**API 层**:
+- [client.ts](file:///Users/apple/Desktop/ai_huahua/ai_quant/web/src/api/client.ts): `fetchJson<T>()`, `postJson<T>()`, `fetchText()` 封装
+- [types.ts](file:///Users/apple/Desktop/ai_huahua/ai_quant/web/src/api/types.ts): 完整类型定义(DataSource/JobDomain/StockTechnicalRow 等)
 
 ---
 
-### 8. Streamlit 对话机器人 (streamlit_chat)
+### 12. 数据库迁移 (migrations/)
 
-#### 8.1 主应用 (streamlit_chat/app.py)
+目录下的 SQL 文件按版本编号：
 
-**文件位置**: `streamlit_chat/app.py`
+| 版本 | 文件 | 主要变更 |
+|------|------|---------|
+| 002 | `002_expanded_schema.sql` | 扩展 Schema |
+| 003 | `003_add_created_at_field.sql` | 新增 created_at 字段 |
+| 004 | `004_add_pe_pb_market_cap.sql` | 新增 PE/PB/市值字段 |
+| 005 | `005_add_sim_account.sql` | 模拟账户表 |
+| 005 | `005_add_sw_industry.sql` | 申万行业分类 |
+| 005 | `005_add_sw_industry_simple.sql` | 申万行业简易版 |
+| 005 | `005_create_performance_tables.sql` | 绩效表 |
+| 006 | `006_add_sim_indexes.sql` | 模拟账户索引 |
+| 006 | `006_create_signal_tables.sql` | 信号表 |
+| 006 | `006_risk_management.sql` | 风控管理(MySQL) |
+| 006 | `006_risk_management_sqlite.sql` | 风控管理(SQLite) |
+| 007 | `007_risk_management_extended.sql` | 风控扩展 |
+| 007 | `007_sentiment_monitor.sql` | 舆情监控表 |
+| 008 | `008_add_performance_fields.sql` | 绩效字段扩展 |
+| 008 | `008_create_signal_tables.sqlite.sql` | 信号表(SQLite) |
+| 009 | `009_mainforce_identification*.sql` | 主力资金识别 |
+| - | `add_watchlist_groups.sql` | 自选股分组 |
 
-Streamlit 对话界面。
+---
 
-**功能特性**:
-- 会话历史管理
-- 统一 Agent 调用
-- 路由结果显示
+### 13. 运行时产物 (.ai_quant/)
 
-#### 8.2 API 客户端 (streamlit_chat/lib/api_client.py)
-
-**文件位置**: `streamlit_chat/lib/api_client.py`
-
-与后端 API 交互的接口。
-
-```python
-def run_agent(user_input: str) -> dict:
-    """调用后端 Agent 接口"""
-```
-
-#### 8.3 主题配置 (streamlit_chat/lib/theme.py)
-
-**文件位置**: `streamlit_chat/lib/theme.py`
-
-主题样式配置。
+| 路径 | 生成者 | 内容 | 生命周期 |
+|------|--------|------|----------|
+| `.ai_quant/logs/*.log` | 日志系统 | 各模块日志文件 | 轮转(10MB x 5) |
+| `.ai_quant/report_outputs/*.md` | 研报 worker | 生成的 Markdown 研报 | 长期保存 |
+| `.ai_quant/report_tasks/*.json` | 报告任务存储 | 任务记录 JSON | 长期保存 |
+| `.ai_quant/job_runs/*.json` | Jobs API | Job 运行记录 | 长期保存 |
+| `.ai_quant/reports_worker.log` | 研报 worker | 研报执行日志 | 长期累积 |
+| `.ai_quant/reports_rag/pdfs/` | RAG 系统 | 原始 PDF 文档 | 手动管理 |
+| `.ai_quant/reports_rag/documents.db` | RAG 系统 | 文档与分块元数据(SQLite) | 重建时覆盖 |
+| `.ai_quant/reports_rag/vector_store/` | RAG 系统 | FAISS 向量索引 | 重建时覆盖 |
 
 ---
 
 ## 运行方式
 
-### 方式一：一键启动 (推荐)
+### 前置要求
 
-```powershell
-# PowerShell
-.\scripts\start_all.ps1
+- Python 3.10+
+- Node.js 18+
+- MySQL (腾讯云 huahua_trade 数据库)
+- `.env` 文件位于项目根目录
 
-# CMD
-.\scripts\start_all.cmd
-```
-
-### 方式二：分别启动
+### 方式一：分别启动
 
 #### 1. 启动后端 API
 
 ```bash
-cd backend
+cd /Users/apple/Desktop/ai_huahua/ai_quant/backend
+source /Users/apple/Desktop/ai_huahua/ai_quant/venv/bin/activate
 pip install -r requirements.txt
 python run_server.py
 ```
 
-访问地址: `http://localhost:8000`
+访问地址: `http://localhost:8000` | API 文档: `http://localhost:8000/docs`
 
 #### 2. 启动 React 前端
 
 ```bash
-cd web
+cd /Users/apple/Desktop/ai_huahua/ai_quant/web
 npm install
 npm run dev
 ```
 
 访问地址: `http://localhost:5173`
 
-#### 3. 启动 QMT 网关
+### 验证方式
 
 ```bash
-cd qmt_gateway
-pip install -r requirements.txt
-python run_server.py
+# 健康检查
+curl http://localhost:8000/api/v1/health
 ```
-
-访问地址: `http://localhost:8001`
-
-#### 4. 启动 Streamlit 对话机器人
-
-```bash
-cd streamlit_chat
-pip install -r requirements.txt
-streamlit run app.py --server.port 8501
-```
-
-访问地址: `http://localhost:8501`
-
----
-
-## 依赖关系
-
-### 前端依赖 (web/package.json)
-
-**运行时依赖**:
-
-| 包名 | 版本 | 用途 |
-|------|------|------|
-| react | ^18.3.1 | UI 框架 |
-| react-dom | ^18.3.1 | React DOM |
-| react-router-dom | ^7.3.0 | 路由管理 |
-| zustand | ^5.0.3 | 状态管理 |
-| echarts | ^5.6.0 | 图表库 |
-| echarts-for-react | ^3.0.3 | React ECharts 封装 |
-| tailwind-merge | ^3.0.2 | Tailwind CSS 工具 |
-| lucide-react | ^0.511.0 | 图标库 |
-| @dnd-kit/* | ^6/10 | 拖拽排序 |
-| clsx | ^2.1.1 | 条件类名 |
-
-**开发依赖**:
-
-| 包名 | 用途 |
-|------|------|
-| vite | 构建工具 |
-| typescript | 类型系统 |
-| tailwindcss | CSS 框架 |
-| @vitejs/plugin-react | React 插件 |
-| vitest | 单元测试 |
-| @playwright/test | E2E 测试 |
-| eslint | 代码检查 |
-
-### 后端依赖
-
-主要依赖（以 `backend/requirements.txt` 为准）：
-
-| 包名 | 版本策略 | 用途 |
-|------|----------|------|
-| fastapi | 固定 `==0.115.12` | 后端 Web 框架 |
-| uvicorn | 固定 `==0.34.2` | ASGI 服务器 |
-| pydantic | 固定 `==2.11.4` | 请求/响应模型与校验 |
-| python-dotenv | 固定 `==1.1.0` | `.env` 加载 |
-| langgraph | 固定 `==0.4.5` | Agent 工作流编排 |
-| pymysql | 固定 `==1.1.0` | MySQL 访问 |
-| langchain-community | 未固定 | 模型/工具适配（研报脚本依赖） |
-| faiss-cpu | 未固定 | 向量索引（RAG） |
-| dashscope | 未固定 | 通义模型/Embedding（RAG/研报） |
-| PyPDF2 | 未固定 | PDF 解析（RAG） |
-| langchain-text-splitters | 未固定 | 文档分块（RAG） |
-| numpy | 未固定 | 向量计算（RAG/FAISS） |
-
----
-
-## 环境变量
-
-### 后端环境变量
-
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `AI_QUANT_CORS_ORIGINS` | `http://localhost:5173` | CORS 允许的源 |
-| `AI_QUANT_API_KEY` | - | API 访问密钥 |
-| `AI_QUANT_RATE_LIMIT_WINDOW_SECONDS` | `10` | 速率限制时间窗口 |
-| `AI_QUANT_RATE_LIMIT_MAX` | `200` | 速率限制最大请求数 |
-| `AI_QUANT_REPORT_USE_LLM` | `0` | 是否启用 LLM 研报 |
-| `AI_QUANT_REPORT_TIMEOUT_SECONDS` | `300` | 研报任务超时时间 |
-| `AI_QUANT_REPORT_LLM_TIMEOUT_SECONDS` | `90` | LLM 调用超时时间 |
-| `AI_QUANT_CHARLES_JOB_STORE_DIR` | - | Charles 任务存储目录 |
-| `DASHSCOPE_API_KEY` | - | 通义模型 API 密钥 |
-
-### 数据库配置
-
-**支持多种命名格式**:
-
-| 格式前缀 | 示例变量 |
-|---------|---------|
-| `WUCAI_SQL_*` | `WUCAI_SQL_HOST`, `WUCAI_SQL_PORT` |
-| `DB_*` | `DB_HOST`, `DB_PORT` |
-| `MYSQL_*` | `MYSQL_HOST`, `MYSQL_PORT` |
-
----
-
-## API 接口一览
-
-### 健康检查
-
-```
-GET /api/health
-GET /api
-```
-
-### 数据接口
-
-```
-GET /api/data/summary
-GET /api/data/{dataset}?page=1&pageSize=50&stock_code=xxx&trade_date=xxx,xxx
-POST /api/export
-```
-
-### 分析接口
-
-```
-GET /api/analysis/status
-GET /api/analysis/stocks/sample
-GET /api/analysis/signals?stock_code=xxx&start=xxx&end=xxx
-```
-
-### 执行接口
-
-```
-GET /api/execution/status
-POST /api/execution/tasks
-GET /api/execution/tasks
-GET /api/execution/tasks/{task_id}
-```
-
-### 风控接口
-
-```
-GET /api/risk/status
-POST /api/risk/approve
-GET /api/risk/audit?last_n=200
-```
-
-### 控制台接口
-
-```
-GET /api/console/status
-GET /api/console/overview
-POST /api/console/morning/trigger
-```
-
-### Agent 接口
-
-```
-GET /api/agent/status
-GET /api/agent/tools
-POST /api/agent/tools/{tool_name}/run
-POST /api/agent/run
-GET /api/agent/runs
-POST /api/agent/stream
-```
-
-### 研报接口
-
-```
-GET /api/reports/tasks
-POST /api/reports/tasks
-DELETE /api/reports/tasks/{task_id}
-POST /api/reports/tasks/{task_id}/retry
-GET /api/reports/tasks/{task_id}/view
-GET /api/reports/rag/status
-POST /api/reports/rag/ingest
-GET /api/reports/rag/query
-```
-
-### QMT 交易接口
-
-```
-POST /api/trading/connect
-POST /api/trading/disconnect
-GET /api/trading/state
-GET /api/trading/asset
-GET /api/trading/positions
-GET /api/trading/orders
-GET /api/trading/trades
-POST /api/trading/buy
-POST /api/trading/sell
-POST /api/trading/cancel
-```
-
----
-
-## 数据流向
-
-```
-用户请求
-    ↓
-FastAPI Router
-    ↓
-┌──────────────────────────────────────┐
-│         AI Agent 模块                │
-│  ┌────────────┐    ┌────────────┐   │
-│  │ Router     │ →  │ Quant      │   │
-│  │ Agent      │    │ Team Agent │   │
-│  └────────────┘    └────────────┘   │
-│  ┌────────────┐                      │
-│  │ Morning    │                      │
-│  │ Brief Graph│                      │
-│  └────────────┘                      │
-└──────────────────────────────────────┘
-    ↓
-服务集成层
-    ↓
-┌──────────────────────────────────────┐
-│     外部 Agent 服务                   │
-│  ┌──────┐ ┌──────┐ ┌──────┐ ┌─────┐│
-│  │Charles│ │Zoe  │ │Ethan │ │Kris ││
-│  └──────┘ └──────┘ └──────┘ └─────┘│
-│  ┌──────┐                           │
-│  │ CEO  │                           │
-│  └──────┘                           │
-└──────────────────────────────────────┘
-```
-
----
-
-## 安全建议
-
-1. **数据库凭证**: 确保 MySQL 等数据库密码通过环境变量注入，不要硬编码
-2. **CORS 配置**: 生产环境需严格限制 CORS 源，禁止使用通配符
-3. **API 鉴权**: 当前版本支持 API Key 认证，建议生产环境启用
-4. **日志审计**: 交易相关操作需记录完整审计日志
-5. **QMT 连接**: 生产环境需配置 QMT 网关超时和熔断机制
 
 ---
 
@@ -1087,109 +1047,87 @@ FastAPI Router
 
 ### 添加新的 API 路由
 
-1. 在 `api/` 目录创建新的路由文件，如 `new_feature.py`
-2. 定义 `router = APIRouter(...)`
-3. 在 `app.py` 中导入并注册路由
-4. 添加对应的前端 API 客户端函数
+1. 在 `backend/api/` 创建新的路由文件，使用 `APIRouter(prefix="/api/v1/xxx")`
+2. 在 `backend/app.py` 中导入并注册 `api.include_router(xxx_router)`
+3. 在 `web/src/api/client.ts` 中添加对应的 API 调用函数
 
-### 添加新的 Agent
+### 添加新的工作流节点
 
-1. 在 `ai/agents/` 创建新的 Agent 文件
-2. 实现 Agent 核心逻辑
-3. 在 `router_agent.py` 中添加路由规则
-4. 在前端添加对应的 UI 组件
+1. 在 `backend/workflow/nodes/` 创建节点函数，接收 `TradingState` 返回 `dict`
+2. 在 `backend/workflow/trading_state.py` 中定义 TypedDict
+3. 在 `backend/workflow/trading_team_graph.py` 中添加节点和边
 
-### 添加新的服务集成
+### 添加新的 LLM 技能
 
-1. 在 `services/` 创建新的服务目录
-2. 实现 `integration.py` 封装外部服务调用
-3. 在对应的 API 路由中集成服务
-4. 添加前端交互界面
+1. 在 `backend/llm/skills/` 创建技能目录，编写 `SKILL.md` 描述
+2. 在 `scripts/` 下创建可执行 Python 脚本
+3. 在 `report_agent.py` 或 `deepagent_engine.py` 中注册工具映射
 
-### 添加新的页面
+### 运行测试
 
-1. 在 `web/src/pages/` 创建页面组件
-2. 在 `App.tsx` 中添加路由配置
-3. 在 `AppShell.tsx` 中添加导航入口
+```bash
+cd /Users/apple/Desktop/ai_huahua/ai_quant/backend
+source /Users/apple/Desktop/ai_huahua/ai_quant/venv/bin/activate
+pytest
+```
 
----
-
-## 故障排查
-
-### 后端启动失败
-
-1. 检查端口是否被占用: `lsof -i :8000`
-2. 检查 Python 依赖是否完整: `pip install -r requirements.txt`
-3. 检查数据库连接配置
-4. 检查 `.env` 文件是否存在
-
-### 前端启动失败
-
-1. 检查 Node.js 版本，建议 >= 18
-2. 删除 `node_modules` 重新安装: `rm -rf node_modules && npm install`
-3. 检查 TypeScript 编译错误: `npm run check`
-
-### API 调用失败
-
-1. 检查后端服务是否运行
-2. 检查 CORS 配置是否正确
-3. 查看浏览器控制台网络请求详情
-4. 检查 API Key 是否正确配置
-
-### 研报生成失败
-
-1. 检查 `DASHSCOPE_API_KEY` 是否配置
-2. 检查 `AI_QUANT_REPORT_USE_LLM` 是否设置为 1
-3. 查看 `.ai_quant/reports_worker.log` 日志文件
-4. 检查 RAG 索引是否就绪
-
-### QMT 连接失败
-
-1. 检查 QMT 网关是否启动
-2. 检查 QMT 终端是否运行
-3. 查看连接超时设置是否合理
+前端测试:
+```bash
+cd /Users/apple/Desktop/ai_huahua/ai_quant/web
+npm run test:run     # 单元测试
+npm run e2e          # E2E 测试
+```
 
 ---
 
-## 运行时产物
+## 依赖关系
 
-### `.ai_quant` 目录
+### 后端核心依赖
 
-| 路径 | 生成者 | 内容 | 生命周期 |
-|------|--------|------|----------|
-| `.ai_quant/reports_worker.log` | 后端研报 worker | 研报任务执行日志 | 长期累积 |
-| `.ai_quant/report_outputs/*.md` | 后端研报 worker | 生成的 Markdown 研报 | 可长期保存 |
-| `.ai_quant/report_tasks/*.json` | 研报任务存储 | 任务记录 JSON | 可长期保存 |
-| `.ai_quant/job_runs/*.json` | Jobs API | Job 运行记录 | 可长期保存 |
-
-### RAG 索引
-
-| 路径 | 内容 | 说明 |
+| 包名 | 版本 | 用途 |
 |------|------|------|
-| `.ai_quant/reports_rag/pdfs/` | 原始 PDF 文档 | 财报、研报等 |
-| `.ai_quant/reports_rag/documents.db` | SQLite 元数据库 | documents 和 chunks 表 |
-| `.ai_quant/reports_rag/vector_store/` | FAISS 索引 | `index.faiss` 和 `index.pkl` |
+| fastapi | ==0.115.12 | Web 框架 |
+| uvicorn | ==0.34.2 | ASGI 服务器 |
+| pydantic | ==2.11.4 | 数据校验 |
+| python-dotenv | ==1.1.0 | 环境变量加载 |
+| langgraph | ==0.4.5 | Agent 工作流编排 |
+| langchain-community | - | LLM 集成(ChatTongyi) |
+| langchain-text-splitters | - | 文档分块 |
+| langchain_core | - | LangChain 核心 |
+| pymysql | ==1.1.0 | MySQL 驱动 |
+| faiss-cpu | - | FAISS 向量索引 |
+| dashscope | - | 通义千问 API |
+| PyPDF2 | - | PDF 解析 |
+| numpy | - | 数值计算 |
+| pandas | - | 数据分析 |
+
+### 前端核心依赖
+
+| 包名 | 版本 | 用途 |
+|------|------|------|
+| react | ^18.3.1 | UI 框架 |
+| react-router-dom | ^7.3.0 | 路由 |
+| zustand | ^5.0.3 | 状态管理 |
+| echarts | ^5.6.0 | 图表 |
+| echarts-for-react | ^3.0.3 | 图表封装 |
+| react-markdown | ^10.1.0 | Markdown |
+| remark-gfm | ^4.0.1 | GFM 扩展 |
+| @dnd-kit | ^6/10 | 拖拽 |
+| tailwind-merge | ^3.0.2 | CSS 工具 |
+| lucide-react | ^0.511.0 | 图标 |
+| clsx | ^2.1.1 | 条件类名 |
 
 ---
 
 ## 版本信息
 
-- **当前版本**: 0.1.0
-- **更新日期**: 2026-05-10
-- **主要框架**: FastAPI, React, LangGraph, FAISS
-- **Python 版本**: 3.10+
-- **Node.js 版本**: 18+
+| 项目 | 说明 |
+|------|------|
+| 当前版本 | 0.1.0 |
+| 更新日期 | 2026-05-16 |
+| Python 版本 | 3.10+ |
+| Node.js 版本 | 18+ |
 
 ---
 
-## 相关文档
-
-- [PRD 需求规格说明书](./docs/PRD.md)
-- [用户使用指南](./docs/USER_GUIDE.md)
-- [技术交底文档](./docs/tech_handover/ai_quant_runtime_handover.md)
-- [代码文档索引](./CODE_DOCS_INDEX.html)
-- [架构图](../docs/diagrams/arch.drawio)
-
----
-
-*文档版本：V2.0 | 修订时间：2026-05-10 | 修订人：AI Quant Team*
+*文档版本: V2.1 | 修订时间: 2026-05-16 | 本文档基于实际代码分析生成*

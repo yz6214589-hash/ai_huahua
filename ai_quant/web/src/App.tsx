@@ -25,6 +25,7 @@ import Risk from '@/pages/Risk'
 import RiskApprove from '@/pages/RiskApprove'
 import RiskRules from '@/pages/RiskRules'
 import RiskAudit from '@/pages/RiskAudit'
+import RiskDashboard from '@/pages/RiskDashboard'
 import StrategyAnalysis from '@/pages/StrategyAnalysis'
 import StrategyLibrary from '@/pages/StrategyLibrary'
 import StrategyInstances from '@/pages/StrategyInstances'
@@ -41,6 +42,10 @@ import WorkFlow from '@/pages/WorkFlow'
 import WorkFlowTeam from '@/pages/WorkFlowTeam'
 import WorkFlowMorning from '@/pages/WorkFlowMorning'
 import WorkFlowDragon from '@/pages/WorkFlowDragon'
+import SignalCenter from '@/pages/SignalCenter'
+import PerformanceReport from '@/pages/PerformanceReport'
+import MainForceIdentification from '@/pages/MainForceIdentification'
+import SimAccount from '@/pages/SimAccount'
 import NotFound from '@/pages/NotFound'
 
 export default function App() {
@@ -68,9 +73,12 @@ export default function App() {
             <Route path="tasks" element={<ExecutionTasks />} />
             <Route path="positions" element={<ExecutionPositions />} />
             <Route path="records" element={<ExecutionRecords />} />
+            <Route path="sim-account" element={<SimAccount />} />
           </Route>
           <Route path="/risk" element={<Risk />}>
-            <Route index element={<Navigate to="approve" replace />} />
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<RiskDashboard />} />
+            <Route path="mainforce" element={<MainForceIdentification />} />
             <Route path="approve" element={<RiskApprove />} />
             <Route path="rules" element={<RiskRules />} />
             <Route path="audit" element={<RiskAudit />} />
@@ -88,7 +96,8 @@ export default function App() {
             <Route path="ml" element={<StockSelectML />} />
           </Route>
           <Route path="/opportunity" element={<Opportunity />}>
-            <Route index element={<Navigate to="unusual" replace />} />
+            <Route index element={<Navigate to="signals" replace />} />
+            <Route path="signals" element={<SignalCenter />} />
             <Route path="unusual" element={<OpportunityUnusual />} />
             <Route path="limitup" element={<OpportunityLimitUp />} />
             <Route path="sector" element={<OpportunitySector />} />
@@ -99,6 +108,7 @@ export default function App() {
             <Route path="morning" element={<WorkFlowMorning />} />
             <Route path="dragon" element={<WorkFlowDragon />} />
           </Route>
+          <Route path="/performance" element={<PerformanceReport />} />
           <Route path="/jobs" element={<Navigate to="/info-access/data-collection" replace />} />
           <Route path="/sentiment" element={<Navigate to="/info-access/sentiment" replace />} />
           <Route path="/morning" element={<Navigate to="/workflow/morning" replace />} />

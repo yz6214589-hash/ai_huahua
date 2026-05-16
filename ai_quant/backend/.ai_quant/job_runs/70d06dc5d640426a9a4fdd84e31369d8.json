@@ -1,1 +1,0 @@
-{"runId": "70d06dc5d640426a9a4fdd84e31369d8", "domain": "stock_daily", "startedAt": "2026-05-12T23:25:26", "finishedAt": "2026-05-12T23:26:29", "status": "partial", "dataSourceFinal": "unknown", "fallbackChain": [], "rowsWritten": 0, "itemsProcessed": 1, "failedItems": ["600519.SH"], "message": "失败 1 只股票", "userMessage": "失败 1 只股票"}

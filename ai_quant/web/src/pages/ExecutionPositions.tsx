@@ -18,12 +18,14 @@ interface Position {
 }
 
 const MOCK: Position[] = [
-  { code: '600519.SH', name: '贵州茅台', qty: 200, avgCost: 1680.5, currentPrice: 1852.3, marketValue: 370460, profitLoss: 34360, profitPct: 10.24, weight: 25.1, sector: '白酒', account: '主账户' },
-  { code: '300750.SZ', name: '宁德时代', qty: 500, avgCost: 268.4, currentPrice: 295.8, marketValue: 147900, profitLoss: 13700, profitPct: 10.22, weight: 10.0, sector: '新能源', account: '主账户' },
-  { code: '000858.SZ', name: '五粮液', qty: 300, avgCost: 142.8, currentPrice: 158.2, marketValue: 47460, profitLoss: 4620, profitPct: 10.79, weight: 3.2, sector: '白酒', account: '主账户' },
-  { code: '688256.SH', name: '寒武纪', qty: 800, avgCost: 82.5, currentPrice: 128.5, marketValue: 102800, profitLoss: 36800, profitPct: 55.76, weight: 7.0, sector: 'AI芯片', account: '主账户' },
-  { code: '002415.SZ', name: '海康威视', qty: 1200, avgCost: 38.6, currentPrice: 42.5, marketValue: 51000, profitLoss: 4680, profitPct: 10.1, weight: 3.5, sector: 'AI安防', account: '主账户' },
-  { code: '600036.SH', name: '招商银行', qty: 2000, avgCost: 35.2, currentPrice: 38.2, marketValue: 76400, profitLoss: 6000, profitPct: 8.52, weight: 5.2, sector: '银行', account: '主账户' },
+  { code: '600519.SH', name: '贵州茅台', qty: 200, avgCost: 1680.5, currentPrice: 1852.3, marketValue: 370460, profitLoss: 34360, profitPct: 10.24, weight: 25.1, sector: '白酒', account: '实盘' },
+  { code: '300750.SZ', name: '宁德时代', qty: 500, avgCost: 268.4, currentPrice: 295.8, marketValue: 147900, profitLoss: 13700, profitPct: 10.22, weight: 10.0, sector: '新能源', account: '实盘' },
+  { code: '000858.SZ', name: '五粮液', qty: 300, avgCost: 142.8, currentPrice: 158.2, marketValue: 47460, profitLoss: 4620, profitPct: 10.79, weight: 3.2, sector: '白酒', account: '实盘' },
+  { code: '688256.SH', name: '寒武纪', qty: 800, avgCost: 82.5, currentPrice: 128.5, marketValue: 102800, profitLoss: 36800, profitPct: 55.76, weight: 7.0, sector: 'AI芯片', account: '实盘' },
+  { code: '600519.SH', name: '贵州茅台', qty: 100, avgCost: 1700.0, currentPrice: 1852.3, marketValue: 185230, profitLoss: 15230, profitPct: 8.96, weight: 12.5, sector: '白酒', account: '模拟盘' },
+  { code: '002594.SZ', name: '比亚迪', qty: 500, avgCost: 198.0, currentPrice: 202.0, marketValue: 101000, profitLoss: 2000, profitPct: 2.02, weight: 6.8, sector: '新能源', account: '模拟盘' },
+  { code: '002415.SZ', name: '海康威视', qty: 1200, avgCost: 38.6, currentPrice: 42.5, marketValue: 51000, profitLoss: 4680, profitPct: 10.1, weight: 3.5, sector: 'AI安防', account: '实盘' },
+  { code: '600036.SH', name: '招商银行', qty: 2000, avgCost: 35.2, currentPrice: 38.2, marketValue: 76400, profitLoss: 6000, profitPct: 8.52, weight: 5.2, sector: '银行', account: '实盘' },
 ]
 
 function PlCell({ v, pct }: { v: number; pct: number }) {
@@ -75,7 +77,7 @@ export default function ExecutionPositions() {
       </div>
 
       <Card>
-        <CardHeader title="持仓明细" />
+        <CardHeader><h3 className="text-lg font-semibold">持仓明细</h3></CardHeader>
         <CardBody className="p-0">
           <div className="overflow-auto">
             <table className="w-full text-left text-sm">
@@ -98,7 +100,13 @@ export default function ExecutionPositions() {
                       <div className="text-sm font-medium text-zinc-900">{p.code}</div>
                       <div className="text-xs text-zinc-500">{p.name}</div>
                     </td>
-                    <td className="px-4 py-2"><Badge tone="zinc">{p.account}</Badge></td>
+                    <td className="px-4 py-2">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        p.account === '实盘' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                      }`}>
+                        {p.account}
+                      </span>
+                    </td>
                     <td className="px-4 py-2 text-right text-zinc-700">{p.qty.toLocaleString()}</td>
                     <td className="px-4 py-2 text-right font-medium text-zinc-900">{p.marketValue.toLocaleString()}</td>
                     <td className="px-4 py-2 text-right text-zinc-700">{p.avgCost.toFixed(2)}</td>

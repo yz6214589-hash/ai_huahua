@@ -12,19 +12,30 @@ export interface ToastMessage {
 
 let _setToasts: React.Dispatch<React.SetStateAction<ToastMessage[]>> | null = null
 let _nextId = 0
+let _timers: Map<number, NodeJS.Timeout> = new Map()
 
 export function toast(type: ToastType, message: string) {
   if (!_setToasts) return
   const id = ++_nextId
   _setToasts((prev) => [...prev, { id, type, message }])
-  setTimeout(() => {
+  const timerId = setTimeout(() => {
     _setToasts?.((prev) => prev.filter((m) => m.id !== id))
+    _timers.delete(id)
   }, 3000)
+  _timers.set(id, timerId)
 }
 
 export function ToastContainer() {
   const [msgs, setMsgs] = useState<ToastMessage[]>([])
-  useEffect(() => { _setToasts = setMsgs }, [])
+  useEffect(() => {
+    _setToasts = setMsgs
+    return () => {
+      // 清理所有未执行的定时器
+      _timers.forEach((timerId) => clearTimeout(timerId))
+      _timers.clear()
+      _setToasts = null
+    }
+  }, [])
   return (
     <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2">
       {msgs.map((m) => (

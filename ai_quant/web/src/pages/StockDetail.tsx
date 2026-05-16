@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import type { EChartsOption } from 'echarts'
 import ReactECharts from 'echarts-for-react'
 import { ArrowLeft, ExternalLink, RefreshCcw } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 function fmtNum(v: number | null | undefined, digits: number) {
@@ -109,7 +109,7 @@ export default function StockDetail() {
     return q.toString()
   }, [maPeriod, macdShort, macdLong, macdSignal, rsiPeriod, atrPeriod])
 
-  const loadSnapshot = async () => {
+  const loadSnapshot = useCallback(async () => {
     setLoadingSnap(true)
     try {
       const r = await fetchJson<StockSnapshot>(`/api/stock/${encodeURIComponent(code)}/snapshot`)
@@ -117,9 +117,9 @@ export default function StockDetail() {
     } finally {
       setLoadingSnap(false)
     }
-  }
+  }, [code])
 
-  const loadFund = async () => {
+  const loadFund = useCallback(async () => {
     setLoadingFund(true)
     try {
       const r = await fetchJson<StockFundamentals>(`/api/stock/${encodeURIComponent(code)}/fundamentals`)
@@ -127,9 +127,9 @@ export default function StockDetail() {
     } finally {
       setLoadingFund(false)
     }
-  }
+  }, [code])
 
-  const loadTech = async () => {
+  const loadTech = useCallback(async () => {
     setLoadingTech(true)
     try {
       const latest = await fetchJson<StockTechnicalLatest>(`/api/stock/${encodeURIComponent(code)}/technical/latest?${techQuery}`)
@@ -141,9 +141,9 @@ export default function StockDetail() {
     } finally {
       setLoadingTech(false)
     }
-  }
+  }, [code, techQuery, start, end])
 
-  const loadFeed = async () => {
+  const loadFeed = useCallback(async () => {
     setLoadingFeed(true)
     try {
       const r = await fetchJson<StockFeedResponse>(
@@ -153,16 +153,16 @@ export default function StockDetail() {
     } finally {
       setLoadingFeed(false)
     }
-  }
+  }, [code, feedTab, page])
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     setErr(null)
     try {
       await Promise.all([loadSnapshot(), loadFund(), loadTech(), loadFeed()])
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }
+  }, [loadSnapshot, loadFund, loadTech, loadFeed])
 
   useEffect(() => {
     loadAll()

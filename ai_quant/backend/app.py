@@ -5,6 +5,7 @@ AI量化交易系统统一API入口模块
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from datetime import datetime
@@ -40,6 +41,11 @@ from .api.watchlist import router as watchlist_router
 from .api.stock_detail import router as stock_detail_router
 from .api.data_status import router as data_status_router
 from .api.stock_select import router as stock_select_router
+from .api.signals import router as signals_router
+from .api.sim_account import router as sim_account_router
+from .api.mainforce import router as mainforce_router
+from .api.approval import router as approval_router
+from .api.performance import router as performance_router
 from .config import get_settings, get_logging_settings
 from .infra.storage.logging_service import init_logging, get_logger, shutdown_logging
 
@@ -102,6 +108,22 @@ def create_app() -> FastAPI:
         rl_max = 200
     # 存储每个IP的请求记录：(请求窗口起始时间, 请求计数)
     rl_state: dict[str, tuple[float, int]] = {}
+
+    async def cleanup_rate_limit_state():
+        """定期清理过期的速率限制记录"""
+        while True:
+            try:
+                now = time.monotonic()
+                expire_threshold = rl_window_s * 3
+                expired_ips = [
+                    ip for ip, (start, _) in rl_state.items()
+                    if now - start > expire_threshold
+                ]
+                for ip in expired_ips:
+                    del rl_state[ip]
+            except Exception:
+                pass
+            await asyncio.sleep(60)
 
     @api.middleware("http")
     async def api_key_guard(request: Request, call_next):
@@ -257,6 +279,11 @@ def create_app() -> FastAPI:
     api.include_router(logs_router)           # 日志查询路由
     api.include_router(agent_router)          # AI智能体路由
     api.include_router(conversation_router)   # 对话会话路由
+    api.include_router(signals_router)        # 信号中心路由
+    api.include_router(sim_account_router)    # 模拟账户路由
+    api.include_router(mainforce_router)      # 主力识别路由
+    api.include_router(approval_router)       # 审批流程路由
+    api.include_router(performance_router)    # 绩效报告路由
     
     logger.info("业务路由注册完成", extra={
         "routers_count": 13,
@@ -268,7 +295,7 @@ def create_app() -> FastAPI:
     })
 
     @api.on_event("startup")
-    def _jobs_scheduler_startup() -> None:
+    async def _jobs_scheduler_startup() -> None:
         logger.info("应用启动事件开始")
         try:
             from .api import jobs as _jobs_api
@@ -279,6 +306,9 @@ def create_app() -> FastAPI:
             logger.warning("任务调度器启动失败", extra={
                 "error": str(e)
             })
+        
+        asyncio.create_task(cleanup_rate_limit_state())
+        logger.info("速率限制状态清理任务已启动")
         
         logger.info("应用启动完成", extra={
             "status": "running",
