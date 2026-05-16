@@ -1,0 +1,1 @@
+{"runId": "30eea779e9b743748c7b342adf5cb20a", "domain": "stock_daily", "startedAt": "2026-05-15T18:00:00", "finishedAt": "2026-05-15T18:00:01", "status": "success", "dataSourceFinal": "unknown", "fallbackChain": [], "rowsWritten": 0, "itemsProcessed": 0, "failedItems": [], "message": null, "userMessage": null}

@@ -1,7 +1,21 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { Search } from 'lucide-react'
+import { Search, Clock, Database, TrendingUp } from 'lucide-react'
+
+interface DataStatus {
+  stock_daily: {
+    latest_date: string | null
+    stock_count: number
+    data_count: number
+  } | null
+  stock_financial: {
+    latest_date: string | null
+    stock_count: number
+    data_count: number
+  } | null
+  timestamp: string
+}
 
 interface FilterDef {
   key: string
@@ -80,9 +94,86 @@ function ScoreTag({ score }: { score: number }) {
   return <Badge tone={tone}>{score.toFixed(1)}</Badge>
 }
 
+function DataStatusBar({ dataStatus }: { dataStatus: DataStatus | null }) {
+  if (!dataStatus) {
+    return (
+      <div className="mb-4 flex items-center gap-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2">
+        <div className="flex items-center gap-2">
+          <Clock className="h-4 w-4 text-zinc-400" />
+          <span className="text-sm text-zinc-500">正在加载数据状态...</span>
+        </div>
+      </div>
+    )
+  }
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return '暂无数据'
+    try {
+      const date = new Date(dateStr)
+      return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+    } catch {
+      return dateStr
+    }
+  }
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2">
+      <div className="flex items-center gap-2">
+        <TrendingUp className="h-4 w-4 text-blue-500" />
+        <span className="text-sm font-medium text-zinc-700">行情数据:</span>
+        <span className="text-sm text-zinc-600">
+          {formatDate(dataStatus.stock_daily?.latest_date)}
+          <span className="ml-1 text-xs text-zinc-400">
+            ({dataStatus.stock_daily?.stock_count ?? 0} 只股票)
+          </span>
+        </span>
+      </div>
+
+      <div className="h-4 w-px bg-zinc-300" />
+
+      <div className="flex items-center gap-2">
+        <Database className="h-4 w-4 text-green-500" />
+        <span className="text-sm font-medium text-zinc-700">财务数据:</span>
+        <span className="text-sm text-zinc-600">
+          {formatDate(dataStatus.stock_financial?.latest_date)}
+          <span className="ml-1 text-xs text-zinc-400">
+            ({dataStatus.stock_financial?.stock_count ?? 0} 只股票)
+          </span>
+        </span>
+      </div>
+
+      <div className="h-4 w-px bg-zinc-300" />
+
+      <div className="flex items-center gap-2">
+        <Clock className="h-4 w-4 text-zinc-400" />
+        <span className="text-xs text-zinc-400">
+          更新于 {dataStatus.timestamp ? new Date(dataStatus.timestamp).toLocaleTimeString('zh-CN') : ''}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export default function StockSelectFundamental() {
   const [values, setValues] = useState<FilterValues>(initValues)
   const [showFilters, setShowFilters] = useState(true)
+  const [dataStatus, setDataStatus] = useState<DataStatus | null>(null)
+
+  useEffect(() => {
+    fetchDataStatus()
+  }, [])
+
+  const fetchDataStatus = async () => {
+    try {
+      const response = await fetch('/api/v1/data/status')
+      if (response.ok) {
+        const data = await response.json()
+        setDataStatus(data)
+      }
+    } catch (error) {
+      console.error('获取数据状态失败:', error)
+    }
+  }
 
   const toggleFilter = (key: string) => {
     setValues((prev) => {
@@ -114,6 +205,8 @@ export default function StockSelectFundamental() {
 
   return (
     <div className="space-y-4">
+      <DataStatusBar dataStatus={dataStatus} />
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-sm text-zinc-600">筛选条件</span>

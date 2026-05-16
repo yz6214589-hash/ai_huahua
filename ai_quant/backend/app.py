@@ -22,24 +22,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 # 导入各个业务模块的路由处理器
-from api.agent import router as agent_router
-from api.conversation_api import router as conversation_router
-from api.analysis_zoe import router as analysis_router
-from api.console_ceo import router as console_router
-from api.data_charles import router as data_router
-from api.execution_ethan import router as execution_router
-from api.health import router as health_router
-from api.jobs import router as jobs_router
-from api.logs import router as logs_router
-from api.reports import router as reports_router
-from api.risk_kris import router as risk_router
-from api.sentiment import router as sentiment_router
-from api.summary import router as summary_router
-from api.trading_qmt import router as trading_router
-from api.watchlist import router as watchlist_router
-from api.stock_detail import router as stock_detail_router
-from config import get_settings, get_logging_settings
-from infra.storage.logging_service import init_logging, get_logger, shutdown_logging
+from .api.agent import router as agent_router
+from .api.conversation_api import router as conversation_router
+from .api.analysis_zoe import router as analysis_router
+from .api.console_ceo import router as console_router
+from .api.data_charles import router as data_router
+from .api.execution_ethan import router as execution_router
+from .api.health import router as health_router
+from .api.jobs import router as jobs_router
+from .api.logs import router as logs_router
+from .api.reports import router as reports_router
+from .api.risk_kris import router as risk_router
+from .api.sentiment import router as sentiment_router
+from .api.summary import router as summary_router
+from .api.trading_qmt import router as trading_router
+from .api.watchlist import router as watchlist_router
+from .api.stock_detail import router as stock_detail_router
+from .api.data_status import router as data_status_router
+from .api.stock_select import router as stock_select_router
+from .config import get_settings, get_logging_settings
+from .infra.storage.logging_service import init_logging, get_logger, shutdown_logging
 
 
 def create_app() -> FastAPI:
@@ -239,9 +241,11 @@ def create_app() -> FastAPI:
     # 注册所有业务路由
     api.include_router(health_router)       # 健康检查路由
     api.include_router(summary_router)       # 数据汇总路由
+    api.include_router(data_status_router)   # 数据状态路由
     api.include_router(data_router)          # 数据查询路由
     api.include_router(watchlist_router)     # 自选股路由
     api.include_router(stock_detail_router)   # 个股详情路由
+    api.include_router(stock_select_router)   # 选股路由
     api.include_router(jobs_router)           # 任务队列路由
     api.include_router(reports_router)        # 报告生成路由
     api.include_router(analysis_router)       # 技术分析路由
@@ -267,7 +271,7 @@ def create_app() -> FastAPI:
     def _jobs_scheduler_startup() -> None:
         logger.info("应用启动事件开始")
         try:
-            from api import jobs as _jobs_api
+            from .api import jobs as _jobs_api
 
             _jobs_api.start_jobs_scheduler()
             logger.info("任务调度器启动成功")
@@ -285,7 +289,7 @@ def create_app() -> FastAPI:
     def _jobs_scheduler_shutdown() -> None:
         logger.info("应用关闭事件开始")
         try:
-            from api import jobs as _jobs_api
+            from .api import jobs as _jobs_api
 
             _jobs_api.stop_jobs_scheduler()
             logger.info("任务调度器关闭成功")

@@ -1,29 +1,33 @@
-import { cn } from '@/lib/utils'
+import { ReactNode } from 'react'
 
-export function Badge({
-  children,
-  tone = 'zinc',
-}: {
-  children: React.ReactNode
-  tone?: 'zinc' | 'green' | 'amber' | 'red' | 'blue'
-}) {
-  const map: Record<string, string> = {
-    zinc: 'bg-zinc-100 text-zinc-700 border-zinc-200',
-    green: 'bg-green-50 text-green-700 border-green-200',
-    amber: 'bg-amber-50 text-amber-700 border-amber-200',
-    red: 'bg-red-50 text-red-700 border-red-200',
-    blue: 'bg-blue-50 text-blue-700 border-blue-200',
+interface BadgeProps {
+  children: ReactNode
+  variant?: 'default' | 'success' | 'warning' | 'danger' | 'info'
+  tone?: 'green' | 'red' | 'blue' | 'yellow' | 'default'
+  className?: string
+}
+
+export function Badge({ 
+  children, 
+  variant = 'default', 
+  tone,
+  className = '' 
+}: BadgeProps) {
+  const variantClasses = {
+    default: 'bg-gray-100 text-gray-800',
+    success: 'bg-green-100 text-green-800',
+    warning: 'bg-yellow-100 text-yellow-800',
+    danger: 'bg-red-100 text-red-800',
+    info: 'bg-blue-100 text-blue-800',
+    green: 'bg-green-100 text-green-800',
+    red: 'bg-red-100 text-red-800',
+    blue: 'bg-blue-100 text-blue-800',
+    yellow: 'bg-yellow-100 text-yellow-800',
   }
 
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium',
-        map[tone] || map.zinc
-      )}
-    >
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${variantClasses[tone || variant]} ${className}`}>
       {children}
     </span>
   )
 }
-

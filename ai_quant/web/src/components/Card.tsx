@@ -1,22 +1,41 @@
-import { cn } from '@/lib/utils'
+import { ReactNode } from 'react'
 
-export function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn('rounded-xl border border-zinc-200 bg-white', className)}>{children}</div>
+interface CardProps {
+  children: ReactNode
+  className?: string
 }
 
-export function CardHeader({ title, subtitle, right }: { title: string; subtitle?: React.ReactNode; right?: React.ReactNode }) {
+interface CardHeaderProps {
+  children: ReactNode
+  title?: string
+  className?: string
+}
+
+interface CardBodyProps {
+  children: ReactNode
+  className?: string
+}
+
+export function Card({ children, className = '' }: CardProps) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
-      <div className="min-w-0">
-        <div className="text-sm font-semibold text-zinc-900">{title}</div>
-        {subtitle && <div className="text-xs text-zinc-400">{subtitle}</div>}
-      </div>
-      {right}
+    <div className={`bg-white rounded-lg shadow ${className}`}>
+      {children}
     </div>
   )
 }
 
-export function CardBody({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn('px-4 py-4', className)}>{children}</div>
+export function CardHeader({ children, title, className = '' }: CardHeaderProps) {
+  return (
+    <div className={`px-6 py-4 border-b border-gray-200 ${className}`}>
+      {title ? <h3 className="text-lg font-semibold">{title}</h3> : children}
+    </div>
+  )
 }
 
+export function CardBody({ children, className = '' }: CardBodyProps) {
+  return (
+    <div className={`px-6 py-4 ${className}`}>
+      {children}
+    </div>
+  )
+}
