@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from core.db import connect, execute, load_mysql_config, query_dict
 from core.risk import approve, audit, status
+from core.risk.service import RiskManager, _get_manager, _now_iso
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("risk")
@@ -44,6 +45,34 @@ def risk_approve(body: dict[str, Any]) -> dict[str, Any]:
             "stock_code": body.get("stockCode"),
             "decision": result.get("decision")
         })
+        try:
+            conn = _get_conn()
+            try:
+                event_id = f"evt_{uuid.uuid4().hex[:12]}"
+                event_data_json = json.dumps(result, ensure_ascii=False, default=str)
+                execute(
+                    conn,
+                    """INSERT INTO trade_risk_event
+                       (event_id, event_type, risk_level, stock_code, stock_name, account_id,
+                        description, event_data, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        event_id,
+                        "approve",
+                        result.get("decision", "APPROVE"),
+                        (body.get("order") or {}).get("stock_code", ""),
+                        "",
+                        "",
+                        result.get("reason", ""),
+                        event_data_json,
+                        "processed",
+                    )
+                )
+                logger.info("风控审批结果已同步至MySQL", extra={"event_id": event_id})
+            finally:
+                conn.close()
+        except Exception as sync_err:
+            logger.warning("风控审批结果同步MySQL失败", extra={"error": str(sync_err)})
         return result
     except Exception as exc:
         logger.error("风控审批失败", extra={
@@ -188,6 +217,27 @@ def create_risk_event(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"创建风险事件失败: {str(e)}")
     finally:
         conn.close()
+
+    try:
+        mgr = _get_manager()
+        audit_entry = {
+            "timestamp": _now_iso(),
+            "stock_code": body.get("stock_code", ""),
+            "direction": "",
+            "amount": 0.0,
+            "price": 0.0,
+            "quantity": 0,
+            "decision": body.get("risk_level", "medium"),
+            "reason": body.get("description", ""),
+            "rule_name": "risk_event",
+            "max_position_pct": 0.0,
+            "event_id": event_id,
+        }
+        mgr.audit_log.append(audit_entry)
+        from core.risk.service import _write_audit_entry
+        _write_audit_entry(audit_entry)
+    except Exception as e:
+        logger.warning("风险事件同步审计日志失败", extra={"error": str(e)})
 
 
 @router.put("/events/{event_id}/handle")
@@ -334,6 +384,27 @@ def create_risk_alert(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"创建风控告警失败: {str(e)}")
     finally:
         conn.close()
+
+    try:
+        mgr = _get_manager()
+        audit_entry = {
+            "timestamp": _now_iso(),
+            "stock_code": body.get("stock_code", ""),
+            "direction": "",
+            "amount": 0.0,
+            "price": 0.0,
+            "quantity": 0,
+            "decision": body.get("level", "yellow"),
+            "reason": body.get("message", ""),
+            "rule_name": "risk_alert",
+            "max_position_pct": 0.0,
+            "alert_id": alert_id,
+        }
+        mgr.audit_log.append(audit_entry)
+        from core.risk.service import _write_audit_entry
+        _write_audit_entry(audit_entry)
+    except Exception as e:
+        logger.warning("风控告警同步审计日志失败", extra={"error": str(e)})
 
 
 @router.put("/alerts/{alert_id}/handle")

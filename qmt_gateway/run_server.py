@@ -11,9 +11,6 @@ import uvicorn
 
 
 if __name__ == "__main__":
-    # 从环境变量读取服务器配置，支持自定义
     host = str(os.getenv("QMT_GATEWAY_HOST", "0.0.0.0"))
-    port = int(str(os.getenv("QMT_GATEWAY_PORT", "9001")))
-    # 启动 uvicorn 服务器
+    port = int(str(os.getenv("QMT_GATEWAY_PORT", "8001")))
     uvicorn.run("app:app", host=host, port=port, reload=False)
-

@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 const TABS = [
   { key: 'dashboard', label: '风控看板', path: '/risk/dashboard' },
   { key: 'mainforce', label: '主力识别', path: '/risk/mainforce' },
+  { key: 'reports', label: '智能研报', path: '/risk/reports' },
   { key: 'approve', label: '风控审批', path: '/risk/approve' },
   { key: 'rules', label: '风控规则', path: '/risk/rules' },
   { key: 'audit', label: '审计日志', path: '/risk/audit' },

@@ -466,6 +466,36 @@ class MiniQMTTrader:
 
     # ─────────── 历史行情（xtdata） ───────────
 
+    def get_stock_list(self) -> list[str]:
+        """
+        获取全市场A股股票列表（通过 xtdata 接口）。
+
+        从沪深A股板块获取所有股票代码，返回带交易所后缀的格式（如 600519.SH）。
+
+        Returns:
+            list[str]: 股票代码列表
+        """
+        try:
+            from xtquant import xtdata
+            raw_list = xtdata.get_stock_list_in_sector("沪深A股")
+            if not raw_list:
+                return []
+            out: list[str] = []
+            for code in raw_list:
+                s = str(code).strip()
+                if not s:
+                    continue
+                # xtdata 可能返回带后缀（000001.SZ）或不带后缀（000001）的格式
+                if "." in s:
+                    out.append(s)
+                else:
+                    ex = "SH" if s.startswith("6") else "SZ"
+                    out.append(f"{s}.{ex}")
+            return sorted(out)
+        except Exception as e:
+            logger.error(f"获取股票列表失败: {e}")
+            return []
+
     def download_history_data(
         self,
         stock_code: str,
@@ -577,6 +607,122 @@ class MiniQMTTrader:
                 fill_data=fill_data,
             )
         except Exception:
+            return {}
+
+    # ─────────── 财务数据（xtdata） ───────────
+
+    def download_financial_data(
+        self,
+        stock_list: list[str],
+        table_list: list[str],
+        start_time: str = "20150101",
+        end_time: str = "20261231",
+    ) -> bool:
+        """
+        下载指定股票的财务数据到本地缓存（异步，等待完成）。
+
+        Args:
+            stock_list: 股票代码列表
+            table_list: 报表列表，如 ['Balance', 'Income', 'CashFlow', 'PershareIndex', 'Capital']
+            start_time: 开始日期 YYYYMMDD
+            end_time: 结束日期 YYYYMMDD
+
+        Returns:
+            是否下载成功
+        """
+        try:
+            from xtquant import xtdata
+            done_count = [0]
+            total = len(table_list)
+
+            def on_done(_data):
+                done_count[0] += 1
+
+            for table in table_list:
+                xtdata.download_financial_data2(
+                    stock_list=stock_list,
+                    table_list=[table],
+                    start_time=start_time,
+                    end_time=end_time,
+                    callback=on_done,
+                )
+
+            for _ in range(60):
+                if done_count[0] >= total:
+                    break
+                time.sleep(1)
+
+            return done_count[0] >= total
+        except Exception:
+            return False
+
+    def get_financial_data(
+        self,
+        stock_list: list[str],
+        table_list: list[str],
+        start_time: str = "20150101",
+        end_time: str = "20261231",
+        report_type: str = "report_time",
+    ) -> dict[str, Any]:
+        """
+        获取指定股票的财务数据。
+
+        支持从 Balance（资产负债表）、Income（利润表）、CashFlow（现金流量表）、
+        PershareIndex（每股指标）、Capital（股本）等报表提取财务指标。
+
+        Args:
+            stock_list: 股票代码列表
+            table_list: 报表列表
+            start_time: 开始日期 YYYYMMDD
+            end_time: 结束日期 YYYYMMDD
+            report_type: 报告类型，默认 "report_time"
+
+        Returns:
+            {stock_code: {table_name: list[dict]}} 格式的财务数据字典
+        """
+        try:
+            from xtquant import xtdata
+            raw = xtdata.get_financial_data(
+                stock_list=stock_list,
+                table_list=table_list,
+                start_time=start_time,
+                end_time=end_time,
+                report_type=report_type,
+            )
+
+            if not raw:
+                return {}
+
+            # 将 DataFrame 转换为可序列化的 dict 格式
+            result: dict[str, dict[str, list[dict[str, Any]]]] = {}
+            for stock_code in stock_list:
+                stock_data = raw.get(stock_code, {})
+                if not stock_data:
+                    continue
+                serialized: dict[str, list[dict[str, Any]]] = {}
+                for table_name in table_list:
+                    table_data = stock_data.get(table_name, [])
+                    if isinstance(table_data, list):
+                        serialized[table_name] = table_data
+                    elif hasattr(table_data, "to_dict"):
+                        # 处理 DataFrame 格式
+                        rows = []
+                        df = table_data
+                        for _, row in df.iterrows():
+                            record = {}
+                            for col in df.columns:
+                                val = row[col]
+                                if hasattr(val, "isoformat"):
+                                    val = val.isoformat()
+                                record[col] = val
+                            rows.append(record)
+                        serialized[table_name] = rows
+                    else:
+                        serialized[table_name] = []
+                result[stock_code] = serialized
+            return result
+        except Exception as e:
+            logger.error(f"获取财务数据失败: {e}")
             return {}
 
     def cancel_all(self) -> list[int]:

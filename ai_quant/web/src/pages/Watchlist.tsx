@@ -60,7 +60,11 @@ const SortableRow = memo(function SortableRow({
         'flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2',
         isDragging ? 'opacity-70' : 'hover:border-zinc-400 cursor-pointer'
       )}
-      onClick={() => navigate(`/stock/${encodeURIComponent(item.stock_code)}`)}
+      onClick={() => {
+        console.log('[Watchlist] 点击股票跳转详情页:', item.stock_code, 'from:', window.location.pathname)
+        sessionStorage.setItem('stock_detail_from', window.location.pathname)
+        navigate(`/stock/${encodeURIComponent(item.stock_code)}`)
+      }}
     >
       <div className="flex min-w-0 items-center gap-2">
         <button

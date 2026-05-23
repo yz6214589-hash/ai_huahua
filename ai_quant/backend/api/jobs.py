@@ -39,24 +39,24 @@ _KNOWN_JOB_DOMAINS = {
 
 _DEFAULT_SCHEDULES: dict[str, dict[str, Any]] = {
     "stock_daily": {"enabled": True, "cron": "0 18 * * 1-5", "timezone": "Asia/Shanghai", "mode": "full"},
-    "stock_financial": {"enabled": True, "cron": "30 19 * * 6", "timezone": "Asia/Shanghai", "mode": "test"},
-    "stock_news": {"enabled": True, "cron": "*/10 * * * *", "timezone": "Asia/Shanghai", "mode": "test"},
+    "stock_financial": {"enabled": True, "cron": "30 19 * * 6", "timezone": "Asia/Shanghai", "mode": "full"},
+    "stock_news": {"enabled": True, "cron": "*/10 * * * *", "timezone": "Asia/Shanghai", "mode": "full"},
     "macro_indicator": {"enabled": True, "cron": "0 9 1 * *", "timezone": "Asia/Shanghai", "mode": "full"},
     "rate_daily": {"enabled": True, "cron": "0 8 * * 1-5", "timezone": "Asia/Shanghai", "mode": "full"},
     "calendar": {"enabled": True, "cron": "0 7 * * *", "timezone": "Asia/Shanghai", "mode": "full"},
-    "report_consensus": {"enabled": True, "cron": "0 20 * * 1-5", "timezone": "Asia/Shanghai", "mode": "test"},
+    "report_consensus": {"enabled": True, "cron": "0 20 * * 1-5", "timezone": "Asia/Shanghai", "mode": "full"},
     "catalyst": {"enabled": True, "cron": "0 21 * * 0", "timezone": "Asia/Shanghai", "mode": "full"},
     "sentiment_monitor": {"enabled": True, "cron": "10 15 * * 1-5", "timezone": "Asia/Shanghai", "mode": "full"},
 }
 
 _DOMAIN_META: dict[str, dict[str, Any]] = {
     "stock_daily": {"title": "行情日线", "desc": "收盘价/成交量 + RSI14/MA20（QMT > AkShare > Tushare）", "defaultMode": "full"},
-    "stock_financial": {"title": "财务季度", "desc": "财务指标原始数据（payload_json，AkShare）", "defaultMode": "test"},
-    "stock_news": {"title": "新闻事件", "desc": "AkShare 新闻（title/content）", "defaultMode": "test"},
+    "stock_financial": {"title": "财务季度", "desc": "财务指标原始数据（QMT采集）", "defaultMode": "full"},
+    "stock_news": {"title": "新闻事件", "desc": "AkShare 新闻（title/content）", "defaultMode": "full"},
     "macro_indicator": {"title": "宏观指标", "desc": "CPI/PPI/PMI/M2/社融/LPR（AkShare）", "defaultMode": "full"},
     "rate_daily": {"title": "利率日频", "desc": "中美 10Y 国债收益率（AkShare）", "defaultMode": "full"},
     "calendar": {"title": "财经日历", "desc": "百度财经日历（AkShare）", "defaultMode": "full"},
-    "report_consensus": {"title": "研报一致预期", "desc": "券商评级/目标价（AkShare）", "defaultMode": "test"},
+    "report_consensus": {"title": "研报一致预期", "desc": "券商评级/目标价（AkShare）", "defaultMode": "full"},
     "catalyst": {"title": "关键催化剂", "desc": "Qwen 联网搜索（需要 DASHSCOPE_API_KEY）", "defaultMode": "full"},
     "sentiment_monitor": {"title": "舆情监控", "desc": "扫描自选股（当前为轻量实现）", "defaultMode": "full"},
 }
@@ -148,17 +148,23 @@ def _ensure_default_schedules() -> None:
         inserts: list[tuple[Any, ...]] = []
         for d, conf in _DEFAULT_SCHEDULES.items():
             if d in existing:
-                continue
-            inserts.append(
-                (
-                    d,
-                    1 if bool(conf.get("enabled", True)) else 0,
-                    str(conf.get("cron") or "").strip(),
-                    str(conf.get("timezone") or "Asia/Shanghai"),
-                    conf.get("mode"),
-                    json.dumps({}, ensure_ascii=False),
+                # 修复已有记录中 mode 为空的问题
+                execute(
+                    conn,
+                    "UPDATE trade_job_schedule SET mode=%s WHERE domain=%s AND (mode IS NULL OR mode = '')",
+                    (conf.get("mode"), d),
                 )
-            )
+            else:
+                inserts.append(
+                    (
+                        d,
+                        1 if bool(conf.get("enabled", True)) else 0,
+                        str(conf.get("cron") or "").strip(),
+                        str(conf.get("timezone") or "Asia/Shanghai"),
+                        conf.get("mode"),
+                        json.dumps({}, ensure_ascii=False),
+                    )
+                )
         if inserts:
             executemany(
                 conn,
@@ -325,8 +331,26 @@ def _run_job_impl(*, run_id: str, started_at: str, domain: str, mode: str | None
         "mode": mode,
         "started_at": started_at
     })
+
+    # 构建进度回调函数，定期更新 itemsProcessed
+    def _progress_callback(items_processed: int) -> None:
+        try:
+            write_job_run(
+                domain=domain,
+                payload={
+                    "runId": run_id,
+                    "domain": domain,
+                    "startedAt": started_at,
+                    "status": "running",
+                    "itemsProcessed": items_processed,
+                    "params": params,
+                },
+            )
+        except Exception:
+            pass  # 进度更新失败不影响主流程
+
     try:
-        stats = run_domain(domain, mode, params)
+        stats = run_domain(domain, mode, params, progress_callback=_progress_callback)
         status = "success" if not stats.failed_items else "partial"
         write_job_run(
             domain=domain,
@@ -395,12 +419,12 @@ def list_runs(limit: int = 10, domain: str | None = None) -> dict[str, object]:
     """
     runs = list_job_runs(domain=domain, limit=limit)
     
-    # 从环境变量读取任务超时时间，默认900秒（15分钟）
-    timeout_s = 900
+    # 从环境变量读取任务超时时间，默认7200秒（2小时），全量采集需要更长时间
+    timeout_s = 7200
     try:
-        timeout_s = max(30, int(str(__import__("os").getenv("AI_QUANT_JOB_RUN_TIMEOUT_SECONDS", "900")).strip() or "900"))
+        timeout_s = max(30, int(str(os.getenv("AI_QUANT_JOB_RUN_TIMEOUT_SECONDS", "7200")).strip() or "7200"))
     except Exception:
-        timeout_s = 900
+        timeout_s = 7200
 
     now = datetime.now()
     out: list[dict[str, Any]] = []
@@ -410,7 +434,7 @@ def list_runs(limit: int = 10, domain: str | None = None) -> dict[str, object]:
         started = str(it.get("startedAt") or "").strip()
         finished = str(it.get("finishedAt") or "").strip()
         
-        # 检测长时间运行但未完成的任务，自动标记为失败
+        # 检测长时间运行但未完成的任务，只在持久化文件中的status仍为"running"时才标记失败
         if status == "running" and started and not finished:
             try:
                 started_dt = datetime.fromisoformat(started[:19])
@@ -421,10 +445,34 @@ def list_runs(limit: int = 10, domain: str | None = None) -> dict[str, object]:
                 if age > timeout_s:
                     it["status"] = "failed"
                     if not str(it.get("message") or "").strip():
-                        it["message"] = "任务长时间未更新，已标记为失败"
+                        it["message"] = "任务超时，已自动标记为失败"
                     if not str(it.get("userMessage") or "").strip():
-                        it["userMessage"] = "任务长时间未更新，已标记为失败"
+                        it["userMessage"] = "任务超时，已自动标记为失败"
                     it["finishedAt"] = _now_iso()
+                    # 持久化标记失败到文件，确保重启后仍能看到失败状态
+                    run_id = str(it.get("runId") or "")
+                    if run_id:
+                        try:
+                            write_job_run(
+                                domain=str(it.get("domain", "")),
+                                payload={
+                                    "runId": run_id,
+                                    "domain": it.get("domain"),
+                                    "startedAt": it.get("startedAt"),
+                                    "finishedAt": it.get("finishedAt"),
+                                    "status": "failed",
+                                    "dataSourceFinal": it.get("dataSourceFinal", "unknown"),
+                                    "fallbackChain": it.get("fallbackChain") if isinstance(it.get("fallbackChain"), list) else [],
+                                    "rowsWritten": int(it.get("rowsWritten") or 0),
+                                    "itemsProcessed": int(it.get("itemsProcessed") or 0),
+                                    "failedItems": it.get("failedItems") if isinstance(it.get("failedItems"), list) else [],
+                                    "message": it.get("message"),
+                                    "params": it.get("params", {}),
+                                },
+                            )
+                            logger.info("超时任务已持久化标记为失败", extra={"run_id": run_id})
+                        except Exception as persist_err:
+                            logger.warning("持久化超时标记失败", extra={"run_id": run_id, "error": str(persist_err)})
         out.append(it)
     return {"runs": out}
 
@@ -580,6 +628,10 @@ def update_schedule(domain: str, body: dict[str, object]) -> dict[str, object]:
     timezone = str(body.get("timezone") or "Asia/Shanghai").strip() or "Asia/Shanghai"
     enabled = bool(body.get("enabled", True))
     mode = body.get("mode")
+    if mode is None:
+        # 如果前端未传 mode，保持默认值
+        default_conf = _DEFAULT_SCHEDULES.get(domain, {})
+        mode = default_conf.get("mode")
     try:
         _validate_cron(cron)
     except Exception as exc:

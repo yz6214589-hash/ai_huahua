@@ -3,7 +3,9 @@ import { Badge } from '@/components/Badge'
 import { cn } from '@/lib/utils'
 import { useEffect, useState } from 'react'
 import { fetchJson, postJson } from '@/api/client'
-import { PlayCircle, RefreshCcw, StopCircle } from 'lucide-react'
+import { StockPicker } from '@/components/StockPicker'
+import type { StockSearchItem } from '@/api/types'
+import { PlayCircle, RefreshCcw, StopCircle, Trash2, Edit3, CheckCircle } from 'lucide-react'
 
 type ExecStatus = { source: string; status: string; features: string[] }
 type Task = {
@@ -38,10 +40,15 @@ export default function ExecutionTasks() {
   const [err, setErr] = useState<string | null>(null)
 
   const [symbol, setSymbol] = useState('')
+  const [execStock, setExecStock] = useState<StockSearchItem | null>(null)
   const [side, setSide] = useState<'buy' | 'sell'>('buy')
   const [totalQty, setTotalQty] = useState('1000')
   const [strategy, setStrategy] = useState<'twap' | 'vwap' | 'rl'>('twap')
   const [creating, setCreating] = useState(false)
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editQty, setEditQty] = useState('')
+  const [editStrategy, setEditStrategy] = useState<'twap' | 'vwap' | 'rl'>('twap')
 
   useEffect(() => {
     fetchJson<ExecStatus>('/api/v1/execution/status').then(setStatus).catch(() => null)
@@ -64,13 +71,50 @@ export default function ExecutionTasks() {
 
   useEffect(() => { load() }, [])
 
-  const stopTask = async (id: string) => {
+  const changeTaskStatus = async (id: string, newStatus: string) => {
+    try {
+      await fetchJson(`/api/v1/execution/tasks/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: newStatus }),
+      })
+      await load()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const deleteTask = async (id: string) => {
     try {
       await fetchJson(`/api/v1/execution/tasks/${id}`, { method: 'DELETE' })
       await load()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
+  }
+
+  const startEdit = (t: Task) => {
+    setEditingId(t.id)
+    setEditQty(String(t.total_qty))
+    setEditStrategy(t.strategy)
+  }
+
+  const saveEdit = async (id: string) => {
+    const qty = Number(editQty || 0)
+    if (!isFinite(qty) || qty < 100) { setErr('数量最少为 100'); return }
+    try {
+      await fetchJson(`/api/v1/execution/tasks/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ total_qty: qty, strategy: editStrategy }),
+      })
+      setEditingId(null)
+      await load()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
   }
 
   const createTask = async () => {
@@ -83,6 +127,7 @@ export default function ExecutionTasks() {
     try {
       await postJson('/api/v1/execution/tasks', { symbol: sym, side, total_qty: qty, num_steps: 48, strategy })
       setSymbol('')
+      setExecStock(null)
       await load()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -112,11 +157,15 @@ export default function ExecutionTasks() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <div className="mb-1 text-xs text-zinc-500">股票代码 *</div>
-                  <input
-                    value={symbol}
-                    onChange={(e) => setSymbol(e.target.value)}
-                    placeholder="600519.SH"
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                  <StockPicker
+                    value={execStock}
+                    onChange={(v) => {
+                      const item = v as StockSearchItem | null
+                      setExecStock(item)
+                      setSymbol(item?.code ?? '')
+                    }}
+                    mode="single"
+                    placeholder="搜索股票代码或名称"
                   />
                 </div>
                 <div>
@@ -204,36 +253,121 @@ export default function ExecutionTasks() {
                     <tr><td className="px-4 py-12 text-center text-zinc-500" colSpan={7}>暂无执行任务</td></tr>
                   ) : items.map((t) => {
                     const st = STATUS_LABELS[t.status] || { label: t.status, tone: 'zinc' as const }
+                    const isEditing = editingId === t.id
                     return (
                       <tr key={t.id} className="border-b border-zinc-50">
                         <td className="px-4 py-2 font-medium text-zinc-900">{t.symbol}</td>
                         <td className="px-4 py-2">
                           <Badge tone={t.side === 'buy' ? 'green' : 'red'}>{SIDE_LABELS[t.side]}</Badge>
                         </td>
-                        <td className="px-4 py-2 text-zinc-700">{STRAT_LABELS[t.strategy] || t.strategy}</td>
-                        <td className="px-4 py-2 text-zinc-700">{t.total_qty.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-zinc-700">
+                          {isEditing ? (
+                            <select
+                              value={editStrategy}
+                              onChange={(e) => setEditStrategy(e.target.value as 'twap' | 'vwap' | 'rl')}
+                              className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                            >
+                              <option value="twap">TWAP</option>
+                              <option value="vwap">VWAP</option>
+                              <option value="rl">RL</option>
+                            </select>
+                          ) : (
+                            STRAT_LABELS[t.strategy] || t.strategy
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-zinc-700">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              value={editQty}
+                              onChange={(e) => setEditQty(e.target.value)}
+                              className="w-20 rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                            />
+                          ) : (
+                            t.total_qty.toLocaleString()
+                          )}
+                        </td>
                         <td className="px-4 py-2">
                           <Badge tone={st.tone}>{st.label}</Badge>
                         </td>
                         <td className="px-4 py-2 text-xs text-zinc-500">{fmt(t.created_at)}</td>
                         <td className="px-4 py-2">
-                          {t.status === 'running' && (
-                            <button
-                              onClick={() => stopTask(t.id)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 text-xs text-red-600 transition hover:bg-red-50"
-                            >
-                              <StopCircle className="h-3 w-3" />
-                              停止
-                            </button>
-                          )}
-                          {t.status === 'draft' && (
-                            <button
-                              onClick={() => stopTask(t.id)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-600 transition hover:bg-zinc-50"
-                            >
-                              删除
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  onClick={() => saveEdit(t.id)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-green-200 bg-white px-2 py-1 text-xs text-green-600 transition hover:bg-green-50"
+                                >
+                                  <CheckCircle className="h-3 w-3" />
+                                  保存
+                                </button>
+                                <button
+                                  onClick={cancelEdit}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-600 transition hover:bg-zinc-50"
+                                >
+                                  取消
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {t.status === 'draft' && (
+                                  <button
+                                    onClick={() => changeTaskStatus(t.id, 'running')}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs text-blue-600 transition hover:bg-blue-50"
+                                  >
+                                    <PlayCircle className="h-3 w-3" />
+                                    运行
+                                  </button>
+                                )}
+                                {t.status === 'running' && (
+                                  <button
+                                    onClick={() => changeTaskStatus(t.id, 'stopped')}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs text-amber-600 transition hover:bg-amber-50"
+                                  >
+                                    <StopCircle className="h-3 w-3" />
+                                    停止
+                                  </button>
+                                )}
+                                {(t.status === 'stopped' || t.status === 'failed') && (
+                                  <button
+                                    onClick={() => changeTaskStatus(t.id, 'running')}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs text-blue-600 transition hover:bg-blue-50"
+                                  >
+                                    <PlayCircle className="h-3 w-3" />
+                                    运行
+                                  </button>
+                                )}
+                                {(t.status === 'draft' || t.status === 'stopped' || t.status === 'failed') && (
+                                  <button
+                                    onClick={() => startEdit(t)}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-600 transition hover:bg-zinc-50"
+                                  >
+                                    <Edit3 className="h-3 w-3" />
+                                    编辑
+                                  </button>
+                                )}
+                                {t.status !== 'running' && (
+                                  <button
+                                    onClick={() => deleteTask(t.id)}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 text-xs text-red-600 transition hover:bg-red-50"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                    删除
+                                  </button>
+                                )}
+                                {t.status === 'running' && (
+                                  <button
+                                    onClick={() => changeTaskStatus(t.id, 'finished')}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-green-200 bg-white px-2 py-1 text-xs text-green-600 transition hover:bg-green-50"
+                                  >
+                                    <CheckCircle className="h-3 w-3" />
+                                    完成
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )

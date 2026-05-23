@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils'
 import { useEffect, useMemo } from 'react'
 import { fetchJson, postJson } from '@/api/client'
 import type { RiskApproveRequest, RiskApproveResponse } from '@/api/types'
+import { StockPicker } from '@/components/StockPicker'
+import type { StockSearchItem } from '@/api/types'
 import { Play, GitBranch } from 'lucide-react'
 import FlowDesigner from '@/components/FlowDesigner'
 
@@ -18,6 +20,7 @@ export default function RiskApprove() {
   const [tab, setTab] = useState<'approve' | 'design'>('approve')
   const [data, setData] = useState<RiskStatus | null>(null)
   const [orderCode, setOrderCode] = useState('')
+  const [riskStock, setRiskStock] = useState<StockSearchItem | null>(null)
   const [direction, setDirection] = useState<'buy' | 'sell'>('buy')
   const [amount, setAmount] = useState('100000')
   const [price, setPrice] = useState('0')
@@ -110,8 +113,16 @@ export default function RiskApprove() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <div className="mb-1 text-xs text-zinc-500">股票代码 *</div>
-                      <input value={orderCode} onChange={(e) => setOrderCode(e.target.value)} placeholder="600519.SH"
-                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400" />
+                      <StockPicker
+                        value={riskStock}
+                        onChange={(v) => {
+                          const item = v as StockSearchItem | null
+                          setRiskStock(item)
+                          setOrderCode(item?.code ?? '')
+                        }}
+                        mode="single"
+                        placeholder="搜索股票代码或名称"
+                      />
                     </div>
                     <div>
                       <div className="mb-1 text-xs text-zinc-500">方向</div>

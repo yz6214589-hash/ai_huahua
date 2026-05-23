@@ -43,6 +43,13 @@ class KLineRequest(BaseModel):
     fill_data: bool = True
 
 
+class FinancialDataRequest(BaseModel):
+    stock_code: str
+    start_time: str = "20150101"
+    end_time: str = "20261231"
+    max_rows: int = 12
+
+
 def _must_env(name: str) -> str:
     v = str(os.getenv(name, "")).strip()
     if not v:
@@ -309,6 +316,183 @@ def create_app() -> FastAPI:
             })
 
         return {"rows": out_rows, "columns": ["date", "open", "high", "low", "close", "volume", "amount"]}
+
+    @api.get("/api/historical/stock_list")
+    def historical_stock_list(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+        _check_token(x_api_token)
+        trader = _get_trader()
+        try:
+            codes = trader.get_stock_list()
+            logger.info("获取股票列表成功: %d 只", len(codes))
+            return {"codes": codes, "count": len(codes)}
+        except Exception as e:
+            logger.error("获取股票列表失败: %s", e)
+            return {"codes": [], "count": 0, "error": str(e)}
+
+    @api.post("/api/historical/financial_data")
+    def historical_financial_data(body: FinancialDataRequest, x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+        _check_token(x_api_token)
+        trader = _get_trader()
+        stock_code = str(body.stock_code or "").strip()
+        start_time = str(body.start_time or "20150101").strip()
+        end_time = str(body.end_time or "20261231").strip()
+        max_rows = max(1, int(body.max_rows or 12))
+
+        tables = ['Balance', 'Income', 'CashFlow', 'PershareIndex', 'Capital']
+
+        try:
+            trader.download_financial_data(
+                stock_list=[stock_code],
+                table_list=tables,
+                start_time=start_time,
+                end_time=end_time,
+            )
+        except Exception as e:
+            logger.warning("下载财务数据失败: %s %s", stock_code, e)
+
+        import time as _time
+        _time.sleep(1)
+
+        try:
+            raw = trader.get_financial_data(
+                stock_list=[stock_code],
+                table_list=tables,
+                start_time=start_time,
+                end_time=end_time,
+            )
+        except Exception as e:
+            logger.error("获取财务数据失败: %s %s", stock_code, e)
+            return {"rows": [], "error": str(e)}
+
+        if not raw or stock_code not in raw:
+            return {"rows": []}
+
+        stock_data = raw[stock_code]
+
+        def _normalize_timetag(ts_val):
+            if ts_val is None:
+                return None
+            s = str(ts_val).strip()
+            if len(s) == 8 and s.isdigit():
+                return s
+            try:
+                v = float(s)
+                if v == 0:
+                    return None
+                if v > 1e12:
+                    v = v / 1000
+                from datetime import datetime as _dt
+                return _dt.fromtimestamp(v).strftime('%Y%m%d')
+            except (OSError, ValueError, TypeError):
+                return None
+
+        def _build_map(data_list):
+            pm = {}
+            if isinstance(data_list, list):
+                for rec in data_list:
+                    if isinstance(rec, dict):
+                        pd_val = _normalize_timetag(rec.get('m_timetag'))
+                        if pd_val:
+                            pm[pd_val] = rec
+            return pm
+
+        pershare_map = _build_map(stock_data.get('PershareIndex', []))
+        balance_map = _build_map(stock_data.get('Balance', []))
+        income_map = _build_map(stock_data.get('Income', []))
+        cashflow_map = _build_map(stock_data.get('CashFlow', []))
+        capital_map = _build_map(stock_data.get('Capital', []))
+
+        all_periods = sorted(set(
+            list(pershare_map.keys()) + list(balance_map.keys()) +
+            list(income_map.keys()) + list(cashflow_map.keys())
+        ))
+
+        def _get_field(record, field_names, default=None):
+            for name in field_names:
+                val = record.get(name)
+                if val is not None:
+                    return val
+            return default
+
+        def _safe_div(a, b, pct=False):
+            if a is None or b is None:
+                return None
+            try:
+                a_v, b_v = float(a), float(b)
+                if b_v == 0:
+                    return None
+                result = a_v / b_v
+                return result * 100 if pct else result
+            except (ValueError, TypeError):
+                return None
+
+        def _pct_to_dec(v):
+            if v is None:
+                return None
+            try:
+                return float(v) / 100.0
+            except (ValueError, TypeError):
+                return None
+
+        records = []
+        for period in all_periods:
+            ps = pershare_map.get(period, {})
+            bal = balance_map.get(period, {})
+            inc = income_map.get(period, {})
+            cf = cashflow_map.get(period, {})
+
+            eps = _get_field(ps, ['s_fa_eps_basic'])
+            roe_raw = _get_field(ps, ['du_return_on_equity', 'equity_roe', 'net_roe'])
+            gp_raw = _get_field(ps, ['sales_gross_profit'])
+
+            revenue = _get_field(inc, ['revenue', 'operating_revenue', 'revenue_inc'])
+            net_profit = _get_field(inc, ['net_profit_incl_min_int_inc', 'net_profit_excl_min_int_inc'])
+            op_cost = _get_field(inc, ['cost_of_goods_sold', 'total_operating_cost', 'total_expense'])
+
+            gross_margin_raw = gp_raw
+            if gross_margin_raw is None and revenue and op_cost:
+                r_v, c_v = float(revenue), float(op_cost)
+                if r_v > 0:
+                    gross_margin_raw = round((r_v - c_v) / r_v * 100, 4)
+
+            net_margin_raw = _safe_div(net_profit, revenue, pct=True)
+
+            total_assets = _get_field(bal, ['tot_assets'])
+            total_liab = _get_field(bal, ['tot_liab'])
+            total_equity = _get_field(bal, ['total_equity', 'tot_shrhldr_eqy_incl_min_int'])
+            current_assets = _get_field(bal, ['total_current_assets'])
+            current_liab = _get_field(bal, ['total_current_liability'])
+
+            debt_ratio_raw = _safe_div(total_liab, total_assets, pct=True)
+            current_ratio_val = _safe_div(current_assets, current_liab)
+
+            roa_raw = _safe_div(net_profit, total_assets, pct=True)
+            if roe_raw is None and net_profit and total_equity:
+                roe_raw = _safe_div(net_profit, total_equity, pct=True)
+
+            operating_cashflow = _get_field(cf, ['net_cash_flows_oper_act'])
+
+            records.append({
+                "end_date": period[:4] + "-" + period[4:6] + "-" + period[6:8],
+                "eps": eps,
+                "roe": _pct_to_dec(roe_raw),
+                "roa": _pct_to_dec(roa_raw),
+                "gross_margin": _pct_to_dec(gross_margin_raw),
+                "net_margin": _pct_to_dec(net_margin_raw),
+                "debt_ratio": _pct_to_dec(debt_ratio_raw),
+                "current_ratio": current_ratio_val,
+                "revenue": revenue,
+                "net_profit": net_profit,
+                "operating_cashflow": operating_cashflow,
+                "total_assets": total_assets,
+                "total_equity": total_equity,
+            })
+
+        records = records[-max_rows:] if max_rows > 0 else records
+        logger.info("财务数据: %s %d条 (范围: %s ~ %s)", stock_code, len(records),
+                     all_periods[0] if all_periods else "?",
+                     all_periods[-1] if all_periods else "?")
+        return {"rows": records}
 
     return api
 

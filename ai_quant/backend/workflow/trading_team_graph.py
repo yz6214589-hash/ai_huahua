@@ -105,7 +105,6 @@ def run_trading_workflow(
     user_question: str = "",
     max_retry: int = 2,
 ) -> dict[str, Any]:
-    """运行交易团队工作流"""
     graph = build_trading_graph()
     initial_state: TradingState = {
         "stock_code": stock_code,
@@ -115,8 +114,18 @@ def run_trading_workflow(
         "max_retry": max_retry,
         "messages": [],
     }
-    result = graph.invoke(initial_state)
-    return dict(result)
+    try:
+        result = graph.invoke(initial_state)
+        return dict(result)
+    except Exception as exc:
+        return {
+            "stock_code": stock_code,
+            "capital": capital,
+            "retry_count": 0,
+            "max_retry": max_retry,
+            "messages": [],
+            "error": f"{type(exc).__name__}: {exc}",
+        }
 
 
 __all__ = ["build_trading_graph", "run_trading_workflow"]

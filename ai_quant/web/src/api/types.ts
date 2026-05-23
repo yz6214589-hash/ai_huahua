@@ -195,6 +195,7 @@ export interface StockFeedItem {
   source?: string | null       // 来源
   publishedAt?: string | null  // 发布时间
   url?: string | null          // 原文链接
+  content?: string | null      // 新闻/研报原文内容
 }
 
 // 股票资讯响应，包含分页信息和资讯列表

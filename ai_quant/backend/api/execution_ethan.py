@@ -111,3 +111,53 @@ def execution_delete_task(task_id: str) -> dict[str, Any]:
         logger.warning("执行任务删除失败，任务不存在", extra={"task_id": task_id})
         raise HTTPException(status_code=404, detail="task not found")
     return {"ok": True, "task_id": task_id}
+
+
+@router.get("/positions")
+def execution_positions() -> dict[str, Any]:
+    logger.info("执行持仓列表查询", extra={})
+    try:
+        from core.db import connect, load_mysql_config, query_dict
+        cfg = load_mysql_config()
+        conn = connect(cfg)
+        try:
+            positions = query_dict(
+                conn,
+                "SELECT * FROM trade_sim_position WHERE volume > 0 ORDER BY updated_at DESC",
+                ()
+            )
+            for pos in positions:
+                for key in ("created_at", "updated_at", "buy_date"):
+                    if pos.get(key):
+                        pos[key] = str(pos[key])
+            return {"positions": positions, "total": len(positions)}
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error("执行持仓列表查询失败", extra={"error": str(e)})
+        return {"positions": [], "total": 0}
+
+
+@router.get("/records")
+def execution_records() -> dict[str, Any]:
+    logger.info("执行成交记录查询", extra={})
+    try:
+        from core.db import connect, load_mysql_config, query_dict
+        cfg = load_mysql_config()
+        conn = connect(cfg)
+        try:
+            records = query_dict(
+                conn,
+                "SELECT * FROM trade_sim_trade ORDER BY trade_time DESC LIMIT 100",
+                ()
+            )
+            for rec in records:
+                for key in ("created_at", "trade_time"):
+                    if rec.get(key):
+                        rec[key] = str(rec[key])
+            return {"records": records, "total": len(records)}
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error("执行成交记录查询失败", extra={"error": str(e)})
+        return {"records": [], "total": 0}

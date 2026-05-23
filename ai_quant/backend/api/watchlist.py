@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Query
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from core.data import (
@@ -92,12 +93,20 @@ def watchlist_pin(stock_code: str, req: WatchlistPinRequest) -> dict[str, Any]:
     return pin_watchlist_item(stock_code, bool(req.pinned))
 
 
-@router.put("/watchlist/reorder")
+@router.patch("/watchlist/reorder")
 def watchlist_reorder(req: WatchlistReorderRequest) -> dict[str, Any]:
     logger.info("自选股排序更新", extra={
         "count": len(req.codes)
     })
     return reorder_watchlist(req.codes)
+
+
+@router.put(
+    "/watchlist/reorder",
+    deprecated=True,
+)
+def watchlist_reorder_put(req: WatchlistReorderRequest) -> dict[str, Any]:
+    return watchlist_reorder(req)
 
 
 @router.get("/watchlist/snapshots")
@@ -130,10 +139,14 @@ def watchlist_group_delete(group_id: int) -> dict[str, Any]:
     return delete_watchlist_group(group_id)
 
 
-@router.get("/watchlist/list")
+@router.get(
+    "/watchlist/list",
+    deprecated=True,
+)
 def watchlist_list_by_group(group_id: int | None = None) -> dict[str, Any]:
-    logger.info("按分组查询自选股", extra={"group_id": group_id})
-    return get_watchlist_by_group(group_id)
+    if group_id is not None:
+        return get_watchlist_by_group(group_id)
+    return RedirectResponse(url="/api/v1/watchlist", status_code=307)
 
 
 @router.post("/watchlist/with-groups")

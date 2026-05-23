@@ -168,7 +168,7 @@ def request_json(
         except (urllib.error.URLError, OSError, TimeoutError) as e:
             last_error = e
             if attempt < max_retries:
-                wait = 0.5 * (attempt + 1)
+                wait = 2.0 if attempt == 0 else 5.0
                 logger.warning("QMT Gateway 请求失败，%.1f秒后重试 (%d/%d): %s", wait, attempt + 1, max_retries, e)
                 time.sleep(wait)
             continue
@@ -185,6 +185,21 @@ def check_health() -> bool:
         return result.get("status") == "ok"
     except Exception:
         return False
+
+
+def get_stock_list() -> list[str]:
+    """
+    通过 QMT Gateway 获取全市场A股股票列表
+
+    Returns:
+        list[str]: 股票代码列表（如 ["000001.SZ", "000002.SZ", ...]）
+    """
+    try:
+        result = request_json("GET", "/api/historical/stock_list", timeout_seconds=30.0)
+        return result.get("codes") or []
+    except Exception as e:
+        logger.error("获取股票列表失败: %s", e)
+        return []
 
 
 def connect() -> dict[str, Any]:
@@ -303,4 +318,39 @@ def historical_kline(
             "fill_data": fill_data,
         },
         timeout_seconds=_env_timeout("AI_QUANT_QMT_GATEWAY_KLINE_TIMEOUT", 60.0),
+    )
+
+
+def get_financial_data(
+    stock_code: str,
+    start_time: str = "20150101",
+    end_time: str = "20261231",
+    max_rows: int = 12,
+) -> dict[str, Any]:
+    """
+    获取股票的历史财务数据（通过 QMT Gateway 远程调用）
+
+    从 Balance（资产负债表）、Income（利润表）、CashFlow（现金流量表）、
+    PershareIndex（每股指标）、Capital（股本）等报表中提取财务指标，
+    包括 EPS、ROE、毛利率、营收、净利润、资产负债率、流动比率等。
+
+    Args:
+        stock_code: 股票代码，如 "600519.SH"
+        start_time: 开始日期，YYYYMMDD 格式，默认 "20150101"
+        end_time: 结束日期，YYYYMMDD 格式，默认 "20261231"
+        max_rows: 最大返回行数，默认 12
+
+    Returns:
+        {"rows": [...]}，rows 每行包含 end_date/eps/roe/roa/gross_margin/net_margin/等字段
+    """
+    return request_json(
+        "POST",
+        "/api/historical/financial_data",
+        body={
+            "stock_code": stock_code,
+            "start_time": start_time,
+            "end_time": end_time,
+            "max_rows": max_rows,
+        },
+        timeout_seconds=_env_timeout("AI_QUANT_QMT_GATEWAY_KLINE_TIMEOUT", 180.0),
     )

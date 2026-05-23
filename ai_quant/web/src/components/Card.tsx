@@ -8,6 +8,7 @@ interface CardProps {
 interface CardHeaderProps {
   children: ReactNode
   title?: string
+  right?: ReactNode
   className?: string
 }
 
@@ -24,10 +25,17 @@ export function Card({ children, className = '' }: CardProps) {
   )
 }
 
-export function CardHeader({ children, title, className = '' }: CardHeaderProps) {
+export function CardHeader({ children, title, right, className = '' }: CardHeaderProps) {
   return (
     <div className={`px-6 py-4 border-b border-gray-200 ${className}`}>
-      {title ? <h3 className="text-lg font-semibold">{title}</h3> : children}
+      {title ? (
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">{title}</h3>
+          {right}
+        </div>
+      ) : (
+        children
+      )}
     </div>
   )
 }

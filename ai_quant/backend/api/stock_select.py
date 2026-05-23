@@ -54,134 +54,39 @@ class StockSelectRequest(BaseModel):
     ev_ebitda_max: float | None = None
 
 
+FILTER_FIELD_MAPPING: dict[str, str] = {
+    "pe": "pe_ttm",
+    "pb": "pb",
+    "roe": "roe",
+    "revenue_growth": "revenue_growth_yoy",
+    "profit_growth": "profit_growth_yoy",
+    "market_cap": "market_cap",
+    "gross_margin": "gross_margin",
+    "operating_margin": "operating_margin",
+    "debt_ratio": "debt_ratio",
+    "quick_ratio": "quick_ratio",
+    "asset_turnover": "total_asset_turnover",
+    "free_cash_flow": "free_cash_flow",
+    "dividend_yield": "dividend_yield",
+    "ebitda": "ebitda",
+    "ev_ebitda": "ev_ebitda",
+}
+
+
 def _build_where_clause(params: dict[str, Any]) -> tuple[str, list[Any]]:
-    """
-    根据筛选参数构建WHERE子句
+    conditions: list[str] = []
+    values: list[Any] = []
 
-    Args:
-        params: 筛选参数字典
+    for prefix, db_column in FILTER_FIELD_MAPPING.items():
+        min_val = params.get(f"{prefix}_min")
+        if min_val is not None:
+            conditions.append(f"{db_column} >= %s")
+            values.append(min_val)
 
-    Returns:
-        tuple: (WHERE子句字符串, 参数列表)
-    """
-    conditions = []
-    values = []
-
-    if params.get("pe_min") is not None:
-        conditions.append("pe_ttm >= %s")
-        values.append(params["pe_min"])
-
-    if params.get("pe_max") is not None:
-        conditions.append("pe_ttm <= %s")
-        values.append(params["pe_max"])
-
-    if params.get("pb_min") is not None:
-        conditions.append("pb >= %s")
-        values.append(params["pb_min"])
-
-    if params.get("pb_max") is not None:
-        conditions.append("pb <= %s")
-        values.append(params["pb_max"])
-
-    if params.get("roe_min") is not None:
-        conditions.append("roe >= %s")
-        values.append(params["roe_min"])
-
-    if params.get("roe_max") is not None:
-        conditions.append("roe <= %s")
-        values.append(params["roe_max"])
-
-    if params.get("revenue_growth_min") is not None:
-        conditions.append("revenue_growth_yoy >= %s")
-        values.append(params["revenue_growth_min"])
-
-    if params.get("revenue_growth_max") is not None:
-        conditions.append("revenue_growth_yoy <= %s")
-        values.append(params["revenue_growth_max"])
-
-    if params.get("profit_growth_min") is not None:
-        conditions.append("profit_growth_yoy >= %s")
-        values.append(params["profit_growth_min"])
-
-    if params.get("profit_growth_max") is not None:
-        conditions.append("profit_growth_yoy <= %s")
-        values.append(params["profit_growth_max"])
-
-    if params.get("market_cap_min") is not None:
-        conditions.append("market_cap >= %s")
-        values.append(params["market_cap_min"])
-
-    if params.get("market_cap_max") is not None:
-        conditions.append("market_cap <= %s")
-        values.append(params["market_cap_max"])
-
-    if params.get("gross_margin_min") is not None:
-        conditions.append("gross_margin >= %s")
-        values.append(params["gross_margin_min"])
-
-    if params.get("gross_margin_max") is not None:
-        conditions.append("gross_margin <= %s")
-        values.append(params["gross_margin_max"])
-
-    if params.get("debt_ratio_max") is not None:
-        conditions.append("debt_ratio <= %s")
-        values.append(params["debt_ratio_max"])
-
-    if params.get("operating_margin_min") is not None:
-        conditions.append("operating_margin >= %s")
-        values.append(params["operating_margin_min"])
-
-    if params.get("operating_margin_max") is not None:
-        conditions.append("operating_margin <= %s")
-        values.append(params["operating_margin_max"])
-
-    if params.get("quick_ratio_min") is not None:
-        conditions.append("quick_ratio >= %s")
-        values.append(params["quick_ratio_min"])
-
-    if params.get("quick_ratio_max") is not None:
-        conditions.append("quick_ratio <= %s")
-        values.append(params["quick_ratio_max"])
-
-    if params.get("asset_turnover_min") is not None:
-        conditions.append("total_asset_turnover >= %s")
-        values.append(params["asset_turnover_min"])
-
-    if params.get("asset_turnover_max") is not None:
-        conditions.append("total_asset_turnover <= %s")
-        values.append(params["asset_turnover_max"])
-
-    if params.get("free_cash_flow_min") is not None:
-        conditions.append("free_cash_flow >= %s")
-        values.append(params["free_cash_flow_min"])
-
-    if params.get("free_cash_flow_max") is not None:
-        conditions.append("free_cash_flow <= %s")
-        values.append(params["free_cash_flow_max"])
-
-    if params.get("dividend_yield_min") is not None:
-        conditions.append("dividend_yield >= %s")
-        values.append(params["dividend_yield_min"])
-
-    if params.get("dividend_yield_max") is not None:
-        conditions.append("dividend_yield <= %s")
-        values.append(params["dividend_yield_max"])
-
-    if params.get("ebitda_min") is not None:
-        conditions.append("ebitda >= %s")
-        values.append(params["ebitda_min"])
-
-    if params.get("ebitda_max") is not None:
-        conditions.append("ebitda <= %s")
-        values.append(params["ebitda_max"])
-
-    if params.get("ev_ebitda_min") is not None:
-        conditions.append("ev_ebitda >= %s")
-        values.append(params["ev_ebitda_min"])
-
-    if params.get("ev_ebitda_max") is not None:
-        conditions.append("ev_ebitda <= %s")
-        values.append(params["ev_ebitda_max"])
+        max_val = params.get(f"{prefix}_max")
+        if max_val is not None:
+            conditions.append(f"{db_column} <= %s")
+            values.append(max_val)
 
     if params.get("report_date"):
         conditions.append("report_date = %s")
@@ -261,13 +166,10 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
 
         where, values = _build_where_clause(params)
 
-        logger.debug("构建查询条件完成", extra={"params_count": len(values)})
-
         page = max(body.page, 1)
         page_size = min(max(body.page_size, 1), 200)
         offset = (page - 1) * page_size
 
-        logger.debug("查询总数")
         count_sql = f"""
             SELECT COUNT(DISTINCT stock_code) as total
             FROM trade_stock_financial
@@ -275,9 +177,7 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
         """
         count_result = query_dict(conn, count_sql, tuple(values))
         total = count_result[0]["total"] if count_result else 0
-        logger.debug(f"总数: {total}")
 
-        logger.debug(f"查询数据，offset: {offset}, limit: {page_size}")
         data_sql = f"""
             SELECT
                 f.stock_code,
@@ -317,7 +217,6 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
             "returned": len(rows)
         })
 
-        logger.debug("关闭数据库连接")
         return {
             "page": page,
             "page_size": page_size,

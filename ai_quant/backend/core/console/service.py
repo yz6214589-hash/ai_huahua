@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from core.db import connect, load_mysql_config, query_dict
@@ -7,6 +9,10 @@ from core.data import get_summary, list_job_runs
 from core.execution import get_status as get_execution_status
 from core.risk import status as get_risk_status
 from infra.storage.job_store import list_runs
+
+_OVERVIEW_CACHE_KEY = "console_overview"
+_OVERVIEW_CACHE_TTL = 30
+_overview_cache: dict[str, Any] = {"data": None, "ts": 0.0}
 
 
 def get_status() -> dict[str, Any]:
@@ -20,19 +26,10 @@ def get_status() -> dict[str, Any]:
 
 def _mysql_diagnostics() -> dict[str, Any]:
     cfg = load_mysql_config()
-    base = {
-        "config": {
-            "host": cfg.host,
-            "port": cfg.port,
-            "user": cfg.user,
-            "database": cfg.database,
-        }
-    }
     try:
         conn = connect(cfg)
     except Exception as exc:
         return {
-            **base,
             "ok": False,
             "error": f"{type(exc).__name__}: {exc}",
             "tables": {},
@@ -75,14 +72,12 @@ def _mysql_diagnostics() -> dict[str, Any]:
                 table_diag[name] = {"exists": False, "rows": None}
 
         return {
-            **base,
             "ok": True,
             "server": {"version": version},
             "tables": table_diag,
         }
     except Exception as exc:
         return {
-            **base,
             "ok": False,
             "error": f"{type(exc).__name__}: {exc}",
             "tables": {},
@@ -92,21 +87,58 @@ def _mysql_diagnostics() -> dict[str, Any]:
 
 
 def get_overview() -> dict[str, Any]:
-    summary = get_summary()
-    recent_jobs = list_job_runs(domain=None, limit=8)
-    agent_runs = list_runs()
+    now = time.time()
+    cached = _overview_cache.get("data")
+    if cached is not None and (now - _overview_cache["ts"]) < _OVERVIEW_CACHE_TTL:
+        return cached
+
+    results: dict[str, Any] = {}
+
+    def _fetch_summary():
+        results["data_latest"] = get_summary()
+
+    def _fetch_jobs():
+        results["recent_jobs"] = list_job_runs(domain=None, limit=8)
+
+    def _fetch_execution():
+        results["execution_status"] = get_execution_status()
+
+    def _fetch_risk():
+        results["risk_status"] = get_risk_status()
+
+    def _fetch_runs():
+        results["_agent_runs"] = list_runs()
+
+    def _fetch_mysql():
+        results["mysql"] = _mysql_diagnostics()
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {
+            executor.submit(_fetch_summary): "summary",
+            executor.submit(_fetch_jobs): "jobs",
+            executor.submit(_fetch_execution): "execution",
+            executor.submit(_fetch_risk): "risk",
+            executor.submit(_fetch_runs): "runs",
+            executor.submit(_fetch_mysql): "mysql",
+        }
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception:
+                pass
+
+    agent_runs = results.get("_agent_runs", [])
     morning_run = next((x for x in agent_runs if x.get("route") == "graph:morning_brief"), None)
-    return {
-        "data_latest": summary,
-        "recent_jobs": recent_jobs,
-        "execution_status": get_execution_status(),
-        "risk_status": get_risk_status(),
-        "morning": {
-            "last_run": morning_run,
-            "run_count": len([x for x in agent_runs if x.get("route") == "graph:morning_brief"]),
-        },
-        "mysql": _mysql_diagnostics(),
+    results["morning"] = {
+        "last_run": morning_run,
+        "run_count": len([x for x in agent_runs if x.get("route") == "graph:morning_brief"]),
     }
+    results.pop("_agent_runs", None)
+
+    _overview_cache["data"] = results
+    _overview_cache["ts"] = time.time()
+
+    return results
 
 
 def trigger_morning(payload: dict[str, Any]) -> dict[str, Any]:

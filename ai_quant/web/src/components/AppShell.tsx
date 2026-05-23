@@ -5,7 +5,7 @@
  */
 
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { BarChart3, ChartCandlestick, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Gauge, GitBranch, LineChart, Shield, Star, Workflow, Target, Zap } from 'lucide-react'
+import { ChartCandlestick, ChevronLeft, ChevronRight, Download, ExternalLink, Gauge, GitBranch, Shield, Star, Target, Workflow, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { AssistantDrawer } from '@/components/AssistantDrawer'
@@ -50,9 +50,7 @@ const Sidebar = memo(function Sidebar({ collapsed, onToggle }: { collapsed: bool
     { to: '/stock-select', label: '选股', icon: Target },
     { to: '/opportunity', label: '机会捕捉', icon: Zap },
     { to: '/risk', label: '风控中心', icon: Shield },
-    { to: '/performance', label: '绩效报告', icon: BarChart3 },
     { to: '/execution', label: '交易终端', icon: Workflow },
-    { to: '/reports', label: '智能研报', icon: FileText },
     { to: '/workflow', label: '工作流', icon: GitBranch },
   ]
   // 市场开盘状态，开盘时显示金色头像
@@ -148,9 +146,12 @@ const Topbar = memo(function Topbar() {
   // 跳转到股票详情页
   const handleViewStock = useCallback(() => {
     if (selectedStock) {
+      console.log('[AppShell][Search] 跳转到个股详情页:', selectedStock.code, 'from:', location.pathname)
+      console.log('[AppShell][Search] navigate 前 window.history.length =', window.history.length)
+      sessionStorage.setItem('stock_detail_from', location.pathname)
       navigate(`/stock/${selectedStock.code}`)
     }
-  }, [selectedStock, navigate])
+  }, [selectedStock, navigate, location.pathname])
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-3 md:px-6">

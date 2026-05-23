@@ -5,6 +5,7 @@ const TABS = [
   { key: 'library', label: '策略库', path: '/strategy/library' },
   { key: 'instances', label: '策略实例', path: '/strategy/instances' },
   { key: 'backtest', label: '回测', path: '/strategy/backtest' },
+  { key: 'performance', label: '绩效报告', path: '/strategy/performance' },
 ]
 
 export default function StrategyAnalysis() {

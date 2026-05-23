@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date as _date
 from typing import Any
 
@@ -98,21 +99,35 @@ def _hhmm(v: str) -> str | None:
     return s[:5] if len(s) >= 5 else None
 
 
-def run_calendar(cfg: MySQLConfig, _mode: str | None, _params: dict[str, Any] | None) -> JobStats:
+def run_calendar(cfg: MySQLConfig, _mode: str | None, params: dict[str, Any] | None) -> JobStats:
     import akshare as ak
     import pandas as pd
 
+    max_workers = max(1, int((params or {}).get("max_workers") or 4))
+
     today = pd.Timestamp.now().normalize()
     dates = pd.date_range(today - pd.Timedelta(days=7), today + pd.Timedelta(days=30))
-    frames = []
-    for d in dates:
+
+    def _process_one(d):
         date_str = d.strftime("%Y%m%d")
         try:
             part = ak.news_economic_baidu(date=date_str)
             if part is not None and len(part) > 0:
-                frames.append(part)
+                return part
         except Exception:
-            continue
+            pass
+        return None
+
+    frames = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_date = {executor.submit(_process_one, d): d for d in dates}
+        for future in as_completed(future_to_date):
+            try:
+                part = future.result()
+                if part is not None:
+                    frames.append(part)
+            except Exception:
+                continue
 
     if not frames:
         return JobStats(

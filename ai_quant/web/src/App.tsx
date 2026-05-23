@@ -14,6 +14,7 @@ import WatchSentiment from '@/pages/WatchSentiment'
 import MacroData from '@/pages/MacroData'
 import FinancialHot from '@/pages/FinancialHot'
 import DataDelivery from '@/pages/DataDelivery'
+import StockGroups from '@/pages/StockGroups'
 import Watchlist from '@/pages/Watchlist'
 import Reports from '@/pages/Reports'
 import StockDetail from '@/pages/StockDetail'
@@ -64,8 +65,8 @@ export default function App() {
             <Route path="macro" element={<MacroData />} />
             <Route path="financial-hot" element={<FinancialHot />} />
             <Route path="data-delivery" element={<DataDelivery />} />
+            <Route path="stock-groups" element={<StockGroups />} />
           </Route>
-          <Route path="/reports" element={<Reports />} />
           <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/stock/:code" element={<StockDetail />} />
           <Route path="/execution" element={<Execution />}>
@@ -79,6 +80,7 @@ export default function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<RiskDashboard />} />
             <Route path="mainforce" element={<MainForceIdentification />} />
+            <Route path="reports" element={<Reports />} />
             <Route path="approve" element={<RiskApprove />} />
             <Route path="rules" element={<RiskRules />} />
             <Route path="audit" element={<RiskAudit />} />
@@ -88,6 +90,7 @@ export default function App() {
             <Route path="library" element={<StrategyLibrary />} />
             <Route path="instances" element={<StrategyInstances />} />
             <Route path="backtest" element={<StrategyBacktest />} />
+            <Route path="performance" element={<PerformanceReport />} />
           </Route>
           <Route path="/stock-select" element={<StockSelect />}>
             <Route index element={<Navigate to="fundamental" replace />} />
@@ -108,7 +111,7 @@ export default function App() {
             <Route path="morning" element={<WorkFlowMorning />} />
             <Route path="dragon" element={<WorkFlowDragon />} />
           </Route>
-          <Route path="/performance" element={<PerformanceReport />} />
+
           <Route path="/jobs" element={<Navigate to="/info-access/data-collection" replace />} />
           <Route path="/sentiment" element={<Navigate to="/info-access/sentiment" replace />} />
           <Route path="/morning" element={<Navigate to="/workflow/morning" replace />} />

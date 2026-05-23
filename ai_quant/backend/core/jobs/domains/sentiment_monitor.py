@@ -5,18 +5,20 @@ from typing import Any
 from core.db import MySQLConfig
 from core.data import get_watchlist
 from core.jobs.common import JobStats
+from core.jobs.domains.stock_group import get_stock_codes_by_scope, ensure_stock_group_tables
 
 
 def run_sentiment_monitor(_cfg: MySQLConfig, mode: str | None, params: dict[str, Any] | None) -> JobStats:
-    test_mode = (mode or "").lower() == "test"
-    test_stock = str((params or {}).get("test_stock") or "600519.SH").strip().upper()
-    days = int((params or {}).get("days") or 3)
-    days = max(1, min(days, 30))
+    days = max(1, min(30, int((params or {}).get("days") or 3)))
+    scope_type = str((params or {}).get("scope_type") or "watchlist").strip().lower()
+    group_id = int((params or {}).get("group_id") or 0)
 
     codes: list[str] = []
-    if test_mode and test_stock:
-        codes = [test_stock]
+    if scope_type == "group":
+        ensure_stock_group_tables()
+        codes = get_stock_codes_by_scope("group", group_id=group_id)
     else:
+        # watchlist / all 默认使用自选股
         wl = get_watchlist()
         items = wl.get("items") if isinstance(wl, dict) else []
         for it in items if isinstance(items, list) else []:

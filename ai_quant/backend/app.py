@@ -46,6 +46,8 @@ from .api.sim_account import router as sim_account_router
 from .api.mainforce import router as mainforce_router
 from .api.approval import router as approval_router
 from .api.performance import router as performance_router
+from .api.stock_group import router as stock_group_router
+from .api.intraday import router as intraday_router
 from .config import get_settings, get_logging_settings
 from .infra.storage.logging_service import init_logging, get_logger, shutdown_logging
 
@@ -284,13 +286,15 @@ def create_app() -> FastAPI:
     api.include_router(mainforce_router)      # 主力识别路由
     api.include_router(approval_router)       # 审批流程路由
     api.include_router(performance_router)    # 绩效报告路由
+    api.include_router(stock_group_router)     # 股票分组管理路由
+    api.include_router(intraday_router)         # 个股分时数据路由
     
     logger.info("业务路由注册完成", extra={
-        "routers_count": 13,
+        "routers_count": 14,
         "routers": [
             "health", "summary", "data", "watchlist", "jobs",
             "reports", "analysis", "sentiment", "execution",
-            "trading", "risk", "console", "agent"
+            "trading", "risk", "console", "agent", "intraday"
         ]
     })
 

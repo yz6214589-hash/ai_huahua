@@ -15,7 +15,13 @@ import zipfile
 from datetime import datetime
 
 QMT_GATEWAY_DIR = os.path.dirname(os.path.abspath(__file__))
-DEPLOY_FILES = ["app.py", "miniqmt_trader.py", "run_server.py"]
+DEPLOY_FILES = [
+    "app.py",
+    "miniqmt_trader.py",
+    "run_server.py",
+    "test_qmt_cloud_local.py",
+    "requirements.txt",
+]
 OUTPUT_DIR = os.path.join(QMT_GATEWAY_DIR, "dist")
 
 
@@ -47,8 +53,10 @@ def main():
     print()
     print("下一步操作:")
     print("  1. 通过 RDP 远程桌面连接到腾讯云 Windows 服务器")
-    print(f"  2. 将 {zip_name} 复制到服务器 C:\\apps\\qmt_gateway\\ 目录")
-    print("  3. 在服务器上双击运行 deploy_on_windows.bat")
+    print(f"  2. 将 {zip_name} 复制到服务器桌面或任意目录")
+    print("  3. 解压 zip 文件")
+    print("  4. 右键以管理员身份运行 deploy_on_windows.bat")
+    print("  脚本将自动完成: 停止服务 -> 备份 -> 部署 -> 启动 -> 测试")
 
 
 if __name__ == "__main__":

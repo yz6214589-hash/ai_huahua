@@ -4,7 +4,8 @@ import { fetchJson, postJson } from '@/api/client'
 import type { JobDomain, JobDomainInfo, JobRunResult, JobSchedule } from '@/api/types'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { DataSourceBadge, JobStatusBadge } from '@/components/StatusBadge'
-import { Play, RefreshCcw, Save, Settings, X } from 'lucide-react'
+import { Play, RefreshCcw, Save, Settings, X, Eye } from 'lucide-react'
+import StockScopeSelector from '@/components/StockScopeSelector'
 
 function formatDate(v: unknown) {
   if (!v) return '—'
@@ -69,7 +70,16 @@ export default function Jobs() {
   const [domains, setDomains] = useState<JobDomainInfo[]>([])
   const [runs, setRuns] = useState<JobRunResult[]>([])
   const [schedules, setSchedules] = useState<Record<JobDomain, JobSchedule>>({} as Record<JobDomain, JobSchedule>)
-  const [stockDailyStart, setStockDailyStart] = useState('2023-01-01')
+  const [stockDailyStart, setStockDailyStart] = useState(() => {
+    const y = new Date().getFullYear()
+    return `${y}-01-01`
+  })
+  const [stockFinancialWorkers, setStockFinancialWorkers] = useState(4)
+  const [stockScopeMap, setStockScopeMap] = useState<Record<string, { scopeType: string; groupId: number }>>({
+    stock_news: { scopeType: 'all', groupId: 0 },
+    report_consensus: { scopeType: 'all', groupId: 0 },
+    sentiment_monitor: { scopeType: 'all', groupId: 0 },
+  })
   const [editingDomain, setEditingDomain] = useState<JobDomain | null>(null)
   const [editEnabled, setEditEnabled] = useState(true)
   const [editEvery, setEditEvery] = useState(1)
@@ -80,6 +90,10 @@ export default function Jobs() {
   const [savingSchedule, setSavingSchedule] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [previewDomain, setPreviewDomain] = useState<string | null>(null)
+  const [previewCodes, setPreviewCodes] = useState<string[]>([])
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewTotalCount, setPreviewTotalCount] = useState<number | null>(null)
 
   const load = async (opts?: { silent?: boolean }) => {
     setLoading(true)
@@ -112,6 +126,17 @@ export default function Jobs() {
       const params: Record<string, unknown> = {}
       const mode0 = String(mode || 'test')
       if (domain === 'stock_daily' && stockDailyStart.trim()) params.data_start = stockDailyStart.trim()
+      if (domain === 'stock_daily') params.max_stocks = 0
+      params.max_workers = stockFinancialWorkers
+      if (['stock_news', 'report_consensus', 'sentiment_monitor'].includes(domain)) {
+        const cfg = stockScopeMap[domain] || { scopeType: 'all', groupId: 0 }
+        if (cfg.scopeType === 'group' && cfg.groupId > 0) {
+          params.scope_type = 'group'
+          params.group_id = cfg.groupId
+        } else if (cfg.scopeType === 'watchlist') {
+          params.scope_type = 'watchlist'
+        }
+      }
       await postJson<{ result: JobRunResult }>('/api/v1/jobs/run', { domain, mode: mode0, params })
       await load()
     } catch (e) {
@@ -158,6 +183,17 @@ export default function Jobs() {
     return map
   }, [runs])
 
+  const domainOrder = ['stock_daily', 'stock_financial', 'stock_news', 'sentiment_monitor', 'report_consensus', 'calendar', 'catalyst', 'macro_indicator', 'rate_daily']
+
+  const sortedDomains = useMemo(() => {
+    const order = new Map(domainOrder.map((d, i) => [d, i]))
+    return [...domains].sort((a, b) => {
+      const ai = order.get(a.domain) ?? 999
+      const bi = order.get(b.domain) ?? 999
+      return ai - bi
+    })
+  }, [domains, domainOrder])
+
   return (
     <div className="space-y-4">
       <Card>
@@ -183,15 +219,45 @@ export default function Jobs() {
               onChange={(e) => setStockDailyStart(e.target.value)}
               className="h-8 rounded-lg border border-zinc-200 bg-white px-2 text-xs text-zinc-900 outline-none focus:border-zinc-400"
             />
+            <span className="ml-2 text-xs text-zinc-500">线程数</span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setStockFinancialWorkers(Math.max(1, stockFinancialWorkers - 1))}
+                className="flex h-8 w-7 items-center justify-center rounded-l-lg border border-zinc-200 bg-white text-xs text-zinc-600 transition hover:bg-zinc-50"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={stockFinancialWorkers}
+                onChange={(e) => setStockFinancialWorkers(Math.max(1, parseInt(e.target.value) || 1))}
+                className="h-8 w-14 border-y border-zinc-200 bg-white px-1 text-center text-xs text-zinc-900 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
+              <button
+                onClick={() => setStockFinancialWorkers(Math.min(20, stockFinancialWorkers + 1))}
+                className="flex h-8 w-7 items-center justify-center rounded-r-lg border border-zinc-200 bg-white text-xs text-zinc-600 transition hover:bg-zinc-50"
+              >
+                +
+              </button>
+            </div>
+            <div className="ml-auto" />
+            <button
+              onClick={() => navigate('/info-access/stock-groups')}
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50"
+            >
+              股票列表管理
+            </button>
           </div>
           {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{err}</div> : null}
           <div className="space-y-3">
-            {domains.map((j) => {
+            {sortedDomains.map((j) => {
               const last = runsByDomain.get(j.domain)
               const sch = schedules[j.domain]
               const isEditing = editingDomain === j.domain
               return (
-                <div key={j.domain} className="rounded-xl border border-zinc-200 bg-white p-4">
+                <div key={j.domain} data-testid="task-item" className="rounded-xl border border-zinc-200 bg-white p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">{j.title}</div>
@@ -229,6 +295,51 @@ export default function Jobs() {
                       </button>
                     </div>
                   </div>
+
+                  {['stock_news', 'report_consensus', 'sentiment_monitor'].includes(j.domain) && (
+                    <div className="mt-3">
+                      <div className="mb-1 flex items-center gap-2">
+                        <span className="text-xs text-zinc-400">股票范围：</span>
+                        <button
+                          onClick={async () => {
+                            const cfg = stockScopeMap[j.domain] || { scopeType: 'all', groupId: 0 }
+                            setPreviewDomain(j.title)
+                            setPreviewLoading(true)
+                            setPreviewCodes([])
+                            setPreviewTotalCount(null)
+                            try {
+                              if (cfg.scopeType === 'all') {
+                                // 全市场模式：只获取总数，不获取具体列表
+                                const resp = await fetchJson<{ ok: boolean; total: number }>('/api/v1/stock-groups/stock-count')
+                                setPreviewTotalCount(resp.total || 0)
+                                setPreviewCodes([])
+                              } else if (cfg.scopeType === 'group' && cfg.groupId > 0) {
+                                // 自定义分组：获取分组内的股票列表
+                                const resp = await fetchJson<{ items: { stock_code: string }[] }>(`/api/v1/stock-groups/${cfg.groupId}/items`)
+                                setPreviewCodes((resp.items || []).map(i => i.stock_code))
+                              } else if (cfg.scopeType === 'watchlist') {
+                                // 自选股：调用专用接口获取代码列表
+                                const resp = await fetchJson<{ ok: boolean; codes: string[] }>('/api/v1/stock-groups/watchlist-codes')
+                                setPreviewCodes(resp.codes || [])
+                              }
+                            } catch {
+                              setPreviewCodes([])
+                            }
+                            setPreviewLoading(false)
+                          }}
+                          className="inline-flex items-center gap-1 text-xs text-zinc-400 transition hover:text-zinc-700"
+                          title="预览股票列表"
+                        >
+                          <Eye className="h-3 w-3" />
+                          预览
+                        </button>
+                      </div>
+                      <StockScopeSelector
+                        defaultValue={stockScopeMap[j.domain] || { scopeType: 'all', groupId: 0 }}
+                        onChange={(v) => setStockScopeMap(prev => ({ ...prev, [j.domain]: v }))}
+                      />
+                    </div>
+                  )}
 
                   {isEditing ? (
                     <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
@@ -318,6 +429,38 @@ export default function Jobs() {
           </div>
         </CardBody>
       </Card>
+
+      {/* 股票预览弹窗 */}
+      {previewDomain !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => { setPreviewDomain(null); setPreviewTotalCount(null) }}>
+          <div className="w-[480px] max-h-[70vh] rounded-xl bg-white p-5 shadow-xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-sm font-semibold text-zinc-900">{previewDomain} - 股票预览</div>
+              <button onClick={() => { setPreviewDomain(null); setPreviewTotalCount(null) }} className="text-zinc-400 hover:text-zinc-700">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {previewLoading ? (
+              <div className="py-8 text-center text-xs text-zinc-400">加载中...</div>
+            ) : previewTotalCount !== null ? (
+              <div className="py-8 text-center text-xs text-zinc-500">
+                全市场模式已选中约 {previewTotalCount} 只股票
+              </div>
+            ) : previewCodes.length === 0 ? (
+              <div className="py-8 text-center text-xs text-zinc-400">暂无股票数据</div>
+            ) : (
+              <>
+                <div className="mb-2 text-xs text-zinc-500">共 {previewCodes.length} 只股票</div>
+                <div className="grid grid-cols-4 gap-1">
+                  {previewCodes.map((c) => (
+                    <span key={c} className="rounded bg-zinc-50 px-2 py-1 text-xs text-zinc-700">{c}</span>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

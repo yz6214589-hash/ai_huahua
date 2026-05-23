@@ -125,6 +125,7 @@ router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
 _TASK_QUEUE: queue.Queue[str] = queue.Queue()
 _WORKER_STARTED = False
 _WORKER_LOCK = threading.Lock()
+_WORKER_COUNT = 2
 _DEFAULT_REPORT_TIMEOUT_SECONDS = 300
 
 
@@ -837,19 +838,15 @@ def _worker_loop() -> None:
 
 
 def _ensure_worker_started() -> None:
-    """
-    确保后台worker线程仅启动一次（双重检查锁定模式）
-    
-    首次调用时创建daemon线程执行_worker_loop；后续调用直接返回
-    """
     global _WORKER_STARTED
     if _WORKER_STARTED:
         return
     with _WORKER_LOCK:
         if _WORKER_STARTED:
             return
-        t = threading.Thread(target=_worker_loop, name="reports-worker", daemon=True)
-        t.start()
+        for i in range(_WORKER_COUNT):
+            t = threading.Thread(target=_worker_loop, name=f"reports-worker-{i}", daemon=True)
+            t.start()
         _WORKER_STARTED = True
 
 

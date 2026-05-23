@@ -1,12 +1,13 @@
 /**
  * 统一股票搜索下拉选择组件
- * 支持单选/多选模式，点击搜索按钮后展示全部匹配结果，下拉列表支持滚动加载更多
+ * 单一输入框，内嵌下拉按钮，输入自动搜索，点击切换下拉列表
+ * 支持单选/多选模式，下拉列表支持滚动加载更多
  */
 
 import { cn } from '@/lib/utils'
 import type { StockSearchItem } from '@/api/types'
 import { fetchJson } from '@/api/client'
-import { Search, ChevronDown, X, Plus } from 'lucide-react'
+import { ChevronDown, X, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 export interface StockPickerProps {
@@ -19,6 +20,7 @@ export interface StockPickerProps {
 }
 
 const PAGE_SIZE = 20
+const DEBOUNCE_MS = 300
 
 async function fetchStocksPage(q: string, offset: number): Promise<StockSearchItem[]> {
   const params = new URLSearchParams()
@@ -45,7 +47,6 @@ export function StockPicker({
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [loading, setLoading] = useState(false)
-  const [searched, setSearched] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -53,6 +54,8 @@ export function StockPicker({
   const listRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
   const loadingMoreRef = useRef(false)
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const justSelectedRef = useRef(false)
 
   const selectedItems: StockSearchItem[] = isMultiple
     ? (Array.isArray(value) ? value : value ? [value] : [])
@@ -62,7 +65,7 @@ export function StockPicker({
 
   const selectedCodes = useMemo(() => new Set(selectedItems.map((it) => it.code)), [selectedItems])
 
-  // 处理点击外部关闭下拉框
+  // 点击外部关闭下拉框
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (containerRef.current && !(containerRef.current as HTMLElement).contains(e.target as Node)) {
@@ -81,6 +84,7 @@ export function StockPicker({
     return () => document.removeEventListener('keydown', onKey)
   }, [open])
 
+  // 滚动加载更多
   useEffect(() => {
     if (!sentinelRef.current || !open) return
     const observer = new IntersectionObserver(
@@ -143,33 +147,55 @@ export function StockPicker({
     }
   }, [loading, hasMore, page, query, loadPage])
 
+  const doSearch = useCallback((q: string) => {
+    setResults([])
+    setPage(0)
+    setHasMore(true)
+    loadPage(q, 0)
+  }, [loadPage])
+
+  // 输入防抖搜索
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setQuery(val)
+    setOpen(true)
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      doSearch(val)
+    }, DEBOUNCE_MS)
+  }, [doSearch])
+
+  // 切换下拉开闭，打开时加载初始列表
   const handleToggleOpen = useCallback(() => {
     if (disabled) return
-    if (!open) {
+    const willOpen = !open
+    setOpen(willOpen)
+    if (willOpen) {
+      justSelectedRef.current = false
       setQuery('')
       setResults([])
       setPage(0)
       setHasMore(true)
-      setSearched(false)
       loadPage('', 0)
+      setTimeout(() => inputRef.current?.focus(), 0)
     }
-    setOpen((v) => !v)
   }, [disabled, open, loadPage])
 
-  const handleSearch = useCallback(() => {
-    setResults([])
-    setPage(0)
-    setHasMore(true)
-    setSearched(true)
-    loadPage(query, 0)
-  }, [loadPage, query])
-
+  // 键盘事件
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && results.length > 0 && open) {
       e.preventDefault()
-      handleSearch()
+      const first = results[0]
+      if (!selectedCodes.has(first.code)) {
+        selectItem(first)
+      }
     }
-  }, [handleSearch])
+    if (e.key === 'Escape') {
+      setOpen(false)
+    }
+  }, [results, open, selectedCodes])
 
   const selectItem = useCallback((item: StockSearchItem) => {
     if (isMultiple) {
@@ -180,12 +206,9 @@ export function StockPicker({
       onChange?.(item)
       setOpen(false)
       setQuery('')
-      setResults([])
-      setPage(0)
-      setHasMore(true)
-      setSearched(false)
+      justSelectedRef.current = true
     }
-  }, [isMultiple, selectedCodes, selectedItems])
+  }, [isMultiple, selectedCodes, selectedItems, onChange])
 
   const removeItem = useCallback((code: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -197,67 +220,88 @@ export function StockPicker({
     onChange?.(next)
   }, [isMultiple, selectedItems, onChange])
 
+  // 清理定时器
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
+    }
+  }, [])
+
   return (
     <div ref={containerRef} className={cn('relative', className)}>
       <div
         className={cn(
-          'flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 cursor-pointer transition',
-          disabled ? 'bg-zinc-50 cursor-not-allowed opacity-60' : 'hover:border-zinc-400',
-          open ? 'border-zinc-400 ring-1 ring-zinc-400' : ''
+          'flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white transition',
+          disabled ? 'bg-zinc-50 opacity-60' : '',
+          open ? 'border-zinc-400 ring-1 ring-zinc-400' : 'hover:border-zinc-400'
         )}
-        onClick={handleToggleOpen}
       >
-        {selectedItems.length > 0 ? (
-          selectedItems.map((it) => (
-            <span
-              key={it.code}
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs"
-            >
-              <span className="font-semibold text-zinc-900">{it.code}</span>
-              {it.name ? <span className="text-zinc-500">{it.name}</span> : null}
-              <button
-                type="button"
-                onClick={(e) => removeItem(it.code, e)}
-                className="ml-0.5 text-zinc-400 hover:text-zinc-700"
+        {isMultiple && selectedItems.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 pl-2 py-1.5">
+            {selectedItems.map((it) => (
+              <span
+                key={it.code}
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs"
               >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))
-        ) : (
-          <span className="text-sm text-zinc-400">{placeholder}</span>
+                <span className="font-semibold text-zinc-900">{it.code}</span>
+                {it.name ? <span className="text-zinc-500">{it.name}</span> : null}
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={(e) => removeItem(it.code, e)}
+                  className="ml-0.5 text-zinc-400 hover:text-zinc-700"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
         )}
-        <span className="ml-auto">
-          <ChevronDown className={cn('h-4 w-4 text-zinc-400 transition-transform', open ? 'rotate-180' : '')} />
-        </span>
+        <div className="relative flex flex-1 items-center min-w-0">
+          {!isMultiple && selectedItems.length > 0 && !open ? (
+            <div className="flex items-center gap-1.5 px-3 py-2 w-full cursor-pointer" onClick={() => { if (!disabled) { justSelectedRef.current = false; setOpen(true); setQuery(''); setResults([]); setPage(0); setHasMore(true); loadPage('', 0); setTimeout(() => inputRef.current?.focus(), 0) } }}>
+              <span className="text-sm font-semibold text-zinc-900 truncate">
+                {selectedItems[0].code}
+              </span>
+              {selectedItems[0].name && (
+                <span className="text-xs text-zinc-500 truncate">{selectedItems[0].name}</span>
+              )}
+            </div>
+          ) : (
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={handleInputChange}
+              onKeyDown={handleInputKeyDown}
+              onFocus={() => {
+                if (justSelectedRef.current) { justSelectedRef.current = false; return }
+                if (!open && !disabled) { setOpen(true); setQuery(''); setResults([]); setPage(0); setHasMore(true); loadPage('', 0) }
+              }}
+              disabled={disabled}
+              placeholder={isMultiple ? placeholder : (selectedItems.length > 0 ? `${selectedItems[0].code} ${selectedItems[0].name || ''}` : placeholder)}
+              className="w-full rounded-lg bg-transparent px-3 py-2 pr-7 text-sm outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed"
+            />
+          )}
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={handleToggleOpen}
+            className={cn(
+              'absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-zinc-400 transition',
+              disabled ? '' : 'hover:text-zinc-700',
+              open ? 'text-zinc-700' : ''
+            )}
+          >
+            <ChevronDown className={cn('h-4 w-4 transition-transform', open ? 'rotate-180' : '')} />
+          </button>
+        </div>
       </div>
 
       {open ? (
         <div className="absolute z-50 mt-1 w-full rounded-lg border border-zinc-200 bg-white shadow-sm">
-          <div className="flex items-center gap-2 border-b border-zinc-100 p-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-zinc-400" />
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleInputKeyDown}
-                disabled={disabled}
-                placeholder="输入股票代码或名称"
-                className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pl-8 pr-2 text-sm outline-none transition focus:border-zinc-400 disabled:bg-zinc-50"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); handleSearch() }}
-              disabled={disabled || loading}
-              className="inline-flex items-center gap-1 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
-            >
-              <Search className="h-3.5 w-3.5" />
-              搜索
-            </button>
-          </div>
-
           <div ref={listRef} className="max-h-64 overflow-auto p-1.5">
             {loading && results.length === 0 ? (
               <div className="px-2 py-3 text-xs text-zinc-500">加载中…</div>
@@ -265,7 +309,7 @@ export function StockPicker({
               <div className="px-2 py-3 text-xs text-red-600">{err}</div>
             ) : results.length === 0 ? (
               <div className="px-2 py-3 text-xs text-zinc-500">
-                {searched ? '无匹配结果' : '暂无数据'}
+                {query.trim() ? '无匹配结果' : '输入关键词搜索'}
               </div>
             ) : (
               <div className="space-y-1">

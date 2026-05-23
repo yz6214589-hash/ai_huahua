@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchJson, postJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
@@ -44,15 +44,15 @@ const SW_INDUSTRIES = [
 ]
 
 const FILTER_CONFIG = [
-  { key: 'pe_min', label: '市盈率下限', key2: 'pe_max', label2: '上限', unit: '' },
-  { key: 'pb_min', label: '市净率下限', key2: 'pb_max', label2: '上限', unit: '' },
-  { key: 'roe_min', label: 'ROE下限(%)', key2: 'roe_max', label2: '上限', unit: '%' },
-  { key: 'gross_margin_min', label: '毛利率下限(%)', key2: 'gross_margin_max', label2: '上限', unit: '%' },
-  { key: 'net_margin_min', label: '净利率下限(%)', key2: 'net_margin_max', label2: '上限', unit: '%' },
-  { key: 'market_cap_min', label: '市值下限(亿)', key2: 'market_cap_max', label2: '上限', unit: '亿' },
-  { key: 'revenue_growth_min', label: '营收增速下限(%)', key2: 'revenue_growth_max', label2: '上限', unit: '%' },
-  { key: 'profit_growth_min', label: '利润增速下限(%)', key2: 'profit_growth_max', label2: '上限', unit: '%' },
-  { key: 'debt_ratio_min', label: '负债率下限(%)', key2: 'debt_ratio_max', label2: '上限', unit: '%' },
+  { key: 'pe', label: '市盈率', unit: '', sliderMin: 0, sliderMax: 200, step: 1, defaultMin: 0, defaultMax: 200 },
+  { key: 'pb', label: '市净率', unit: '', sliderMin: 0, sliderMax: 20, step: 0.1, defaultMin: 0, defaultMax: 20 },
+  { key: 'roe', label: 'ROE', unit: '%', sliderMin: -50, sliderMax: 100, step: 0.5, defaultMin: -50, defaultMax: 100 },
+  { key: 'gross_margin', label: '毛利率', unit: '%', sliderMin: 0, sliderMax: 100, step: 0.5, defaultMin: 0, defaultMax: 100 },
+  { key: 'net_margin', label: '净利率', unit: '%', sliderMin: -50, sliderMax: 100, step: 0.5, defaultMin: -50, defaultMax: 100 },
+  { key: 'market_cap', label: '市值', unit: '亿', sliderMin: 0, sliderMax: 50000, step: 1, defaultMin: 0, defaultMax: 50000 },
+  { key: 'revenue_growth', label: '营收增速', unit: '%', sliderMin: -100, sliderMax: 500, step: 1, defaultMin: -100, defaultMax: 500 },
+  { key: 'profit_growth', label: '利润增速', unit: '%', sliderMin: -500, sliderMax: 1000, step: 1, defaultMin: -500, defaultMax: 1000 },
+  { key: 'debt_ratio', label: '负债率', unit: '%', sliderMin: 0, sliderMax: 100, step: 0.5, defaultMin: 0, defaultMax: 100 },
 ]
 
 function ScoreBar({ score }: { score: number }) {
@@ -84,6 +84,100 @@ function calcScore(s: StockResult): number {
   return Math.min(100, Math.round(score))
 }
 
+function RangeSlider({
+  min, max, step,
+  valueMin, valueMax,
+  onChangeMin, onChangeMax,
+  unit = '',
+}: {
+  min: number; max: number; step: number
+  valueMin: number; valueMax: number
+  onChangeMin: (v: number) => void
+  onChangeMax: (v: number) => void
+  unit?: string
+}) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [dragging, setDragging] = useState<'min' | 'max' | null>(null)
+
+  const snap = (v: number) => {
+    const s = Math.round((v - min) / step)
+    return Math.min(max, Math.max(min, min + s * step))
+  }
+
+  const pctMin = max === min ? 0 : ((valueMin - min) / (max - min)) * 100
+  const pctMax = max === min ? 100 : ((valueMax - min) / (max - min)) * 100
+
+  useEffect(() => {
+    if (!dragging) return
+    const handleMove = (e: MouseEvent) => {
+      if (!trackRef.current) return
+      const rect = trackRef.current.getBoundingClientRect()
+      const pct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100))
+      const val = snap(min + (pct / 100) * (max - min))
+      if (dragging === 'min') {
+        onChangeMin(Math.min(val, valueMax))
+      } else {
+        onChangeMax(Math.max(val, valueMin))
+      }
+    }
+    const handleUp = () => setDragging(null)
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [dragging, min, max, step, valueMin, valueMax, onChangeMin, onChangeMax])
+
+  const handleTrackClick = (e: React.MouseEvent) => {
+    if (!trackRef.current) return
+    const rect = trackRef.current.getBoundingClientRect()
+    const pct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100))
+    const val = snap(min + (pct / 100) * (max - min))
+    const distMin = Math.abs(val - valueMin)
+    const distMax = Math.abs(val - valueMax)
+    if (distMin <= distMax) {
+      onChangeMin(Math.min(val, valueMax))
+    } else {
+      onChangeMax(Math.max(val, valueMin))
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div
+        ref={trackRef}
+        className="relative h-6 cursor-pointer select-none"
+        onMouseDown={handleTrackClick}
+      >
+        <div className="absolute top-1/2 left-0 right-0 h-1.5 -translate-y-1/2 rounded-full bg-zinc-200" />
+        <div
+          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-zinc-900"
+          style={{ left: `${pctMin}%`, right: `${100 - pctMax}%` }}
+        />
+        <div
+          className="absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-zinc-900 bg-white shadow-sm active:cursor-grabbing"
+          style={{ left: `${pctMin}%` }}
+          onMouseDown={(e) => { e.stopPropagation(); setDragging('min') }}
+        />
+        <div
+          className="absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-zinc-900 bg-white shadow-sm active:cursor-grabbing"
+          style={{ left: `${pctMax}%` }}
+          onMouseDown={(e) => { e.stopPropagation(); setDragging('max') }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-zinc-500">
+          下限: <strong className="text-zinc-800">{valueMin}</strong>{unit}
+        </span>
+        <span className="text-zinc-500">
+          上限: <strong className="text-zinc-800">{valueMax}</strong>{unit}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export default function StockSelectFundamental() {
   const [results, setResults] = useState<StockResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -92,7 +186,11 @@ export default function StockSelectFundamental() {
   const [showFilters, setShowFilters] = useState(true)
 
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([])
-  const [filterValues, setFilterValues] = useState<Record<string, { min: string; max: string }>>({})
+  const [filterValues, setFilterValues] = useState<Record<string, { min: number; max: number }>>(() => {
+    const init: Record<string, { min: number; max: number }> = {}
+    FILTER_CONFIG.forEach(fc => { init[fc.key] = { min: fc.defaultMin, max: fc.defaultMax } })
+    return init
+  })
 
   useEffect(() => {
     fetchDataStatus()
@@ -116,8 +214,8 @@ export default function StockSelectFundamental() {
         params.industries = selectedIndustries
       }
       for (const [key, val] of Object.entries(filterValues)) {
-        if (val.min) params[key + '_min'] = Number(val.min)
-        if (val.max) params[key + '_max'] = Number(val.max)
+        if (val.min !== undefined) params[key + '_min'] = val.min
+        if (val.max !== undefined) params[key + '_max'] = val.max
       }
       const data = await postJson<{ items: StockResult[]; total: number }>('/api/v1/stock-select/query', params)
       setResults(data.items || [])
@@ -148,14 +246,18 @@ export default function StockSelectFundamental() {
     )
   }
 
-  const updateFilter = (key: string, field: 'min' | 'max', value: string) => {
+  const updateFilter = (key: string, field: 'min' | 'max', value: number) => {
     setFilterValues(prev => ({
       ...prev,
-      [key]: { ...(prev[key] || { min: '', max: '' }), [field]: value },
+      [key]: { ...(prev[key] || { min: 0, max: 0 }), [field]: value },
     }))
   }
 
-  const hasFilters = selectedIndustries.length > 0 || Object.values(filterValues).some(v => v.min || v.max)
+  const hasFilters = selectedIndustries.length > 0 || Object.entries(filterValues).some(([key, val]) => {
+    const cfg = FILTER_CONFIG.find(fc => fc.key === key)
+    if (!cfg) return false
+    return val.min !== cfg.sliderMin || val.max !== cfg.sliderMax
+  })
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '暂无数据'
@@ -221,7 +323,12 @@ export default function StockSelectFundamental() {
           </button>
           {hasFilters && (
             <button
-              onClick={() => { setSelectedIndustries([]); setFilterValues({}) }}
+              onClick={() => {
+                setSelectedIndustries([])
+                const init: Record<string, { min: number; max: number }> = {}
+                FILTER_CONFIG.forEach(fc => { init[fc.key] = { min: fc.defaultMin, max: fc.defaultMax } })
+                setFilterValues(init)
+              }}
               className="text-xs text-red-500 hover:text-red-600"
             >
               清除筛选
@@ -265,28 +372,20 @@ export default function StockSelectFundamental() {
                 })}
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {FILTER_CONFIG.map(fc => (
                 <div key={fc.key} className="rounded-lg border border-zinc-100 bg-zinc-50 p-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      placeholder={fc.label}
-                      value={filterValues[fc.key]?.min ?? ''}
-                      onChange={e => updateFilter(fc.key, 'min', e.target.value)}
-                      className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                    />
-                    <span className="text-xs text-zinc-400">~</span>
-                    <input
-                      type="number"
-                      placeholder={fc.label2}
-                      value={filterValues[fc.key]?.max ?? ''}
-                      onChange={e => updateFilter(fc.key, 'max', e.target.value)}
-                      className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                    />
-                    <span className="text-xs text-zinc-500">{fc.unit}</span>
-                  </div>
-                  <div className="mt-1 text-xs text-zinc-500">{fc.label} ~ {fc.label2}</div>
+                  <div className="mb-2 text-xs font-medium text-zinc-700">{fc.label}</div>
+                  <RangeSlider
+                    min={fc.sliderMin}
+                    max={fc.sliderMax}
+                    step={fc.step}
+                    valueMin={filterValues[fc.key]?.min ?? fc.defaultMin}
+                    valueMax={filterValues[fc.key]?.max ?? fc.defaultMax}
+                    onChangeMin={(v) => updateFilter(fc.key, 'min', v)}
+                    onChangeMax={(v) => updateFilter(fc.key, 'max', v)}
+                    unit={fc.unit}
+                  />
                 </div>
               ))}
             </div>

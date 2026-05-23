@@ -20,6 +20,78 @@ logger = get_logger("sim_account")
 router = APIRouter(prefix="/api/v1/sim-account", tags=["sim-account"])
 
 
+def _ensure_sim_tables() -> None:
+    try:
+        conn = _get_conn()
+        try:
+            execute(conn, """
+                CREATE TABLE IF NOT EXISTS trade_sim_account (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    account_name VARCHAR(100) NOT NULL,
+                    initial_capital DECIMAL(15,2) NOT NULL DEFAULT 1000000.00,
+                    current_capital DECIMAL(15,2) NOT NULL DEFAULT 1000000.00,
+                    market_value DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    total_asset DECIMAL(15,2) NOT NULL DEFAULT 1000000.00,
+                    total_pnl DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    total_pnl_pct DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
+                    today_pnl DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    today_pnl_pct DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
+                    position_count INT NOT NULL DEFAULT 0,
+                    status VARCHAR(20) NOT NULL DEFAULT 'active',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    description VARCHAR(500) DEFAULT NULL,
+                    UNIQUE KEY uk_account_name (account_name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """, ())
+            execute(conn, """
+                CREATE TABLE IF NOT EXISTS trade_sim_position (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    account_id INT NOT NULL,
+                    stock_code VARCHAR(20) NOT NULL,
+                    stock_name VARCHAR(100) NOT NULL,
+                    volume INT NOT NULL DEFAULT 0,
+                    available_volume INT NOT NULL DEFAULT 0,
+                    cost DECIMAL(15,4) NOT NULL DEFAULT 0.00,
+                    cur_price DECIMAL(15,4) NOT NULL DEFAULT 0.00,
+                    market_value DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    pnl DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    pnl_pct DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
+                    buy_date DATE DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uk_account_stock (account_id, stock_code)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """, ())
+            execute(conn, """
+                CREATE TABLE IF NOT EXISTS trade_sim_trade (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    trade_no VARCHAR(50) NOT NULL,
+                    account_id INT NOT NULL,
+                    stock_code VARCHAR(20) NOT NULL,
+                    stock_name VARCHAR(100) NOT NULL,
+                    side VARCHAR(10) NOT NULL,
+                    price DECIMAL(15,4) NOT NULL,
+                    volume INT NOT NULL,
+                    amount DECIMAL(15,2) NOT NULL,
+                    commission DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    trade_time DATETIME NOT NULL,
+                    strategy VARCHAR(50) DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uk_trade_no (trade_no),
+                    KEY idx_account_id (account_id),
+                    KEY idx_trade_time (trade_time)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """, ())
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error("自动建表失败", extra={"error": str(e)})
+
+
+_ensure_sim_tables()
+
+
 class SimAccountCreate(BaseModel):
     """创建模拟盘账户请求"""
     account_name: str = Field(..., min_length=1, max_length=100)

@@ -45,8 +45,6 @@ export default function WatchSentiment() {
   const [activeTab, setActiveTab] = useState<'events' | 'grouped' | 'history'>('events')
 
   const [watchlist, setWatchlist] = useState<{ code: string; name: string }[]>([])
-  const [customCode, setCustomCode] = useState('')
-  const [customName, setCustomName] = useState('')
 
   const [notifyEnabled, setNotifyEnabled] = useState(false)
   const [notifyThreshold, setNotifyThreshold] = useState(0.3)
@@ -186,14 +184,11 @@ export default function WatchSentiment() {
     }
   }
 
-  const addCustomStock = () => {
-    if (!customCode) return
+  const addCustomStock = (item: StockSearchItem) => {
     setWatchlist(prev => {
-      if (prev.find(s => s.code === customCode)) return prev
-      return [...prev, { code: customCode, name: customName || customCode }]
+      if (prev.find(s => s.code === item.code)) return prev
+      return [...prev, { code: item.code, name: item.name || item.code }]
     })
-    setCustomCode('')
-    setCustomName('')
   }
 
   const removeCustomStock = (code: string) => {
@@ -365,10 +360,12 @@ export default function WatchSentiment() {
             </div>
           </CardHeader>
           <CardBody>
-            <div className="flex gap-2 mb-3">
-              <input type="text" value={customCode} onChange={e => setCustomCode(e.target.value)} placeholder="股票代码" className="flex-1 rounded border border-zinc-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900" />
-              <input type="text" value={customName} onChange={e => setCustomName(e.target.value)} placeholder="名称" className="flex-1 rounded border border-zinc-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900" />
-              <button onClick={addCustomStock} className="rounded bg-zinc-900 px-2.5 py-1.5 text-xs text-white hover:bg-zinc-800"><Plus className="h-3 w-3" /></button>
+            <div className="mb-3">
+              <StockPicker
+                mode="single"
+                placeholder="搜索股票代码或名称"
+                onChange={(v) => { if (v) addCustomStock(v as StockSearchItem) }}
+              />
             </div>
             <div className="max-h-48 overflow-y-auto space-y-1">
               {watchlist.map(s => (

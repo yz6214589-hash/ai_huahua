@@ -6,6 +6,24 @@ import type {
   StockTechnicalLatest,
   StockTechnicalRow,
 } from '@/api/types'
+
+// 分时图分钟数据
+interface IntradayMinuteData {
+  time: string          // '09:30'
+  price: number | null  // 当前分钟价格
+  avg_price: number | null  // 均价
+  volume: number | null // 当前分钟成交量
+}
+
+// 分时图API响应
+interface IntradayResponse {
+  stock_code: string
+  trade_date: string
+  pre_close: number | null
+  is_trading_today: boolean
+  data_source: string
+  minute_data: IntradayMinuteData[]
+}
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Tabs } from '@/components/Tabs'
 import { cn } from '@/lib/utils'
@@ -53,7 +71,7 @@ export default function StockDetail() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
 
-  const [tab, setTab] = useState<'fundamentals' | 'technical' | 'feed'>('fundamentals')
+  const [tab, setTab] = useState<'fundamentals' | 'technical' | 'intraday' | 'feed'>('fundamentals')
 
   const [snapshot, setSnapshot] = useState<StockSnapshot | null>(null)
   const [fund, setFund] = useState<StockFundamentals | null>(null)
@@ -61,11 +79,13 @@ export default function StockDetail() {
   const [techRows, setTechRows] = useState<StockTechnicalRow[]>([])
   const [feedTab, setFeedTab] = useState<'news' | 'reports'>('news')
   const [feed, setFeed] = useState<StockFeedResponse | null>(null)
+  const [intraday, setIntraday] = useState<IntradayResponse | null>(null)
 
   const [loadingSnap, setLoadingSnap] = useState(false)
   const [loadingFund, setLoadingFund] = useState(false)
   const [loadingTech, setLoadingTech] = useState(false)
   const [loadingFeed, setLoadingFeed] = useState(false)
+  const [loadingIntraday, setLoadingIntraday] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const [techView, setTechView] = useState<'data' | 'chart'>('chart')
@@ -155,14 +175,24 @@ export default function StockDetail() {
     }
   }, [code, feedTab, page])
 
+  const loadIntraday = useCallback(async () => {
+    setLoadingIntraday(true)
+    try {
+      const r = await fetchJson<IntradayResponse>(`/api/stock/${encodeURIComponent(code)}/intraday`)
+      setIntraday(r)
+    } finally {
+      setLoadingIntraday(false)
+    }
+  }, [code])
+
   const loadAll = useCallback(async () => {
     setErr(null)
     try {
-      await Promise.all([loadSnapshot(), loadFund(), loadTech(), loadFeed()])
+      await Promise.all([loadSnapshot(), loadFund(), loadTech(), loadFeed(), loadIntraday()])
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }, [loadSnapshot, loadFund, loadTech, loadFeed])
+  }, [loadSnapshot, loadFund, loadTech, loadFeed, loadIntraday])
 
   useEffect(() => {
     loadAll()
@@ -196,7 +226,19 @@ export default function StockDetail() {
         <div className="flex items-start gap-3">
           <button
             type="button"
-            onClick={() => navigate(-1)}
+            onClick={() => {
+              console.log('[BackBtn] 返回按钮被点击')
+              console.log('[BackBtn] current pathname =', window.location.pathname)
+              const fromPath = sessionStorage.getItem('stock_detail_from')
+              console.log('[BackBtn] sessionStorage stock_detail_from =', fromPath)
+              if (fromPath && fromPath !== window.location.pathname) {
+                console.log('[BackBtn] 从 sessionStorage 恢复导航路径:', fromPath)
+                navigate(fromPath)
+              } else {
+                console.log('[BackBtn] sessionStorage 无有效路径，跳转到 /home')
+                navigate('/home')
+              }
+            }}
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -342,6 +384,37 @@ export default function StockDetail() {
 
     const volSeries = vol.map((v, i) => ({ value: v, itemStyle: { color: volColors[i] } }))
 
+    // MACD 柱状图颜色：正值红色，负值绿色
+    const macdHistSeries = macdHist.map((v) => {
+      if (v === null) return null
+      return {
+        value: v,
+        itemStyle: { color: v >= 0 ? '#ef4444' : '#22c55e' },
+      }
+    })
+
+    // ATR 滚动分位值计算（基于过去 90 个交易日的滚动窗口）
+    const atrRollP75: (number | null)[] = []
+    const atrRollP25: (number | null)[] = []
+    const ATR_ROLLING_WINDOW = 90
+    for (let i = 0; i < atr.length; i++) {
+      if (atr[i] === null) {
+        atrRollP75.push(null)
+        atrRollP25.push(null)
+        continue
+      }
+      const start = Math.max(0, i - ATR_ROLLING_WINDOW + 1)
+      const window = atr.slice(start, i + 1).filter((v): v is number => v !== null)
+      if (window.length < 2) {
+        atrRollP75.push(null)
+        atrRollP25.push(null)
+        continue
+      }
+      const sorted = [...window].sort((a, b) => a - b)
+      atrRollP75.push(sorted[Math.floor(sorted.length * 0.75)])
+      atrRollP25.push(sorted[Math.floor(sorted.length * 0.25)])
+    }
+
     return {
       animation: false,
       title: [
@@ -359,7 +432,10 @@ export default function StockDetail() {
           itemWidth: 10,
           itemHeight: 4,
           textStyle: { fontSize: 11, color: '#475569' },
-          data: ['收盘价', `MA${maPeriod}`],
+          data: [
+            { name: '收盘价', itemStyle: { color: '#2563eb' } },
+            { name: `MA${maPeriod}`, itemStyle: { color: '#f59e0b' } },
+          ],
         },
         {
           top: 192,
@@ -368,7 +444,11 @@ export default function StockDetail() {
           itemWidth: 10,
           itemHeight: 4,
           textStyle: { fontSize: 11, color: '#475569' },
-          data: ['DIF', 'DEA', 'MACD'],
+          data: [
+            { name: 'DIF', itemStyle: { color: '#000000' } },
+            { name: 'DEA', itemStyle: { color: '#f59e0b' } },
+            { name: 'MACD', itemStyle: { color: '#ef4444' } },
+          ],
         },
         {
           top: 317,
@@ -377,7 +457,9 @@ export default function StockDetail() {
           itemWidth: 10,
           itemHeight: 4,
           textStyle: { fontSize: 11, color: '#475569' },
-          data: ['成交量'],
+          data: [
+            { name: '成交量', itemStyle: { color: '#6b7280' } },
+          ],
         },
         {
           top: 412,
@@ -386,7 +468,9 @@ export default function StockDetail() {
           itemWidth: 10,
           itemHeight: 4,
           textStyle: { fontSize: 11, color: '#475569' },
-          data: [`RSI(${rsiPeriod})`],
+          data: [
+            { name: `RSI(${rsiPeriod})`, itemStyle: { color: '#7c3aed' } },
+          ],
         },
         {
           top: 507,
@@ -395,7 +479,9 @@ export default function StockDetail() {
           itemWidth: 10,
           itemHeight: 4,
           textStyle: { fontSize: 11, color: '#475569' },
-          data: [`ATR(${atrPeriod})`],
+          data: [
+            { name: `ATR(${atrPeriod})`, itemStyle: { color: '#b45309' } },
+          ],
         },
       ],
       axisPointer: { link: [{ xAxisIndex: 'all' }] },
@@ -428,9 +514,9 @@ export default function StockDetail() {
       series: [
         { name: '收盘价', type: 'line', data: close, showSymbol: false, lineStyle: { width: 1.2, color: '#2563eb' } },
         { name: `MA${maPeriod}`, type: 'line', data: maLine, showSymbol: false, lineStyle: { width: 1.2, color: '#f59e0b' }, tooltip: { show: false } },
-        { name: 'MACD', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: macdHist, itemStyle: { color: '#60a5fa' }, large: true },
-        { name: 'DIF', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: macdDif, showSymbol: false, lineStyle: { width: 1, color: '#ef4444' } },
-        { name: 'DEA', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: macdDea, showSymbol: false, lineStyle: { width: 1, color: '#22c55e' } },
+        { name: 'MACD', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: macdHistSeries, large: true },
+        { name: 'DIF', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: macdDif, showSymbol: false, lineStyle: { width: 1, color: '#000000' } },
+        { name: 'DEA', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: macdDea, showSymbol: false, lineStyle: { width: 1, color: '#f59e0b' } },
         { name: '成交量', type: 'bar', xAxisIndex: 2, yAxisIndex: 2, data: volSeries, large: true },
         {
           name: `RSI(${rsiPeriod})`,
@@ -443,13 +529,248 @@ export default function StockDetail() {
           markLine: {
             symbol: 'none',
             lineStyle: { color: '#94a3b8', type: 'dashed' },
-            data: [{ yAxis: 80 }, { yAxis: 50 }, { yAxis: 20 }],
+            label: { fontSize: 9 },
+            data: [
+              {
+                yAxis: 80,
+                label: {
+                  formatter: '超买 {c}\n建议卖出',
+                  position: 'insideEndTop',
+                  color: '#ef4444',
+                  fontWeight: 'bold' as const,
+                },
+                lineStyle: { color: '#ef4444', type: 'dashed' },
+              },
+              { yAxis: 50, label: { formatter: '50' } },
+              {
+                yAxis: 20,
+                label: {
+                  formatter: '超卖 {c}\n建议买入',
+                  position: 'insideEndBottom',
+                  color: '#22c55e',
+                  fontWeight: 'bold' as const,
+                },
+                lineStyle: { color: '#22c55e', type: 'dashed' },
+              },
+            ],
           },
         },
-        { name: `ATR(${atrPeriod})`, type: 'line', xAxisIndex: 4, yAxisIndex: 4, data: atr, showSymbol: false, lineStyle: { width: 1.2, color: '#b45309' } },
+        {
+          name: `ATR(${atrPeriod})`,
+          type: 'line',
+          xAxisIndex: 4,
+          yAxisIndex: 4,
+          data: atr,
+          showSymbol: false,
+          lineStyle: { width: 1.2, color: '#b45309' },
+        },
+        {
+          name: `ATR高位警戒(P75)`,
+          type: 'line',
+          xAxisIndex: 4,
+          yAxisIndex: 4,
+          data: atrRollP75,
+          showSymbol: false,
+          lineStyle: { width: 1, color: '#dc2626', type: 'dashed' },
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            lineStyle: { color: '#dc2626', type: 'dashed' },
+            label: { fontSize: 9, color: '#dc2626', fontWeight: 'bold' as const },
+            data: (() => {
+              const last = [...atrRollP75].reverse().find((v) => v !== null)
+              return last !== undefined && last !== null ? [{ yAxis: last, label: { formatter: '75% 高位警戒线' } }] : []
+            })(),
+          },
+        },
+        {
+          name: `ATR低位警戒(P25)`,
+          type: 'line',
+          xAxisIndex: 4,
+          yAxisIndex: 4,
+          data: atrRollP25,
+          showSymbol: false,
+          lineStyle: { width: 1, color: '#22c55e', type: 'dashed' },
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            lineStyle: { color: '#22c55e', type: 'dashed' },
+            label: { fontSize: 9, color: '#22c55e', fontWeight: 'bold' as const },
+            data: (() => {
+              const last = [...atrRollP25].reverse().find((v) => v !== null)
+              return last !== undefined && last !== null ? [{ yAxis: last, label: { formatter: '25% 低位警戒线' } }] : []
+            })(),
+          },
+        },
       ],
     }
   }, [techRows, maPeriod, macdShort, macdLong, macdSignal, rsiPeriod, atrPeriod])
+
+  // 分时图 ECharts 配置
+  const intradayChartOption = useMemo<EChartsOption>(() => {
+    if (!intraday || !intraday.minute_data || intraday.minute_data.length === 0) return {}
+    
+    const times = intraday.minute_data.map((d) => d.time)
+    const prices = intraday.minute_data.map((d) => d.price ?? null)
+    const avgPrices = intraday.minute_data.map((d) => d.avg_price ?? null)
+    const volumes = intraday.minute_data.map((d) => d.volume ?? null)
+    const preClose = intraday.pre_close
+    
+    // 成交量柱状图颜色：成交量>0 且 当前价>=前收价 用红色，否则用绿色
+    const volColors = volumes.map((v, i) => {
+      const p = prices[i]
+      if (v === null || p === null || preClose === null) return '#94a3b8'
+      return p >= preClose ? '#ef4444' : '#22c55e'
+    })
+    
+    const volSeries = volumes.map((v, i) => ({ value: v, itemStyle: { color: volColors[i] } }))
+    
+    // 计算Y轴范围：基于 pre_close 的价格区间
+    const validPrices = prices.filter((p): p is number => p !== null)
+    let yMin = preClose ? preClose * 0.9 : Math.min(...validPrices)
+    let yMax = preClose ? preClose * 1.1 : Math.max(...validPrices)
+    
+    return {
+      animation: false,
+      title: {
+        text: `分时走势 (${intraday.trade_date || ''})${intraday.is_trading_today ? ' · 实时' : ''}`,
+        left: 60,
+        top: 8,
+        textStyle: { fontSize: 13, fontWeight: 600, color: '#111827' }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross' },
+        formatter: (params: any) => {
+          const time = params[0]?.axisValue || ''
+          let html = `<div style="font-weight:600;margin-bottom:4px">${time}</div>`
+          for (const p of params) {
+            if (p.seriesName === '成交量') continue
+            const val = p.value
+            if (val === null || val === undefined) continue
+            html += `<div style="display:flex;justify-content:space-between;gap:12px">
+              <span>${p.marker}${p.seriesName}</span>
+              <span style="font-weight:600">${Number(val).toFixed(2)}</span>
+            </div>`
+          }
+          return html
+        }
+      },
+      legend: [
+        {
+          top: 10,
+          right: 40,
+          icon: 'roundRect',
+          itemWidth: 10,
+          itemHeight: 4,
+          textStyle: { fontSize: 11, color: '#475569' },
+          data: ['价格', '均价']
+        },
+        {
+          top: 307,
+          right: 40,
+          icon: 'roundRect',
+          itemWidth: 10,
+          itemHeight: 4,
+          textStyle: { fontSize: 11, color: '#475569' },
+          data: ['成交量']
+        }
+      ],
+      axisPointer: { link: [{ xAxisIndex: [0] }] },
+      grid: [
+        { left: 65, right: 40, top: 45, bottom: 25, height: 260 },
+        { left: 65, right: 40, top: 335, height: 60 }
+      ],
+      xAxis: [
+        {
+          type: 'category',
+          data: times,
+          boundaryGap: false,
+          axisLine: { onZero: false },
+          axisLabel: { 
+            fontSize: 10,
+            interval: Math.floor(times.length / 8),
+          },
+          splitLine: { show: true, lineStyle: { type: 'dashed', color: '#e5e7eb' } }
+        },
+        {
+          type: 'category',
+          gridIndex: 1,
+          data: times,
+          boundaryGap: false,
+          axisLine: { onZero: false },
+          axisTick: { show: false },
+          axisLabel: { show: false },
+          splitLine: { show: false }
+        }
+      ],
+      yAxis: [
+        {
+          scale: false,
+          min: yMin,
+          max: yMax,
+          splitNumber: 4,
+          axisLabel: { fontSize: 10, formatter: '{value}' },
+          splitLine: { show: true, lineStyle: { type: 'dashed', color: '#e5e7eb' } }
+        },
+        {
+          scale: true,
+          gridIndex: 1,
+          splitNumber: 2,
+          axisLabel: { show: true, fontSize: 9 },
+          splitLine: { show: false }
+        }
+      ],
+      series: [
+        {
+          name: '价格',
+          type: 'line',
+          data: prices,
+          showSymbol: false,
+          lineStyle: { width: 1.2, color: '#2563eb' },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(37, 99, 235, 0.15)' },
+                { offset: 1, color: 'rgba(37, 99, 235, 0.02)' }
+              ]
+            }
+          },
+          markLine: preClose ? {
+            symbol: 'none',
+            silent: true,
+            lineStyle: { color: '#9ca3af', type: 'dashed', width: 1 },
+            label: { 
+              formatter: `昨收 ${preClose.toFixed(2)}`,
+              position: 'end',
+              fontSize: 10,
+              color: '#6b7280'
+            },
+            data: [{ yAxis: preClose }]
+          } : undefined
+        },
+        {
+          name: '均价',
+          type: 'line',
+          data: avgPrices,
+          showSymbol: false,
+          lineStyle: { width: 1.2, color: '#f59e0b', type: 'dashed' },
+          tooltip: { show: true }
+        },
+        {
+          name: '成交量',
+          type: 'bar',
+          xAxisIndex: 1,
+          yAxisIndex: 1,
+          data: volSeries,
+          large: true,
+          barWidth: '80%'
+        }
+      ]
+    }
+  }, [intraday])
 
   const technicalBlock = (
     <Card>
@@ -573,6 +894,61 @@ export default function StockDetail() {
     </Card>
   )
 
+  // 分时图区块
+  const intradayBlock = (
+    <Card>
+      <CardHeader
+        title="分时图"
+        right={
+          intraday ? (
+            <span className="text-xs text-zinc-400">
+              数据来源: {intraday.data_source} · {intraday.trade_date}
+              {intraday.is_trading_today ? ' · 实时' : ''}
+            </span>
+          ) : undefined
+        }
+      />
+      <CardBody>
+        {loadingIntraday ? <div className="text-sm text-zinc-500">加载中…</div> : null}
+        {!loadingIntraday && (!intraday || intraday.minute_data.length === 0) ? (
+          <div className="text-sm text-zinc-500">暂无分时数据</div>
+        ) : null}
+        {!loadingIntraday && intraday && intraday.minute_data.length > 0 ? (
+          <div>
+            {/* 价格摘要信息 */}
+            <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">
+              <div>
+                <span className="text-zinc-500">昨收 </span>
+                <span className="font-semibold text-zinc-900">{fmtNum(intraday.pre_close, 2)}</span>
+              </div>
+              {(() => {
+                const lastData = intraday.minute_data[intraday.minute_data.length - 1]
+                if (!lastData || !lastData.price || !intraday.pre_close) return null
+                const change = lastData.price - intraday.pre_close
+                const pct = (change / intraday.pre_close) * 100
+                const color = change >= 0 ? 'text-red-600' : 'text-green-600'
+                return (
+                  <>
+                    <div>
+                      <span className="text-zinc-500">最新 </span>
+                      <span className={cn('font-semibold', color)}>{fmtNum(lastData.price, 2)}</span>
+                    </div>
+                    <div>
+                      <span className={cn('text-sm font-medium', color)}>
+                        {fmtSigned(change, 2)} ({fmtSigned(pct, 2)}%)
+                      </span>
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+            <ReactECharts option={intradayChartOption} style={{ height: 450, width: '100%' }} />
+          </div>
+        ) : null}
+      </CardBody>
+    </Card>
+  )
+
   const feedBlock = (
     <Card>
       <CardHeader
@@ -602,25 +978,30 @@ export default function StockDetail() {
             {feed.items.map((it, idx) => (
               <div key={`${it.title}-${idx}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold text-zinc-900">{it.title}</div>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                       <span>{it.source || '—'}</span>
                       <span>{fmtDateTime(it.publishedAt || null)}</span>
                     </div>
+                    {it.content ? (
+                      <div className="mt-2 text-xs text-zinc-600 leading-relaxed line-clamp-3">
+                        {it.content}
+                      </div>
+                    ) : null}
                   </div>
                   {it.url ? (
                     <a
                       href={it.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                      className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 shrink-0"
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                       打开
                     </a>
                   ) : (
-                    <span className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-400" title="暂无链接">
+                    <span className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-400 shrink-0" title="暂无链接">
                       暂无链接
                     </span>
                   )}
@@ -678,10 +1059,11 @@ export default function StockDetail() {
         <div className="mb-4">
           <Tabs
             value={tab}
-            onChange={(v) => setTab(v === 'technical' ? 'technical' : v === 'feed' ? 'feed' : 'fundamentals')}
+            onChange={(v) => setTab(v === 'technical' ? 'technical' : v === 'intraday' ? 'intraday' : v === 'feed' ? 'feed' : 'fundamentals')}
             items={[
               { key: 'fundamentals', label: '基本面' },
               { key: 'technical', label: '技术面' },
+              { key: 'intraday', label: '分时图' },
               { key: 'feed', label: '新闻/研报' },
             ]}
           />
@@ -690,6 +1072,7 @@ export default function StockDetail() {
         <div className="space-y-4">
           {tab === 'fundamentals' ? fundGrid : null}
           {tab === 'technical' ? technicalBlock : null}
+          {tab === 'intraday' ? intradayBlock : null}
           {tab === 'feed' ? feedBlock : null}
         </div>
 

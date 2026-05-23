@@ -1,19 +1,34 @@
 """
 行情日线采集任务（stock_daily）
-数据源兜底链路：QMT（xtquant） → AkShare → Tushare
+数据源：QMT（主） → TuShare（备1） → AkShare（备2）三级容灾
 写入表：trade_stock_daily
 """
 
 from __future__ import annotations
 
-import os
-from datetime import date
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+from datetime import date, datetime
+from threading import Lock
 from typing import Any
 
 import pandas as pd
 
 from core.db import MySQLConfig, connect, executemany, query_dict
-from core.jobs.common import JobStats, normalize_stock_code, safe_float
+from core.jobs.common import JobStats, safe_float
+from infra.storage.logging_service import get_logger
+
+logger = get_logger("stock_daily")
+
+
+def _log(msg: str):
+    """打印带时间戳的日志（同时输出到控制台和日志系统）
+
+    Args:
+        msg: 日志消息内容
+    """
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{ts}] [stock_daily] {msg}")
+    logger.info(msg)
 
 
 _INSERT_SQL = """
@@ -30,52 +45,131 @@ stock_name=COALESCE(VALUES(stock_name), stock_name)
 
 
 def _latest_dates(conn) -> dict[str, str]:
+    """查询数据库中各股票已采集数据的最新交易日（步骤1）
+
+    用于后续确定每只股票需增量采集的起始日期，
+    避免重复采集已有数据。
+
+    Args:
+        conn: 数据库连接对象
+
+    Returns:
+        dict: {stock_code: "YYYYMMDD"} 格式的最新日期映射表
+    """
+    _log("步骤1: 查询数据库中各股票已有数据的最新日期...")
     rows = query_dict(conn, "SELECT stock_code, MAX(trade_date) AS max_date FROM trade_stock_daily GROUP BY stock_code")
     out: dict[str, str] = {}
     for r in rows:
         md = r.get("max_date")
         if md:
             out[str(r["stock_code"])] = md.strftime("%Y%m%d")
+    _log(f"步骤1完成: 从数据库查到 {len(out)} 只股票的最新日期")
     return out
 
 
 def _infer_exchange(code_num: str) -> str:
+    """根据股票代码前6位推断所属交易所
+
+    上交所股票代码以6开头，深交所股票代码以0/3开头
+
+    Args:
+        code_num: 6位数字股票代码（不含后缀）
+
+    Returns:
+        str: "SH"（上交所）或 "SZ"（深交所）
+    """
     if code_num.startswith("6"):
         return "SH"
     return "SZ"
 
 
-def _get_stock_list(test_mode: bool, test_stock: str, max_stocks: int) -> tuple[list[str], dict[str, str]]:
-    if test_mode:
-        s = normalize_stock_code(test_stock)
-        return ([s] if s else []), {}
+def _fetch_stock_list_from_akshare() -> pd.DataFrame | None:
+    """在子线程中调用 akshare API，供 ThreadPoolExecutor 超时控制使用"""
+    import akshare as ak
+    return ak.stock_info_a_code_name()
 
+
+def _get_stock_list(max_stocks: int) -> tuple[list[str], dict[str, str]]:
+    """获取全市场A股股票列表（步骤2）
+
+    优先通过 akshare 获取，若失败则从数据库查询已存在的股票代码作为备用。
+
+    Args:
+        max_stocks: 最大股票数量限制
+
+    Returns:
+        tuple: (股票代码列表, {代码: 名称}映射字典)
+    """
+    _log(f"步骤2: 获取股票列表 (限制={max_stocks} 只)...")
+
+    # 尝试 akshare
     try:
-        import akshare as ak
+        with ThreadPoolExecutor(max_workers=1) as exc:
+            future = exc.submit(_fetch_stock_list_from_akshare)
+            try:
+                df = future.result(timeout=60)
+                if df is not None and len(df) > 0:
+                    codes: list[str] = []
+                    name_map: dict[str, str] = {}
+                    for _, r in df.iterrows():
+                        code_num = str(r.get("code") or "").strip()
+                        name = str(r.get("name") or "").strip()
+                        if not code_num:
+                            continue
+                        code = f"{code_num}.{_infer_exchange(code_num)}"
+                        codes.append(code)
+                        if name:
+                            name_map[code] = name
+                        if 0 < max_stocks <= len(codes):
+                            break
+                    _log(f"步骤2完成: 获取到 {len(codes)} 只股票 (来源: akshare)")
+                    return codes, name_map
+            except TimeoutError:
+                _log("步骤2: akshare 超时，尝试从数据库备用...")
+    except Exception as e:
+        _log(f"步骤2: akshare 异常: {type(e).__name__}: {e}，尝试从数据库备用...")
 
-        df = ak.stock_zh_a_spot_em()
-        if df is None or len(df) == 0:
-            return [], {}
-    except Exception:
-        return [], {}
+    # 备用：从数据库获取股票列表
+    _log("步骤2: 从 trade_stock_daily 查询已有股票代码...")
+    try:
+        from core.db import load_mysql_config, connect, query_dict
+        _cfg = load_mysql_config()
+        _tmp_conn = connect(_cfg)
+        try:
+            code_rows = query_dict(_tmp_conn, "SELECT DISTINCT stock_code FROM trade_stock_daily ORDER BY stock_code")
+            if code_rows:
+                codes = [r["stock_code"] for r in code_rows if r.get("stock_code")]
+                if max_stocks > 0:
+                    codes = codes[:max_stocks]
+                _log(f"步骤2完成: 从数据库获取 {len(codes)} 只股票")
+                return codes, {}
+        finally:
+            _tmp_conn.close()
+    except Exception as e:
+        _log(f"步骤2: 数据库备用方案失败: {type(e).__name__}: {e}")
 
-    codes: list[str] = []
-    name_map: dict[str, str] = {}
-    for _, r in df.iterrows():
-        code_num = str(r.get("代码") or "").strip()
-        name = str(r.get("名称") or "").strip()
-        if not code_num:
-            continue
-        code = f"{code_num}.{_infer_exchange(code_num)}"
-        codes.append(code)
-        if name:
-            name_map[code] = name
-        if 0 < max_stocks <= len(codes):
-            break
-    return codes, name_map
+    _log("步骤2失败: 无法获取股票列表")
+    return [], {}
 
 
 def _fetch_qmt(code: str, start: str, end: str = "") -> pd.DataFrame | None:
+    """通过 QMT Gateway 获取股票历史K线数据（步骤3-1，仅有的数据源）
+
+    调用远程 QMT Gateway 的 historical_kline 接口，
+    获取指定股票在时间范围内的日线行情。
+
+    Args:
+        code: 股票代码，如 "600519.SH"
+        start: 开始日期，YYYYMMDD 格式
+        end: 结束日期，YYYYMMDD 格式，默认为空表示至今
+
+    Returns:
+        pd.DataFrame | None: 包含 date/close/volume 列的 DataFrame，失败返回 None
+            - date: 交易日期（datetime类型）
+            - close: 收盘价
+            - volume: 成交量
+    """
+    _log(f"步骤3-1: 尝试从 QMT Gateway 获取 {code} 日线数据 (start={start}, end={end})")
     try:
         from infra.qmt_gateway_client import historical_kline
 
@@ -89,64 +183,117 @@ def _fetch_qmt(code: str, start: str, end: str = "") -> pd.DataFrame | None:
         )
         rows = raw.get("rows") or []
         if not rows:
+            _log(f"步骤3-1: QMT 返回 {code} 数据为空")
             return None
         df = pd.DataFrame(rows)
         if "date" not in df.columns or "close" not in df.columns:
+            _log(f"步骤3-1: QMT 返回 {code} 数据缺少 date/close 列")
             return None
         df["date"] = pd.to_datetime(df["date"], format="%Y%m%d", errors="coerce")
         if "volume" in df.columns:
             df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
         else:
             df["volume"] = None
-        return df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
-    except Exception:
+        result = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+        _log(f"步骤3-1: QMT 成功获取 {code} 数据，共 {len(result)} 条 (日期: {result['date'].min().date()} ~ {result['date'].max().date()})")
+        return result
+    except Exception as e:
+        _log(f"步骤3-1: QMT 获取 {code} 失败: {type(e).__name__}: {e}")
+        return None
+
+
+def _fetch_tushare(code: str, start: str, end: str = "") -> pd.DataFrame | None:
+    """通过 TuShare 获取股票历史K线数据（第二级备选数据源）
+
+    当 QMT Gateway 获取失败时使用此函数。
+    通过项目统一封装的 infra.tushare_client 模块调用，
+    无需额外配置环境变量。
+
+    Args:
+        code: 股票代码，如 "600519.SH"（TuShare 格式，已是 代码.交易所）
+        start: 开始日期，YYYYMMDD 格式
+        end: 结束日期，YYYYMMDD 格式，默认为空表示至今
+
+    Returns:
+        pd.DataFrame | None: 包含 date/close/volume 列的 DataFrame，失败返回 None
+    """
+    _log(f"步骤3-2: 尝试从 TuShare 获取 {code} 日线数据 (start={start}, end={end})")
+    try:
+        from infra.tushare_client import get_pro_api
+
+        pro = get_pro_api()
+        df = pro.daily(ts_code=code, start_date=start, end_date=end)
+        if df is None or len(df) == 0:
+            _log(f"步骤3-2: TuShare 返回 {code} 数据为空")
+            return None
+        df = df.rename(columns={"trade_date": "date", "vol": "volume"})
+        df["date"] = pd.to_datetime(df["date"], format="%Y%m%d", errors="coerce")
+        df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+        result = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+        _log(f"步骤3-2: TuShare 成功获取 {code} 数据，共 {len(result)} 条 (日期: {result['date'].min().date()} ~ {result['date'].max().date()})")
+        return result
+    except Exception as e:
+        _log(f"步骤3-2: TuShare 获取 {code} 失败: {type(e).__name__}: {e}")
         return None
 
 
 def _fetch_akshare(code: str, start: str, end: str = "") -> pd.DataFrame | None:
+    """通过 AkShare（东方财富）获取股票历史K线数据（第三级备选数据源）
+
+    当 QMT Gateway 和 TuShare 均失败时使用本函数通过
+    ak.stock_zh_a_hist() 接口获取日线数据。
+    AkShare 为免费开源接口，无需额外认证。
+
+    Args:
+        code: 股票代码，如 "600519.SH"
+        start: 开始日期，YYYYMMDD 格式
+        end: 结束日期，YYYYMMDD 格式，默认为空表示至今
+
+    Returns:
+        pd.DataFrame | None: 包含 date/close/volume 列的 DataFrame，失败返回 None
+    """
+    _log(f"步骤3-3: 尝试从 AkShare 获取 {code} 日线数据 (start={start}, end={end})")
     try:
         import akshare as ak
 
         code_num = code.split(".")[0]
         df = ak.stock_zh_a_hist(symbol=code_num, period="daily", start_date=start, end_date=end, adjust="qfq")
         if df is None or len(df) == 0:
+            _log(f"步骤3-3: AkShare 返回 {code} 数据为空")
             return None
         col_map = {"日期": "date", "收盘": "close", "成交量": "volume"}
         df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
         if "date" not in df.columns or "close" not in df.columns:
+            _log(f"步骤3-3: AkShare 返回 {code} 数据缺少date/close列，可用列: {list(df.columns)}")
             return None
         df["date"] = pd.to_datetime(df["date"], errors="coerce")
         if "volume" in df.columns:
             df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
         else:
             df["volume"] = None
-        return df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
-    except Exception:
-        return None
-
-
-def _fetch_tushare(code: str, start: str, end: str = "") -> pd.DataFrame | None:
-    token = str(os.getenv("TUSHARE_TOKEN") or "").strip()
-    if not token:
-        return None
-    try:
-        import tushare as ts
-
-        ts.set_token(token)
-        pro = ts.pro_api()
-        df = pro.daily(ts_code=code, start_date=start, end_date=end)
-        if df is None or len(df) == 0:
-            return None
-        df = df.rename(columns={"trade_date": "date", "vol": "volume"})
-        df["date"] = pd.to_datetime(df["date"], format="%Y%m%d", errors="coerce")
-        df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
-        df["close"] = pd.to_numeric(df["close"], errors="coerce")
-        return df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
-    except Exception:
+        result = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+        _log(f"步骤3-3: AkShare 成功获取 {code} 数据，共 {len(result)} 条 (日期: {result['date'].min().date()} ~ {result['date'].max().date()})")
+        return result
+    except Exception as e:
+        _log(f"步骤3-3: AkShare 获取 {code} 失败: {type(e).__name__}: {e}")
         return None
 
 
 def _rsi14(close: list[float]) -> list[float | None]:
+    """计算相对强弱指标 RSI14
+
+    RSI14 使用14个交易日的收盘价计算。采用平滑递推算法：
+    - 起始14日使用简单平均法计算平均涨幅和平均跌幅
+    - 之后使用 Wilder 平滑法递推: new_avg = (prev_avg * 13 + current) / 14
+
+    Args:
+        close: 收盘价序列（按时间升序排列），至少需要15个数据点
+
+    Returns:
+        list[float | None]: RSI14 计算结果，长度与输入序列一致。
+            前14个元素为 None（数据不足），有效值范围为 0~100
+    """
     n = len(close)
     out: list[float | None] = [None] * n
     if n < 15:
@@ -172,6 +319,18 @@ def _rsi14(close: list[float]) -> list[float | None]:
 
 
 def _ma20(close: list[float]) -> list[float | None]:
+    """计算20日移动平均线 MA20（滑动窗口算法）
+
+    使用滑动窗口（FIFO队列）维护最近20个收盘价。
+    窗口未满（前19个元素）时返回 None。
+
+    Args:
+        close: 收盘价序列（按时间升序排列）
+
+    Returns:
+        list[float | None]: MA20 计算结果，长度与输入序列一致，
+            前19个元素为 None（窗口未满），从第20个元素开始有有效值
+    """
     n = len(close)
     out: list[float | None] = [None] * n
     if n == 0:
@@ -188,13 +347,133 @@ def _ma20(close: list[float]) -> list[float | None]:
     return out
 
 
-def run_stock_daily(cfg: MySQLConfig, mode: str | None, params: dict[str, Any] | None) -> JobStats:
-    test_mode = (mode or "").lower() == "test"
-    test_stock = str((params or {}).get("test_stock") or "600519.SH")
-    data_start = str((params or {}).get("data_start") or "20230101").strip() or "20230101"
-    max_stocks = int((params or {}).get("max_stocks") or (1 if test_mode else 200))
+def _process_one_stock(
+    code: str,
+    latest: str | None,
+    data_start: str,
+    today_str: str,
+    name_map: dict[str, str],
+    progress_lock: Lock,
+    processed_ref: list[int],
+    total_count: int,
+) -> dict[str, Any] | None:
+    """处理单只股票的完整采集流程（供线程池并发调用）
 
-    processed = 0
+    包含：QMT获取 → TuShare备选 → AkShare备选 → 数据清洗 → 计算RSI14/MA20 → 组装写入行
+
+    Args:
+        code: 股票代码，如 "600519.SH"
+        latest: 该股票数据库中已有数据的最新日期 YYYYMMDD，无则 None
+        data_start: 默认数据起始日期 YYYYMMDD
+        today_str: 当前日期 YYYYMMDD
+        name_map: {代码: 名称} 映射字典
+        progress_lock: 线程安全的进度计数锁
+        processed_ref: 已处理数量的可变引用（列表包裹的int），用于线程安全递增
+        total_count: 股票总数，用于日志输出进度
+
+    Returns:
+        dict | None: 成功时返回 {"code": str, "rows": list[tuple], "source": str}，
+            失败时返回 {"code": str, "failed": True}，异常时返回 None
+    """
+    try:
+        with progress_lock:
+            processed_ref[0] += 1
+            idx = processed_ref[0]
+
+        start = latest if latest and latest < today_str else (latest or data_start)
+        _log(f"--- [{idx}/{total_count}] 处理 {code} (最新日期: {latest or '无'}, 采集: {start}~{today_str}) ---")
+
+        # 三级容灾：QMT → TuShare → AkShare
+        df = None
+        source = "unknown"
+        for fetch_fn, src_name in [
+            (_fetch_qmt, "qmt"),
+            (_fetch_tushare, "tushare"),
+            (_fetch_akshare, "akshare"),
+        ]:
+            df = fetch_fn(code, start, today_str)
+            if df is not None and len(df) > 0:
+                source = src_name
+                break
+            _log(f"[FALLBACK] {code}: {src_name} 获取失败，尝试下一级数据源...")
+
+        if df is None or len(df) == 0:
+            _log(f"[WARN] {code}: 所有数据源（QMT/TuShare/AkShare）均无法获取数据，跳过")
+            return {"code": code, "failed": True}
+
+        _log(f"步骤4: {code} 数据清洗 (原始={len(df)}行)")
+        df = df.dropna(subset=["close"])
+        if len(df) == 0:
+            _log(f"[WARN] {code}: close列全部为空，跳过")
+            return {"code": code, "failed": True}
+
+        close_vals = [float(x) for x in df["close"].tolist() if x is not None and float(x) == float(x)]
+        rsi_seq = _rsi14(close_vals)
+        ma_seq = _ma20(close_vals)
+        _log(f"步骤5: {code} 指标计算完成 (RSI有效={sum(1 for x in rsi_seq if x is not None)}, MA有效={sum(1 for x in ma_seq if x is not None)})")
+
+        stock_name = name_map.get(code)
+        rsi_map = {}
+        ma_map = {}
+        for i, (_, row) in enumerate(df.iterrows()):
+            if i >= len(rsi_seq):
+                break
+            key = str(row["date"].date()) if hasattr(row["date"], "date") else str(row["date"])[:10]
+            rsi_map[key] = rsi_seq[i]
+            if i < len(ma_seq):
+                ma_map[key] = ma_seq[i]
+
+        rows: list[tuple[Any, ...]] = []
+        for _, row in df.iterrows():
+            dt = row["date"]
+            dstr = dt.date().isoformat() if hasattr(dt, "date") else str(dt)[:10]
+            close = safe_float(row.get("close"))
+            vol = row.get("volume")
+            volume = int(float(vol)) if vol not in (None, "") and float(vol) == float(vol) else None
+            rsi = rsi_map.get(dstr)
+            ma20 = ma_map.get(dstr)
+            rows.append((code, dstr, close, volume, rsi, ma20, stock_name))
+
+        _log(f"步骤6: {code} 生成 {len(rows)} 条写入数据 ({df['date'].min().date()}~{df['date'].max().date()}, 名称={stock_name or '未知'}, 数据源={source})")
+        return {"code": code, "rows": rows, "source": source}
+    except Exception as e:
+        _log(f"[ERROR] {code}: 处理异常: {type(e).__name__}: {e}")
+        return {"code": code, "failed": True}
+
+
+def run_stock_daily(cfg: MySQLConfig, mode: str | None, params: dict[str, Any] | None, progress_callback=None) -> JobStats:
+    """行情日线数据采集任务主函数
+
+    采集全市场A股（或指定股票）的日线行情数据，包括：
+    - 基础数据：收盘价、成交量
+    - 技术指标：RSI14、MA20
+    - 数据来源：QMT Gateway（主） → TuShare（备1） → AkShare（备2）
+
+    数据流：
+    1. 查询数据库已有最新日期 -> 2. 获取股票列表 -> 3. QMT/TuShare/AkShare获取K线 -> 4. 计算RSI/MA -> 5. 批量写入
+
+    Args:
+        cfg: MySQL 数据库配置
+        mode: 运行模式，固定为 "full"（全量模式），测试模式已禁用
+        params: 参数字典
+            - data_start: 数据起始日期 YYYYMMDD，默认 "20230101"
+            - max_stocks: 最大采集股票数，默认 200（0=全量）
+            - max_workers: 并发线程数，默认 4
+
+    Returns:
+        JobStats: 任务执行统计，包含处理数、写入行数、失败列表、数据源等信息
+    """
+    _log("=" * 60)
+    _log(f"【开始执行 stock_daily 采集任务】mode={mode}, params={params}")
+    _log("=" * 60)
+
+    data_start = str((params or {}).get("data_start") or "20230101").strip() or "20230101"
+    max_stocks_val = (params or {}).get("max_stocks")
+    max_stocks = int(max_stocks_val) if max_stocks_val is not None else 200
+    max_workers = max(1, int((params or {}).get("max_workers") or 4))
+
+    _log(f"配置参数: data_start={data_start}, max_stocks={max_stocks}, max_workers={max_workers}")
+
     total_rows = 0
     failed: list[str] = []
     fallback_chain: list[str] = []
@@ -204,75 +483,129 @@ def run_stock_daily(cfg: MySQLConfig, mode: str | None, params: dict[str, Any] |
     try:
         latest_map = _latest_dates(conn)
         today_str = date.today().strftime("%Y%m%d")
+        _log(f"当前日期: {today_str}")
 
-        stock_list, name_map = _get_stock_list(test_mode, test_stock, max_stocks)
+        stock_list, name_map = _get_stock_list(max_stocks)
+        if not stock_list:
+            _log("[WARN] 获取股票列表为空，无法执行采集")
+            return JobStats(
+                items_processed=0, rows_written=0, failed_items=[],
+                data_source_final="unknown", fallback_chain=[],
+                message="股票列表为空",
+            )
 
+        _log("步骤3: 检查数据源可用性...")
+        qmt_available = False
+        try:
+            from infra.qmt_gateway_client import check_health
+            qmt_available = check_health()
+            if qmt_available:
+                _log("步骤3: QMT Gateway 连接正常（主数据源可用）")
+            else:
+                _log("步骤3: QMT Gateway 不可用，将降级到 TuShare/AkShare 备选数据源")
+        except Exception as e:
+            _log(f"步骤3: QMT Gateway 检查异常: {type(e).__name__}: {e}，将降级到 TuShare/AkShare 备选数据源")
+
+        tushare_available = False
+        try:
+            from infra.tushare_client import get_pro_api
+            get_pro_api()
+            tushare_available = True
+            _log("步骤3: TuShare API 连接正常（备选数据源1可用）")
+        except Exception as e:
+            _log(f"步骤3: TuShare API 不可用: {type(e).__name__}: {e}")
+
+        if not qmt_available and not tushare_available:
+            _log("步骤3: QMT 和 TuShare 均不可用，仅依赖 AkShare（备选数据源2）")
+
+        total_count = len(stock_list)
+        _log(f"\n开始并发处理 (共 {total_count} 只股票, {max_workers} 线程)...")
+
+        progress_lock = Lock()
+        processed_ref = [0]
         batch_rows: list[tuple[Any, ...]] = []
-        for code in stock_list:
-            processed += 1
-            latest = latest_map.get(code)
-            start = latest if latest and latest < today_str else (latest or data_start)
+        # 中间提交阈值：每处理200只股票提交一次中间批次，降低数据丢失风险
+        intermediate_batch_size = 200
 
-            df: pd.DataFrame | None = None
-            used_source = "unknown"
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_code = {}
+            for code in stock_list:
+                latest = latest_map.get(code)
+                future = executor.submit(
+                    _process_one_stock,
+                    code, latest, data_start, today_str, name_map,
+                    progress_lock, processed_ref, total_count,
+                )
+                future_to_code[future] = code
 
+            stock_done_count = 0
+            for future in as_completed(future_to_code):
+                code = future_to_code[future]
+                stock_done_count += 1
+                try:
+                    result = future.result(timeout=120)
+                except TimeoutError:
+                    _log(f"[ERROR] {code}: 处理超时(120秒)，跳过")
+                    failed.append(code)
+                    continue
+                except Exception as e:
+                    _log(f"[ERROR] {code}: 线程执行异常: {type(e).__name__}: {e}")
+                    failed.append(code)
+                    continue
+
+                if result is None:
+                    failed.append(code)
+                    continue
+
+                if result.get("failed"):
+                    failed.append(result["code"])
+                    continue
+
+                rows = result.get("rows") or []
+                batch_rows.extend(rows)
+                src = result.get("source", "unknown")
+                data_source_final = src
+                if src not in fallback_chain:
+                    fallback_chain.append(src)
+
+                # Bug A: 每100只股票更新一次任务进度（itemsProcessed）
+                if progress_callback and stock_done_count % 100 == 0:
+                    try:
+                        progress_callback(processed_ref[0])
+                    except Exception:
+                        pass
+
+                # Bug C: 每处理200只股票提交一次中间批次，降低数据全部丢失风险
+                if stock_done_count % intermediate_batch_size == 0 and batch_rows:
+                    try:
+                        conn.ping(reconnect=True)
+                    except Exception:
+                        conn.close()
+                        conn = connect(cfg)
+                    _log(f"[中间提交] 写入 {len(batch_rows)} 条记录 (已处理 {stock_done_count}/{total_count})...")
+                    executemany(conn, _INSERT_SQL, batch_rows)
+                    batch_rows.clear()
+
+        processed = total_count
+
+        # 提交剩余批次
+        if batch_rows:
             try:
-                df = _fetch_qmt(code, start, today_str)
-                if df is not None and len(df) > 0:
-                    used_source = "qmt"
-                    fallback_chain.append("qmt")
+                conn.ping(reconnect=True)
             except Exception:
-                fallback_chain.append("qmt")
+                conn.close()
+                conn = connect(cfg)
+            _log(f"\n步骤7: 批量写入数据库 (共 {len(batch_rows)} 条记录)...")
+            total_rows = executemany(conn, _INSERT_SQL, batch_rows)
+            _log(f"步骤7完成: 成功写入 {total_rows} 条记录 (ON DUPLICATE KEY UPDATE)")
+        else:
+            total_rows = 0
+            _log("步骤7: 所有数据已在中间批次全部提交")
 
-            if df is None or len(df) == 0:
-                try:
-                    df = _fetch_akshare(code, start, today_str)
-                    if df is not None and len(df) > 0:
-                        used_source = "akshare"
-                        fallback_chain.append("akshare")
-                except Exception:
-                    fallback_chain.append("akshare")
+        _log("=" * 60)
+        _log(f"【采集完成】处理={processed}只, 写入={total_rows}行, 失败={len(failed)}只, 数据源={data_source_final}, 线程数={max_workers}")
+        _log("=" * 60)
 
-            if df is None or len(df) == 0:
-                try:
-                    df = _fetch_tushare(code, start, today_str)
-                    if df is not None and len(df) > 0:
-                        used_source = "tushare"
-                        fallback_chain.append("tushare")
-                except Exception:
-                    fallback_chain.append("tushare")
-
-            if df is None or len(df) == 0:
-                failed.append(code)
-                continue
-
-            if used_source != "unknown":
-                data_source_final = used_source
-
-            df = df.dropna(subset=["close"])
-            if len(df) == 0:
-                failed.append(code)
-                continue
-
-            close_vals = [float(x) for x in df["close"].tolist() if x is not None and float(x) == float(x)]
-            rsi_seq = _rsi14(close_vals)
-            ma_seq = _ma20(close_vals)
-
-            stock_name = name_map.get(code)
-            rsi_map = {str(row["date"].date()) if hasattr(row["date"], "date") else str(row["date"])[:10]: rsi_seq[i] for i, (_, row) in enumerate(df.iterrows()) if i < len(rsi_seq)}
-            ma_map = {str(row["date"].date()) if hasattr(row["date"], "date") else str(row["date"])[:10]: ma_seq[i] for i, (_, row) in enumerate(df.iterrows()) if i < len(ma_seq)}
-
-            for _, row in df.iterrows():
-                dt = row["date"]
-                dstr = dt.date().isoformat() if hasattr(dt, "date") else str(dt)[:10]
-                close = safe_float(row.get("close"))
-                vol = row.get("volume")
-                volume = int(float(vol)) if vol not in (None, "") and float(vol) == float(vol) else None
-                rsi = rsi_map.get(dstr)
-                ma20 = ma_map.get(dstr)
-                batch_rows.append((code, dstr, close, volume, rsi, ma20, stock_name))
-
-        total_rows = executemany(conn, _INSERT_SQL, batch_rows)
         return JobStats(
             items_processed=processed,
             rows_written=total_rows,
@@ -283,4 +616,3 @@ def run_stock_daily(cfg: MySQLConfig, mode: str | None, params: dict[str, Any] |
         )
     finally:
         conn.close()
-

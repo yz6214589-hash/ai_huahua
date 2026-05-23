@@ -22,6 +22,10 @@ __pycache__/
 *.pyo
 *.egg-info/
 
+# IDE配置目录
+.trae/
+.vercel/
+
 # 系统文件
 .DS_Store
 Thumbs.db
@@ -65,3 +69,12 @@ requirements.txt
 
 # 数据目录
 .data/
+
+# 临时调试脚本
+check_*.py
+debug_*.py
+run_*.py
+submit_*.py
+verify_*.py
+full_stock_*.py
+monitor_*.py
