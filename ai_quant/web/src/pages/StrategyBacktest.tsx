@@ -3,16 +3,22 @@ import { fetchJson, postJson } from '@/api/client'
 import { toast } from '@/components/Toast'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { Play, RefreshCcw } from 'lucide-react'
+import { Play, RefreshCcw, TrendingUp, TrendingDown, XCircle, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react'
+import BacktestCharts from '@/components/BacktestCharts'
 
 interface StrategyDef {
   strategy_id: string
   name: string
   params_schema: Record<string, {
-    type: string; label: string; help: string
-    min?: number; max?: number; step?: number; default?: number
+    type: 'int' | 'float' | 'bool' | 'enum' | 'object'
+    label: string; help: string
+    min?: number; max?: number; step?: number
+    default?: number | string | boolean
+    values?: string[]
   }>
   default_params: Record<string, unknown>
+  requires_chan?: boolean
+  requires_predictions?: boolean
 }
 
 interface StrategyInstance {
@@ -22,15 +28,93 @@ interface StrategyInstance {
   params: Record<string, unknown>
 }
 
-interface BacktestResult {
-  metrics: { initial_nav: number; final_nav: number; total_return: number; num_trades: number; win_rate: number }
+interface StockGroup {
+  id: number
+  name: string
+  description: string
+  stock_count: number
+}
+
+/** 增强指标接口 */
+interface EnhancedMetrics {
+  initial_nav: number
+  final_nav: number
+  total_return: number
+  num_trades: number
+  win_rate: number
+  annual_return?: number
+  max_drawdown?: number
+  // 增强指标
+  volatility?: number
+  sortino?: number
+  calmar?: number
+  alpha?: number
+  beta?: number
+  information_ratio?: number
+  profit_factor?: number
+  tracking_error?: number
+  sharpe?: number
+}
+
+interface SingleBacktestResult {
+  metrics: EnhancedMetrics
   trades: Array<{ date: string; action: string; price: number; qty: number; cost?: number; proceeds?: number; note?: string }>
   nav_log: Array<{ date: string; nav: number }>
+  benchmark_nav_log?: Array<{ date: string; nav: number }>
+  drawdown_log?: Array<{ date: string; nav: number; peak: number; drawdown: number }>
+  monthly_returns?: Array<{ month: string; return: number }>
   strategy_id: string
   stock_code: string
   start_date: string
   end_date: string
+  interval_results?: IntervalResult[]
 }
+
+interface IntervalResult {
+  name: string
+  start: string
+  end: string
+  result: {
+    metrics: EnhancedMetrics
+    trades: Array<{ date: string; action: string; price: number; qty: number; cost?: number; proceeds?: number; note?: string }>
+    nav_log: Array<{ date: string; nav: number }>
+    benchmark_nav_log?: Array<{ date: string; nav: number }>
+    drawdown_log?: Array<{ date: string; nav: number; peak: number; drawdown: number }>
+    monthly_returns?: Array<{ month: string; return: number }>
+  }
+}
+
+interface BatchBacktestResult {
+  batch_id: string
+  total_tasks: number
+  completed_tasks: number
+  failed_tasks: number
+  aggregated: {
+    avg_total_return: number
+    avg_annual_return: number
+    avg_max_drawdown: number
+    avg_sharpe: number
+    avg_win_rate: number
+    total_trades: number
+    win_stocks: number
+    total_stocks: number
+    best_stock?: { code: string; return: number }
+    worst_stock?: { code: string; return: number }
+  }
+  results: Array<{
+    task_id: string
+    stock_code: string
+    status: string
+    error?: string
+    metrics?: Record<string, unknown>
+  }>
+}
+
+interface BacktestMode {
+  type: 'single' | 'batch'
+}
+
+/* ---------- 指标卡片组件 ---------- */
 
 function MetricCard({ label, value, unit = '', tone }: { label: string; value: string | number; unit?: string; tone?: 'up' | 'down' | 'neutral' }) {
   const cls = tone === 'up' ? 'text-red-600' : tone === 'down' ? 'text-green-600' : 'text-zinc-900'
@@ -42,10 +126,68 @@ function MetricCard({ label, value, unit = '', tone }: { label: string; value: s
   )
 }
 
+/* ---------- 增强指标展示组件 ---------- */
+
+function MetricsDisplay({ metrics }: { metrics: EnhancedMetrics }) {
+  const totalReturn = metrics.total_return ?? 0
+  const returnTone = totalReturn > 0 ? 'up' : totalReturn < 0 ? 'down' : 'neutral'
+
+  return (
+    <div className="space-y-3">
+      {/* 第一行：基础指标 */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
+        <MetricCard label="初始资金" value={metrics.initial_nav.toLocaleString()} unit="元" />
+        <MetricCard label="最终资金" value={metrics.final_nav.toLocaleString()} unit="元" />
+        <MetricCard label="总收益率" value={`${totalReturn > 0 ? '+' : ''}${(totalReturn * 100).toFixed(2)}`} unit="%" tone={returnTone} />
+        <MetricCard label="交易次数" value={metrics.num_trades} />
+        <MetricCard label="胜率" value={`${(metrics.win_rate * 100).toFixed(1)}`} unit="%" />
+        <MetricCard label="年化收益" value={`${((metrics.annual_return ?? 0) * 100).toFixed(2)}`} unit="%" tone={(metrics.annual_return ?? 0) > 0 ? 'up' : 'down'} />
+        <MetricCard label="最大回撤" value={`${((metrics.max_drawdown ?? 0) * 100).toFixed(2)}`} unit="%" tone="down" />
+      </div>
+      {/* 第二行：增强指标 */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
+        <MetricCard label="波动率" value={`${((metrics.volatility ?? 0) * 100).toFixed(2)}`} unit="%" />
+        <MetricCard label="Sortino" value={(metrics.sortino ?? 0).toFixed(3)} />
+        <MetricCard label="Calmar" value={(metrics.calmar ?? 0).toFixed(3)} />
+        <MetricCard label="Alpha" value={`${((metrics.alpha ?? 0) * 100).toFixed(2)}`} unit="%" tone={(metrics.alpha ?? 0) > 0 ? 'up' : 'down'} />
+        <MetricCard label="Beta" value={(metrics.beta ?? 0).toFixed(3)} />
+        <MetricCard label="信息比率" value={(metrics.information_ratio ?? 0).toFixed(3)} />
+        <MetricCard label="盈亏比" value={(metrics.profit_factor ?? 0).toFixed(2)} />
+      </div>
+    </div>
+  )
+}
+
+/* ---------- 区间结果展示组件 ---------- */
+
+function IntervalResultDisplay({ intervalResult }: { intervalResult: IntervalResult }) {
+  const nameMap: Record<string, string> = { train: '训练集', val: '验证集', test: '测试集' }
+  const label = nameMap[intervalResult.name] || intervalResult.name
+
+  return (
+    <Card>
+      <CardHeader title={`${label}（${intervalResult.start} ~ ${intervalResult.end}）`} />
+      <CardBody className="space-y-4">
+        <MetricsDisplay metrics={intervalResult.result.metrics} />
+        <BacktestCharts
+          navLog={intervalResult.result.nav_log}
+          benchmarkNavLog={intervalResult.result.benchmark_nav_log}
+          drawdownLog={intervalResult.result.drawdown_log}
+          monthlyReturns={intervalResult.result.monthly_returns}
+        />
+      </CardBody>
+    </Card>
+  )
+}
+
+/* ---------- 主组件 ---------- */
+
 export default function StrategyBacktest() {
   const [strategies, setStrategies] = useState<StrategyDef[]>([])
   const [instances, setInstances] = useState<StrategyInstance[]>([])
-  const [result, setResult] = useState<BacktestResult | null>(null)
+  const [groups, setGroups] = useState<StockGroup[]>([])
+  const [singleResult, setSingleResult] = useState<SingleBacktestResult | null>(null)
+  const [batchResult, setBatchResult] = useState<BatchBacktestResult | null>(null)
   const [running, setRunning] = useState(false)
 
   const [mode, setMode] = useState<'instance' | 'strategy'>('instance')
@@ -53,16 +195,39 @@ export default function StrategyBacktest() {
   const [selectedStrategyId, setSelectedStrategyId] = useState('')
   const [overrideParams, setOverrideParams] = useState<Record<string, string>>({})
   const [stockCode, setStockCode] = useState('600519.SH')
+  const [stockCodesInput, setStockCodesInput] = useState('')
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
+  const [selectionType, setSelectionType] = useState<'list' | 'group'>('list')
+  const [backtestType, setBacktestType] = useState<'single' | 'batch'>('single')
   const [startDate, setStartDate] = useState('2023-01-01')
   const [endDate, setEndDate] = useState('2024-12-31')
+
+  // 区间模式配置
+  const [intervalMode, setIntervalMode] = useState<'full' | 'train_val_test'>('full')
+  const [trainRatio, setTrainRatio] = useState(0.7)
+  const [valRatio, setValRatio] = useState(0.15)
+  const [testRatio, setTestRatio] = useState(0.15)
+
+  // 交易成本配置
+  const [costExpanded, setCostExpanded] = useState(false)
+  const [commissionBuy, setCommissionBuy] = useState(0.0003)
+  const [commissionSell, setCommissionSell] = useState(0.0013)
+  const [slippagePct, setSlippagePct] = useState(0)
+  const [slippageFixed, setSlippageFixed] = useState(0)
+  const [minCommission, setMinCommission] = useState(5)
+
+  // 基准选择
+  const [benchmarkCode, setBenchmarkCode] = useState('000300.SH')
 
   useEffect(() => {
     Promise.all([
       fetchJson<{ strategies: StrategyDef[] }>('/api/v1/analysis/strategies'),
       fetchJson<{ instances: StrategyInstance[] }>('/api/v1/analysis/strategy-instances'),
-    ]).then(([s, i]) => {
+      fetchJson<{ ok: boolean; groups: StockGroup[] }>('/api/v1/stock-groups'),
+    ]).then(([s, i, g]) => {
       setStrategies(s.strategies || [])
       setInstances(i.instances || [])
+      setGroups(g.groups || [])
       if (s.strategies?.length) setSelectedStrategyId(s.strategies[0].strategy_id)
     }).catch((e) => toast('error', e instanceof Error ? e.message : String(e)))
   }, [])
@@ -91,7 +256,53 @@ export default function StrategyBacktest() {
     }
   }, [selectedStrategyId, currentInstance])
 
-  const run = async () => {
+  const parseParams = () => {
+    const params: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(overrideParams)) {
+      const meta = currentStrategy?.params_schema?.[k]
+      if (!meta) continue
+      if (meta.type === 'int') params[k] = parseInt(String(v), 10)
+      else if (meta.type === 'float') params[k] = parseFloat(String(v))
+      else if (meta.type === 'bool') params[k] = v === 'true'
+      else if (meta.type === 'enum') params[k] = String(v)
+      else if (meta.type === 'object') {
+        try { params[k] = JSON.parse(String(v)) }
+        catch { params[k] = {} }
+      } else params[k] = v
+    }
+    return params
+  }
+
+  /** 构建通用请求体（包含区间模式、交易成本、基准等增强参数） */
+  const buildEnhancedPayload = () => {
+    const params = parseParams()
+    const payload: Record<string, unknown> = {
+      start: startDate,
+      end: endDate,
+      strategy_id: currentInstance?.strategy_id || selectedStrategyId,
+      params,
+      interval_mode: intervalMode,
+      benchmark_code: benchmarkCode,
+    }
+
+    // 区间模式参数
+    if (intervalMode === 'train_val_test') {
+      payload.train_ratio = trainRatio
+      payload.val_ratio = valRatio
+      payload.test_ratio = testRatio
+    }
+
+    // 交易成本参数
+    payload.commission_buy = commissionBuy
+    payload.commission_sell = commissionSell
+    payload.slippage_pct = slippagePct
+    payload.slippage_fixed = slippageFixed
+    payload.min_commission = minCommission
+
+    return payload
+  }
+
+  const runSingle = async () => {
     if (!stockCode.trim()) {
       toast('error', '请输入股票代码')
       return
@@ -103,22 +314,12 @@ export default function StrategyBacktest() {
         toast('error', '请选择策略')
         return
       }
-      const params: Record<string, unknown> = {}
-      for (const [k, v] of Object.entries(overrideParams)) {
-        const meta = currentStrategy?.params_schema?.[k]
-        if (!meta) continue
-        if (meta.type === 'int') params[k] = parseInt(String(v), 10)
-        else if (meta.type === 'float') params[k] = parseFloat(String(v))
-        else params[k] = v
-      }
-      const r = await postJson<BacktestResult>('/api/v1/analysis/backtest/run', {
-        stock_code: stockCode.trim(),
-        start: startDate,
-        end: endDate,
-        strategy_id: strategyId,
-        params,
-      })
-      setResult(r)
+      const payload = buildEnhancedPayload()
+      payload.stock_code = stockCode.trim()
+
+      const r = await postJson<SingleBacktestResult>('/api/v1/analysis/backtest/run', payload)
+      setSingleResult(r)
+      setBatchResult(null)
       toast('success', '回测完成')
     } catch (e) {
       toast('error', `回测失败：${e instanceof Error ? e.message : String(e)}`)
@@ -127,9 +328,67 @@ export default function StrategyBacktest() {
     }
   }
 
+  const runBatch = async () => {
+    setRunning(true)
+    try {
+      const strategyId = currentInstance?.strategy_id || selectedStrategyId
+      if (!strategyId) {
+        toast('error', '请选择策略')
+        return
+      }
+      const payload = buildEnhancedPayload()
+      payload.selection_type = selectionType
+      payload.max_workers = 4
+
+      if (selectionType === 'list') {
+        const codes = stockCodesInput.split(/[,，\s]+/).map((c) => c.trim()).filter((c) => c)
+        if (codes.length === 0) {
+          toast('error', '请输入股票代码列表')
+          return
+        }
+        payload.stock_codes = codes
+      } else {
+        if (!selectedGroupId) {
+          toast('error', '请选择股票分组')
+          return
+        }
+        payload.group_id = selectedGroupId
+      }
+
+      const r = await postJson<BatchBacktestResult>('/api/v1/analysis/backtest/batch', payload)
+      setBatchResult(r)
+      setSingleResult(null)
+      toast('success', `批量回测完成：成功 ${r.completed_tasks} 只，失败 ${r.failed_tasks} 只`)
+    } catch (e) {
+      toast('error', `回测失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  /** 调整训练比例，自动调整测试比例保持总和为1 */
+  const handleTrainRatioChange = (val: number) => {
+    setTrainRatio(val)
+    const remaining = 1 - val
+    if (remaining < valRatio) {
+      setValRatio(0)
+      setTestRatio(remaining)
+    } else {
+      setTestRatio(+(remaining - valRatio).toFixed(4))
+    }
+  }
+
+  /** 调整验证比例，自动调整测试比例保持总和为1 */
+  const handleValRatioChange = (val: number) => {
+    const remaining = 1 - trainRatio
+    if (val > remaining) {
+      val = remaining
+    }
+    setValRatio(val)
+    setTestRatio(+(remaining - val).toFixed(4))
+  }
+
   const stratName = currentStrategy?.name || selectedStrategyId
-  const totalReturn = result?.metrics?.total_return ?? 0
-  const returnTone = totalReturn > 0 ? 'up' : totalReturn < 0 ? 'down' : 'neutral'
 
   return (
     <div className="space-y-4">
@@ -137,17 +396,31 @@ export default function StrategyBacktest() {
         <CardHeader title="回测参数" />
         <CardBody>
           <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-1.5 text-sm">
-                <input type="radio" checked={mode === 'instance'} onChange={() => setMode('instance')} className="accent-zinc-900" />
-                从实例选择
-              </label>
-              <label className="flex items-center gap-1.5 text-sm">
-                <input type="radio" checked={mode === 'strategy'} onChange={() => setMode('strategy')} className="accent-zinc-900" />
-                直接选策略
-              </label>
+            {/* 回测类型和模式选择 */}
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 text-sm">
+                  <input type="radio" checked={backtestType === 'single'} onChange={() => setBacktestType('single')} className="accent-zinc-900" />
+                  单只股票回测
+                </label>
+                <label className="flex items-center gap-1.5 text-sm">
+                  <input type="radio" checked={backtestType === 'batch'} onChange={() => setBacktestType('batch')} className="accent-zinc-900" />
+                  批量多股票回测
+                </label>
+              </div>
+              <div className="flex items-center gap-3 ml-auto">
+                <label className="flex items-center gap-1.5 text-sm">
+                  <input type="radio" checked={mode === 'instance'} onChange={() => setMode('instance')} className="accent-zinc-900" />
+                  从实例选择
+                </label>
+                <label className="flex items-center gap-1.5 text-sm">
+                  <input type="radio" checked={mode === 'strategy'} onChange={() => setMode('strategy')} className="accent-zinc-900" />
+                  直接选策略
+                </label>
+              </div>
             </div>
 
+            {/* 策略和股票选择 */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {mode === 'instance' ? (
                 <div>
@@ -180,15 +453,58 @@ export default function StrategyBacktest() {
                 </div>
               )}
 
-              <div>
-                <div className="mb-1 text-xs text-zinc-500">股票代码</div>
-                <input
-                  value={stockCode}
-                  onChange={(e) => setStockCode(e.target.value)}
-                  placeholder="例如：600519.SH"
-                  className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
-                />
-              </div>
+              {backtestType === 'single' ? (
+                <div>
+                  <div className="mb-1 text-xs text-zinc-500">股票代码</div>
+                  <input
+                    value={stockCode}
+                    onChange={(e) => setStockCode(e.target.value)}
+                    placeholder="例如：600519.SH"
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-sm">
+                      <input type="radio" checked={selectionType === 'list'} onChange={() => setSelectionType('list')} className="accent-zinc-900" />
+                      输入股票列表
+                    </label>
+                    <label className="flex items-center gap-1.5 text-sm">
+                      <input type="radio" checked={selectionType === 'group'} onChange={() => setSelectionType('group')} className="accent-zinc-900" />
+                      选择股票分组
+                    </label>
+                  </div>
+                  {selectionType === 'list' ? (
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">股票代码（用逗号或空格分隔）</div>
+                      <textarea
+                        value={stockCodesInput}
+                        onChange={(e) => setStockCodesInput(e.target.value)}
+                        placeholder="例如：600519.SH,000001.SZ"
+                        rows={3}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 font-mono"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">股票分组</div>
+                      <select
+                        value={selectedGroupId ?? ''}
+                        onChange={(e) => setSelectedGroupId(parseInt(e.target.value, 10) || null)}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      >
+                        <option value="">— 请选择分组 —</option>
+                        {groups.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}（{g.stock_count} 只股票）
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <div className="mb-1 text-xs text-zinc-500">开始日期</div>
@@ -201,6 +517,7 @@ export default function StrategyBacktest() {
               </div>
             </div>
 
+            {/* 参数覆盖 */}
             {currentStrategy && Object.keys(currentStrategy.params_schema).length > 0 && (
               <div>
                 <div className="mb-2 text-xs font-semibold text-zinc-900">参数覆盖</div>
@@ -208,47 +525,258 @@ export default function StrategyBacktest() {
                   {Object.entries(currentStrategy.params_schema).map(([key, meta]) => (
                     <div key={key}>
                       <div className="mb-1 text-xs text-zinc-500">{meta.label}</div>
-                      <input
-                        type={meta.type === 'int' || meta.type === 'float' ? 'number' : 'text'}
-                        value={overrideParams[key] ?? String(meta.default ?? '')}
-                        onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
-                        min={meta.min}
-                        max={meta.max}
-                        step={meta.step}
-                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
-                      />
+                      {meta.type === 'bool' ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={overrideParams[key] === 'true'}
+                            onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: String(e.target.checked) }))}
+                            className="h-4 w-4 accent-zinc-900"
+                          />
+                          <span className="text-xs text-zinc-500">{overrideParams[key] === 'true' ? '开启' : '关闭'}</span>
+                        </div>
+                      ) : meta.type === 'enum' ? (
+                        <select
+                          value={overrideParams[key] ?? ''}
+                          onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                        >
+                          {meta.values?.map((v) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                      ) : meta.type === 'object' ? (
+                        <textarea
+                          value={overrideParams[key] ?? '{}'}
+                          onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
+                          rows={2}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-mono outline-none focus:border-zinc-400"
+                          placeholder='{"key": "value"}'
+                        />
+                      ) : (
+                        <input
+                          type="number"
+                          value={overrideParams[key] ?? String(meta.default ?? '')}
+                          onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
+                          min={meta.min}
+                          max={meta.max}
+                          step={meta.step}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
+            {/* 区间模式配置 */}
+            <div>
+              <div className="mb-2 text-xs font-semibold text-zinc-900">区间模式</div>
+              <div className="flex items-center gap-4 mb-2">
+                <label className="flex items-center gap-1.5 text-sm">
+                  <input type="radio" checked={intervalMode === 'full'} onChange={() => setIntervalMode('full')} className="accent-zinc-900" />
+                  全区间回测
+                </label>
+                <label className="flex items-center gap-1.5 text-sm">
+                  <input type="radio" checked={intervalMode === 'train_val_test'} onChange={() => setIntervalMode('train_val_test')} className="accent-zinc-900" />
+                  训练/验证/测试划分
+                </label>
+              </div>
+              {intervalMode === 'train_val_test' && (
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 space-y-3">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">训练集比例</div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={0.1}
+                          max={0.9}
+                          step={0.05}
+                          value={trainRatio}
+                          onChange={(e) => handleTrainRatioChange(parseFloat(e.target.value))}
+                          className="flex-1 accent-zinc-900"
+                        />
+                        <span className="text-sm font-medium w-12 text-right">{(trainRatio * 100).toFixed(0)}%</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">验证集比例</div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={0}
+                          max={0.8}
+                          step={0.05}
+                          value={valRatio}
+                          onChange={(e) => handleValRatioChange(parseFloat(e.target.value))}
+                          className="flex-1 accent-zinc-900"
+                        />
+                        <span className="text-sm font-medium w-12 text-right">{(valRatio * 100).toFixed(0)}%</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">测试集比例</div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={0}
+                          max={0.8}
+                          step={0.05}
+                          value={testRatio}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value)
+                            const remaining = 1 - trainRatio
+                            setTestRatio(val)
+                            setValRatio(+(remaining - val).toFixed(4))
+                          }}
+                          className="flex-1 accent-zinc-900"
+                        />
+                        <span className="text-sm font-medium w-12 text-right">{(testRatio * 100).toFixed(0)}%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-zinc-400">
+                    比例总和：{((trainRatio + valRatio + testRatio) * 100).toFixed(0)}%
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 交易成本配置（折叠面板） */}
+            <div>
+              <button
+                onClick={() => setCostExpanded(!costExpanded)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900 hover:text-zinc-700"
+              >
+                {costExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                交易成本配置
+              </button>
+              {costExpanded && (
+                <div className="mt-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">买入佣金率</div>
+                      <input
+                        type="number"
+                        value={commissionBuy}
+                        onChange={(e) => setCommissionBuy(parseFloat(e.target.value) || 0)}
+                        step={0.0001}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">卖出佣金率（含印花税）</div>
+                      <input
+                        type="number"
+                        value={commissionSell}
+                        onChange={(e) => setCommissionSell(parseFloat(e.target.value) || 0)}
+                        step={0.0001}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">滑点百分比</div>
+                      <input
+                        type="number"
+                        value={slippagePct}
+                        onChange={(e) => setSlippagePct(parseFloat(e.target.value) || 0)}
+                        step={0.001}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">固定滑点</div>
+                      <input
+                        type="number"
+                        value={slippageFixed}
+                        onChange={(e) => setSlippageFixed(parseFloat(e.target.value) || 0)}
+                        step={0.01}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">最低手续费</div>
+                      <input
+                        type="number"
+                        value={minCommission}
+                        onChange={(e) => setMinCommission(parseFloat(e.target.value) || 0)}
+                        step={1}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 基准选择 */}
+            <div>
+              <div className="mb-2 text-xs font-semibold text-zinc-900">基准指数</div>
+              <select
+                value={benchmarkCode}
+                onChange={(e) => setBenchmarkCode(e.target.value)}
+                className="w-full max-w-xs rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+              >
+                <option value="000300.SH">沪深300 (000300.SH)</option>
+                <option value="000016.SH">上证50 (000016.SH)</option>
+                <option value="000905.SH">中证500 (000905.SH)</option>
+                <option value="">无基准</option>
+              </select>
+            </div>
+
+            {currentStrategy?.requires_chan && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                此策略依赖缠论数据，当前环境暂不支持缠论策略回测
+              </div>
+            )}
+            {currentStrategy?.requires_predictions && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                此策略依赖ML预测数据，需通过参数传入 predictions 字典
+              </div>
+            )}
             <button
-              onClick={run}
+              onClick={backtestType === 'single' ? runSingle : runBatch}
               disabled={running}
               className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
             >
               <Play className="h-4 w-4" />
-              {running ? '回测中…' : '开始回测'}
+              {running ? '回测中...' : backtestType === 'single' ? '开始回测' : '开始批量回测'}
             </button>
           </div>
         </CardBody>
       </Card>
 
-      {result && (
+      {/* 单只股票回测结果 */}
+      {singleResult && (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-            <MetricCard label="初始资金" value={result.metrics.initial_nav.toLocaleString()} unit="元" />
-            <MetricCard label="最终资金" value={result.metrics.final_nav.toLocaleString()} unit="元" />
-            <MetricCard label="总收益率" value={`${totalReturn > 0 ? '+' : ''}${totalReturn.toFixed(2)}`} unit="%" tone={returnTone} />
-            <MetricCard label="交易次数" value={result.metrics.num_trades} />
-            <MetricCard label="胜率" value={`${result.metrics.win_rate.toFixed(1)}`} unit="%" />
-          </div>
+          {/* 指标展示 */}
+          <MetricsDisplay metrics={singleResult.metrics} />
 
+          {/* ECharts 图表区域 */}
+          <BacktestCharts
+            navLog={singleResult.nav_log}
+            benchmarkNavLog={singleResult.benchmark_nav_log}
+            drawdownLog={singleResult.drawdown_log}
+            monthlyReturns={singleResult.monthly_returns}
+          />
+
+          {/* 区间模式结果展示 */}
+          {singleResult.interval_results && singleResult.interval_results.length > 0 && (
+            <div className="space-y-4">
+              <div className="text-sm font-semibold text-zinc-900">区间划分结果</div>
+              {singleResult.interval_results.map((ir, idx) => (
+                <IntervalResultDisplay key={idx} intervalResult={ir} />
+              ))}
+            </div>
+          )}
+
+          {/* 交易记录 */}
           <Card>
-            <CardHeader title={`交易记录（{result.trades.length} 笔）`} />
+            <CardHeader title={`交易记录（${singleResult.trades.length} 笔）`} />
             <CardBody className="p-0">
-              {result.trades.length === 0 ? (
+              {singleResult.trades.length === 0 ? (
                 <div className="px-4 py-8 text-center text-sm text-zinc-500">无交易记录</div>
               ) : (
                 <div className="max-h-80 overflow-auto">
@@ -264,7 +792,7 @@ export default function StrategyBacktest() {
                       </tr>
                     </thead>
                     <tbody>
-                      {result.trades.map((t, i) => (
+                      {singleResult.trades.map((t, i) => (
                         <tr key={i} className="border-t border-zinc-100">
                           <td className="px-4 py-2 text-xs text-zinc-700">{t.date}</td>
                           <td className="px-4 py-2">
@@ -288,6 +816,126 @@ export default function StrategyBacktest() {
                   </table>
                 </div>
               )}
+            </CardBody>
+          </Card>
+        </>
+      )}
+
+      {/* 批量回测结果 */}
+      {batchResult && (
+        <>
+          <Card>
+            <CardHeader title="批量回测汇总" />
+            <CardBody>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-4">
+                <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+                  <div className="text-2xl font-bold text-zinc-900">{batchResult.total_tasks}</div>
+                  <div className="mt-1 text-xs text-zinc-500">总股票数</div>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+                  <div className="text-2xl font-bold text-green-600">{batchResult.completed_tasks}</div>
+                  <div className="mt-1 text-xs text-zinc-500">成功数量</div>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+                  <div className="text-2xl font-bold text-red-600">{batchResult.failed_tasks}</div>
+                  <div className="mt-1 text-xs text-zinc-500">失败数量</div>
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+                  <div className="text-2xl font-bold text-zinc-900">{batchResult.aggregated.win_stocks}</div>
+                  <div className="mt-1 text-xs text-zinc-500">正收益股票数</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                <MetricCard label="平均收益率" value={`${(batchResult.aggregated.avg_total_return * 100).toFixed(2)}`} unit="%" tone={batchResult.aggregated.avg_total_return > 0 ? 'up' : 'down'} />
+                <MetricCard label="平均年化" value={`${(batchResult.aggregated.avg_annual_return * 100).toFixed(2)}`} unit="%" tone={batchResult.aggregated.avg_annual_return > 0 ? 'up' : 'down'} />
+                <MetricCard label="平均回撤" value={`${(batchResult.aggregated.avg_max_drawdown * 100).toFixed(2)}`} unit="%" tone="down" />
+                <MetricCard label="平均夏普" value={batchResult.aggregated.avg_sharpe.toFixed(3)} />
+                <MetricCard label="总交易次数" value={batchResult.aggregated.total_trades} />
+              </div>
+
+              {batchResult.aggregated.best_stock && (
+                <div className="mt-4 flex items-center gap-2 text-sm">
+                  <TrendingUp className="h-4 w-4 text-green-600" />
+                  <span className="text-zinc-500">最佳股票：</span>
+                  <span className="font-medium text-zinc-900">{batchResult.aggregated.best_stock.code}</span>
+                  <span className="text-green-600 font-medium">+{(batchResult.aggregated.best_stock.return * 100).toFixed(2)}%</span>
+                </div>
+              )}
+              {batchResult.aggregated.worst_stock && (
+                <div className="flex items-center gap-2 text-sm">
+                  <TrendingDown className="h-4 w-4 text-red-600" />
+                  <span className="text-zinc-500">最差股票：</span>
+                  <span className="font-medium text-zinc-900">{batchResult.aggregated.worst_stock.code}</span>
+                  <span className="text-red-600 font-medium">{(batchResult.aggregated.worst_stock.return * 100).toFixed(2)}%</span>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="股票回测详情" />
+            <CardBody className="p-0">
+              <div className="max-h-96 overflow-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-zinc-50 text-xs text-zinc-500 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2">股票代码</th>
+                      <th className="px-4 py-2">状态</th>
+                      <th className="px-4 py-2">总收益率</th>
+                      <th className="px-4 py-2">年化收益率</th>
+                      <th className="px-4 py-2">最大回撤</th>
+                      <th className="px-4 py-2">交易次数</th>
+                      <th className="px-4 py-2">胜率</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batchResult.results.map((r) => {
+                      const tr = (r.metrics?.total_return as number) || 0
+                      const tone = tr > 0 ? 'up' : tr < 0 ? 'down' : 'neutral'
+                      const toneCls = tone === 'up' ? 'text-red-600' : tone === 'down' ? 'text-green-600' : 'text-zinc-900'
+                      return (
+                        <tr key={r.task_id} className="border-t border-zinc-100">
+                          <td className="px-4 py-2 text-xs font-mono text-zinc-700">{r.stock_code}</td>
+                          <td className="px-4 py-2">
+                            {r.status === 'completed' ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-green-600">
+                                <CheckCircle2 className="h-3 w-3" />
+                                成功
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-xs text-red-600">
+                                <XCircle className="h-3 w-3" />
+                                {r.error || '失败'}
+                              </span>
+                            )}
+                          </td>
+                          <td className={`px-4 py-2 font-medium ${toneCls}`}>
+                            {r.metrics ? `${tr > 0 ? '+' : ''}${(tr * 100).toFixed(2)}%` : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-zinc-700">
+                            {r.metrics ? (
+                              (() => {
+                                const ar = ((r.metrics.annual_return as number) || 0) * 100;
+                                return `${ar > 0 ? '+' : ''}${ar.toFixed(2)}%`;
+                              })()
+                            ) : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-green-600">
+                            {r.metrics ? `${(((r.metrics.max_drawdown as number) || 0) * 100).toFixed(2)}%` : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-zinc-700">
+                            {r.metrics ? (r.metrics.total_trades as number) : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-zinc-700">
+                            {r.metrics ? `${(((r.metrics.win_rate as number) || 0) * 100).toFixed(1)}%` : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </CardBody>
           </Card>
         </>

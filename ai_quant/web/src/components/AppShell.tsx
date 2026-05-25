@@ -198,10 +198,10 @@ export default function AppShell() {
         {/* 侧边栏，可折叠 */}
         <Sidebar collapsed={sidebarCollapsed} onToggle={handleToggleSidebar} />
         {/* 主内容区域 */}
-        <div className="flex min-h-screen flex-1 flex-col">
+        <div className="flex min-h-screen flex-1 flex-col min-w-0">
           <Topbar />
           {/* 页面内容，通过路由 Outlet 渲染 */}
-          <main className="flex-1 px-4 py-6 md:px-6">
+          <main className="flex-1 px-4 py-6 md:px-6 min-w-0">
             <Outlet />
           </main>
         </div>

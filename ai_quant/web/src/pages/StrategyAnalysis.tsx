@@ -5,6 +5,9 @@ const TABS = [
   { key: 'library', label: '策略库', path: '/strategy/library' },
   { key: 'instances', label: '策略实例', path: '/strategy/instances' },
   { key: 'backtest', label: '回测', path: '/strategy/backtest' },
+  { key: 'backtest-history', label: '回测历史', path: '/strategy/backtest-history' },
+  { key: 'walk-forward', label: '滚动验证', path: '/strategy/walk-forward' },
+  { key: 'param-optimizer', label: '参数优化', path: '/strategy/param-optimizer' },
   { key: 'performance', label: '绩效报告', path: '/strategy/performance' },
 ]
 

@@ -3,7 +3,7 @@ import { ReactNode } from 'react'
 interface BadgeProps {
   children: ReactNode
   variant?: 'default' | 'success' | 'warning' | 'danger' | 'info'
-  tone?: 'green' | 'red' | 'blue' | 'yellow' | 'default'
+  tone?: 'green' | 'red' | 'blue' | 'yellow' | 'amber' | 'zinc' | 'default'
   className?: string
 }
 
@@ -23,6 +23,8 @@ export function Badge({
     red: 'bg-red-100 text-red-800',
     blue: 'bg-blue-100 text-blue-800',
     yellow: 'bg-yellow-100 text-yellow-800',
+    amber: 'bg-amber-100 text-amber-800',
+    zinc: 'bg-zinc-100 text-zinc-800',
   }
 
   return (

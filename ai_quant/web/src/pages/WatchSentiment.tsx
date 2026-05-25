@@ -3,6 +3,7 @@ import type { SentimentEvent, SentimentRun, StockSearchItem } from '@/api/types'
 import { Badge } from '@/components/Badge'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { StockPicker } from '@/components/StockPicker'
+import { cn } from '@/lib/utils'
 import { ExternalLink, PlayCircle, Settings2, X, Plus, Trash2, RefreshCw, Bell } from 'lucide-react'
 import { useEffect, useState, useCallback } from 'react'
 
@@ -45,6 +46,7 @@ export default function WatchSentiment() {
   const [activeTab, setActiveTab] = useState<'events' | 'grouped' | 'history'>('events')
 
   const [watchlist, setWatchlist] = useState<{ code: string; name: string }[]>([])
+  const [syncingLoading, setSyncingLoading] = useState(false)
 
   const [notifyEnabled, setNotifyEnabled] = useState(false)
   const [notifyThreshold, setNotifyThreshold] = useState(0.3)
@@ -78,12 +80,14 @@ export default function WatchSentiment() {
     }
   }
 
-  const loadEvents = async (runId?: string) => {
+  const loadEvents = async (runId?: string, eventType?: string) => {
     setLoading(true)
     setErr(null)
     try {
       const params = new URLSearchParams()
       if (runId) params.set('run_id', runId)
+      // URLSearchParams.set 会自动对中文参数进行 URL 编码，确保中文字符正确传递
+      if (eventType) params.set('event_type', eventType)
       params.set('limit', '200')
       const r = await fetchJson<{ events: SentimentEvent[] }>(`/api/v1/sentiment/events?${params.toString()}`)
       setEvents(r.events || [])
@@ -96,16 +100,23 @@ export default function WatchSentiment() {
 
   const loadWatchlist = async () => {
     try {
-      const r = await fetchJson<{ items: { code: string; name: string }[] }>('/api/v1/watchlist')
-      setWatchlist(r.items || [])
+      const r = await fetchJson<{ items: { stock_code: string; stock_name: string; added_at: string }[] }>('/api/v1/sentiment/stock-list')
+      const wl = (r.items || []).map(i => ({
+        code: i.stock_code,
+        name: i.stock_name || i.stock_code,
+      }))
+      setWatchlist(wl)
     } catch {
       //
     }
   }
 
   useEffect(() => { loadSchedule(); loadRuns(); loadWatchlist() }, [])
-  useEffect(() => { loadEvents() }, [])
-  useEffect(() => { if (latestRun?.run_id) loadEvents(latestRun.run_id) }, [latestRun?.run_id])
+  useEffect(() => {
+    // 当 filterEventType 变化时，将筛选条件传给后端 API（中文参数由 URLSearchParams 自动编码）
+    const eventType = filterEventType !== '全部' ? filterEventType : undefined
+    loadEvents(latestRun?.run_id, eventType)
+  }, [latestRun?.run_id, filterEventType])
 
   const toggleSchedule = async () => {
     if (!schedule) return
@@ -160,9 +171,12 @@ export default function WatchSentiment() {
   const runWatchlistOnce = async () => {
     setErr(null)
     try {
-      await postJson('/api/v1/sentiment/watchlist', {})
+      // 修正API端点路径：使用 /api/v1/sentiment/runs
+      await postJson('/api/v1/sentiment/runs', {})
       await loadRuns()
-      await loadEvents()
+      // 重新加载事件时保留当前筛选条件
+      const eventType = filterEventType !== '全部' ? filterEventType : undefined
+      await loadEvents(latestRun?.run_id, eventType)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
@@ -172,13 +186,16 @@ export default function WatchSentiment() {
     if (manualSelected.length === 0) return
     setErr(null)
     try {
-      await postJson('/api/v1/sentiment/analyze', {
+      // 修正API端点路径：使用 /api/v1/sentiment/runs
+      await postJson('/api/v1/sentiment/runs', {
         stock_codes: manualSelected.map((s) => s.code),
         days: manualDays,
         use_llm: manualUseLlm,
       })
       await loadRuns()
-      await loadEvents()
+      // 重新加载事件时保留当前筛选条件
+      const eventType = filterEventType !== '全部' ? filterEventType : undefined
+      await loadEvents(latestRun?.run_id, eventType)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
@@ -196,6 +213,30 @@ export default function WatchSentiment() {
   }
 
   const clearManual = () => setManualSelected([])
+
+  const syncFromWatchlist = async () => {
+    setSyncingLoading(true)
+    setErr(null)
+    try {
+      const r = await fetchJson<{ items: { stock_code: string; stock_name: string; added_at: string }[]; added_count: number; skipped_count: number }>('/api/v1/sentiment/stock-list/sync', {
+        method: 'POST',
+      })
+      const wl = (r.items || []).map(i => ({
+        code: i.stock_code,
+        name: i.stock_name || i.stock_code,
+      }))
+      setWatchlist(wl)
+      if (r.added_count > 0) {
+        alert(`已从自选库同步 ${r.added_count} 只股票`)
+      } else {
+        alert(`自选库股票已全部存在，无需同步（跳过 ${r.skipped_count} 只）`)
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSyncingLoading(false)
+    }
+  }
 
   const filteredEvents = events.filter((e) => {
     if (filterQ && !(e.stock_code + (e.stock_name || '')).toLowerCase().includes(filterQ.toLowerCase())) return false
@@ -246,7 +287,11 @@ export default function WatchSentiment() {
               <button
                 onClick={toggleSchedule}
                 disabled={scheduleSaving}
-                className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-60 transition-colors ${
+                  schedule?.enabled
+                    ? 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
+                    : 'border-zinc-300 bg-zinc-100 text-zinc-500 hover:bg-zinc-200'
+                }`}
               >
                 <Settings2 className="h-4 w-4" />
                 {schedule?.enabled ? '已启用（点击暂停）' : '已暂停（点击启用）'}
@@ -360,12 +405,21 @@ export default function WatchSentiment() {
             </div>
           </CardHeader>
           <CardBody>
-            <div className="mb-3">
+            <div className="mb-3 flex items-center gap-2">
               <StockPicker
                 mode="single"
                 placeholder="搜索股票代码或名称"
                 onChange={(v) => { if (v) addCustomStock(v as StockSearchItem) }}
+                className="flex-1"
               />
+              <button
+                onClick={syncFromWatchlist}
+                disabled={syncingLoading}
+                className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1.5 text-xs text-white hover:bg-zinc-800 disabled:opacity-60 whitespace-nowrap"
+              >
+                <RefreshCw className={cn('h-3 w-3', syncingLoading ? 'animate-spin' : '')} />
+                从自选股更新
+              </button>
             </div>
             <div className="max-h-48 overflow-y-auto space-y-1">
               {watchlist.map(s => (

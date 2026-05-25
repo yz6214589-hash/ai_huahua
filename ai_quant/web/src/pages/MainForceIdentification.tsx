@@ -64,10 +64,10 @@ const MOCK_MARKERS: MainForceMarker[] = [
 ]
 
 const MOCK_RULES: MainForceRule[] = [
-  { id: '1', name: '成交量异常告警', enabled: true, threshold: 2.0, description: '当日成交量超过过去5日平均成交量的2倍' },
-  { id: '2', name: '大单卖出告警', enabled: true, threshold: 500000, description: '单笔大单卖出超过50万元' },
-  { id: '3', name: '主力资金净流出告警', enabled: true, threshold: 100000000, description: '主力资金净流出超过1000万元' },
-  { id: '4', name: '持仓比例异常告警', enabled: false, threshold: 0.15, description: '主力持仓比例变化超过15%' },
+  { id: '1', name: '成交量异常告警', rule_type: 'volume_anomaly', enabled: true, threshold: 2.0, description: '当日成交量超过过去5日平均成交量的2倍' },
+  { id: '2', name: '大单卖出告警', rule_type: 'large_order', enabled: true, threshold: 500000, description: '单笔大单卖出超过50万元' },
+  { id: '3', name: '主力资金净流出告警', rule_type: 'netflow', enabled: true, threshold: 100000000, description: '主力资金净流出超过1000万元' },
+  { id: '4', name: '持仓比例异常告警', rule_type: 'position_change', enabled: false, threshold: 0.15, description: '主力持仓比例变化超过15%' },
 ]
 
 const MAINFORCE_TYPE_LABELS: Record<string, string> = {

@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""
+分析API路由模块
+提供策略管理、回测执行、Walk-Forward验证、参数搜索、回测历史等API
+"""
+
 from __future__ import annotations
 
 import json
@@ -14,6 +20,8 @@ from pydantic import BaseModel, Field
 
 from core.db import connect, load_mysql_config, query_dict
 from core.analysis import get_sample_codes, get_signals, get_status as get_analysis_status
+from core.strategy.strategy_registry import get_strategy_registry
+from core.strategy.multi_agent_backtest import MultiAgentBacktestEngine
 from infra.storage.logging_service import get_logger
 from fastapi import APIRouter
 
@@ -38,267 +46,22 @@ def signals(stock_code: str = Query(...), start: str = Query(...), end: str = Qu
 
 # ============== 策略元数据注册表 ==============
 
-STRATEGIES: list[dict[str, Any]] = [
-    {
-        "strategy_id": "dual_ma",
-        "name": "双均线交叉",
-        "description": "快速均线与慢速均线交叉产生买卖信号。快速上穿慢速均线时买入，下穿时卖出。适用于趋势明显的市场，震荡市效果较差。",
-        "pros": ["逻辑简单易理解", "趋势行情中收益可观", "参数少，易调优"],
-        "cons": ["震荡市易产生频繁虚假信号", "趋势反转滞后", "无法识别趋势强度"],
-        "params_schema": {
-            "fast": {"type": "int", "label": "快速均线周期", "help": "快速均线的计算周期", "min": 3, "max": 60, "default": 10},
-            "slow": {"type": "int", "label": "慢速均线周期", "help": "慢速均线的计算周期", "min": 10, "max": 200, "default": 30},
-        },
-        "default_params": {"fast": 10, "slow": 30},
-    },
-    {
-        "strategy_id": "macd_basic",
-        "name": "MACD基础",
-        "description": "利用 DIF 与 DEA 的交叉判断买卖时机。DIF 上穿 DEA 形成金叉买入，下穿形成死叉卖出。MACD 是最经典的趋势指标之一。",
-        "pros": ["指标经典，适用范围广", "可判断趋势方向与动能", "参数固定时效果稳定"],
-        "cons": ["滞后性明显", "震荡市信号噪音大", "参数调节空间有限"],
-        "params_schema": {
-            "fast": {"type": "int", "label": "快线周期", "help": "EMA 快线周期", "min": 5, "max": 30, "default": 12},
-            "slow": {"type": "int", "label": "慢线周期", "help": "EMA 慢线周期", "min": 15, "max": 60, "default": 26},
-            "signal": {"type": "int", "label": "Signal周期", "help": "Signal 线平滑周期", "min": 5, "max": 30, "default": 9},
-        },
-        "default_params": {"fast": 12, "slow": 26, "signal": 9},
-    },
-    {
-        "strategy_id": "rsi_basic",
-        "name": "RSI超买超卖",
-        "description": "RSI 低于超卖阈值时买入，高于超买阈值时卖出。适用于震荡市的区间交易，趋势市需配合其他指标。",
-        "pros": ["超买超卖判断直观", "适合区间震荡行情", "信号明确"],
-        "cons": ["趋势市易被套牢", "参数需根据市场调整", "横盘整理时信号较多"],
-        "params_schema": {
-            "period": {"type": "int", "label": "RSI周期", "help": "RSI 计算周期", "min": 5, "max": 30, "default": 14},
-            "oversold": {"type": "int", "label": "超卖阈值", "help": "低于此值视为超卖", "min": 10, "max": 40, "default": 30},
-            "overbought": {"type": "int", "label": "超买阈值", "help": "高于此值视为超买", "min": 60, "max": 90, "default": 70},
-        },
-        "default_params": {"period": 14, "oversold": 30, "overbought": 70},
-    },
-    {
-        "strategy_id": "boll_basic",
-        "name": "布林带策略",
-        "description": "价格触及布林下轨时买入，触及上轨时卖出。布林带中轨可作为动态止损参考。适用于有规律波动的个股。",
-        "pros": ["自带止损逻辑", "可量化波动区间", "趋势/震荡均适用"],
-        "cons": ["单边趋势中持续持仓可能利润回吐", "参数敏感", "极端行情失效"],
-        "params_schema": {
-            "period": {"type": "int", "label": "布林周期", "help": "中轨计算周期", "min": 10, "max": 60, "default": 20},
-            "devfactor": {"type": "float", "label": "标准差倍数", "help": "上下轨偏离倍数", "min": 1.0, "max": 4.0, "step": 0.1, "default": 2.0},
-        },
-        "default_params": {"period": 20, "devfactor": 2.0},
-    },
-    {
-        "strategy_id": "bias",
-        "name": "BIAS乖离率",
-        "description": "计算价格与均线的偏离程度。偏离过大时产生均值回归力量，价格过负时买入，过正时卖出。适合波动较大的个股。",
-        "pros": ["提前预判价格回归", "适合均值回归型交易", "逻辑清晰"],
-        "cons": ["乖离阈值主观性强", "趋势强的股票可能持续偏离", "需配合市场环境判断"],
-        "params_schema": {
-            "period": {"type": "int", "label": "均线周期", "help": "基准均线周期", "min": 5, "max": 60, "default": 20},
-            "buy_threshold": {"type": "float", "label": "买入乖离阈值", "help": "负向偏离多少时买入", "min": -20.0, "max": -0.5, "step": 0.1, "default": -6.0},
-            "sell_threshold": {"type": "float", "label": "卖出乖离阈值", "help": "正向偏离多少时卖出", "min": 0.5, "max": 20.0, "step": 0.1, "default": 3.0},
-        },
-        "default_params": {"period": 20, "buy_threshold": -6.0, "sell_threshold": 3.0},
-    },
-    {
-        "strategy_id": "momentum",
-        "name": "动量策略",
-        "description": "基于动量指标（ROC/变化率）判断短期涨跌趋势。动量持续为正时持有，转负时卖出。适合趋势跟踪型操作。",
-        "pros": ["趋势跟随能力强", "参数简单", "在大趋势行情中表现优秀"],
-        "cons": ["震荡市持续亏损", "滞后于价格变化", "无法预判趋势反转"],
-        "params_schema": {
-            "period": {"type": "int", "label": "动量周期", "help": "动量计算周期（天）", "min": 5, "max": 60, "default": 20},
-            "threshold": {"type": "float", "label": "动量阈值", "help": "触发买入/卖出的动量临界值", "min": 0.5, "max": 20.0, "step": 0.5, "default": 5.0},
-        },
-        "default_params": {"period": 20, "threshold": 5.0},
-    },
-    {
-        "strategy_id": "rsi_ma_confirm",
-        "name": "RSI+MA交叉确认",
-        "description": "RSI 超卖且均线黄金交叉时买入，RSI 超买或均线死叉时卖出。通过双重过滤减少假信号。",
-        "pros": ["双重过滤降低假信号", "信号可靠性高", "趋势行情中稳定"],
-        "cons": ["信号较少，机会成本高", "参数组合需仔细调优", "均线周期选择影响大"],
-        "params_schema": {
-            "period": {"type": "int", "label": "RSI周期", "help": "RSI 计算周期", "min": 5, "max": 30, "default": 14},
-            "oversold": {"type": "int", "label": "超卖阈值", "help": "买入参考", "min": 10, "max": 40, "default": 30},
-            "overbought": {"type": "int", "label": "超买阈值", "help": "卖出参考", "min": 60, "max": 90, "default": 70},
-        },
-        "default_params": {"period": 14, "oversold": 30, "overbought": 70},
-    },
-    {
-        "strategy_id": "macd_vol_confirm",
-        "name": "MACD+成交量确认",
-        "description": "MACD 金叉且成交量放大时买入，死叉时卖出。成交量确认可过滤掉无量的虚假突破。",
-        "pros": ["成交量过滤增强信号可靠性", "避免无量假突破", "适用于有流动性的股票"],
-        "cons": ["需等待成交量确认，反应较慢", "无量市场信号稀少", "参数组合敏感"],
-        "params_schema": {
-            "fast": {"type": "int", "label": "快线周期", "help": "MACD 快线", "min": 5, "max": 30, "default": 12},
-            "slow": {"type": "int", "label": "慢线周期", "help": "MACD 慢线", "min": 15, "max": 60, "default": 26},
-            "signal": {"type": "int", "label": "Signal周期", "help": "MACD Signal", "min": 5, "max": 30, "default": 9},
-            "vol_period": {"type": "int", "label": "成交量均线周期", "help": "判断成交量是否放大", "min": 5, "max": 60, "default": 20},
-            "vol_mult": {"type": "float", "label": "成交量倍数", "help": "放量标准：超过均量的倍数", "min": 0.3, "max": 2.0, "step": 0.1, "default": 0.9},
-        },
-        "default_params": {"fast": 12, "slow": 26, "signal": 9, "vol_period": 20, "vol_mult": 0.9},
-    },
-    {
-        "strategy_id": "macd_profit_lock",
-        "name": "MACD+浮动止盈",
-        "description": "MACD 金叉买入，死叉平仓；持仓期间利润达到触发条件后启动移动止损保护利润。兼顾趋势跟踪与利润保护。",
-        "pros": ["趋势跟踪能力强", "浮动止损保护利润", "可避免利润大幅回吐"],
-        "cons": ["浮动止盈参数主观性强", "震荡市持续止损", "触发条件复杂"],
-        "params_schema": {
-            "fast": {"type": "int", "label": "快线周期", "help": "MACD 快线", "min": 5, "max": 30, "default": 12},
-            "slow": {"type": "int", "label": "慢线周期", "help": "MACD 慢线", "min": 15, "max": 60, "default": 26},
-            "signal": {"type": "int", "label": "Signal周期", "help": "MACD Signal", "min": 5, "max": 30, "default": 9},
-            "profit_trigger": {"type": "float", "label": "止盈触发（%）", "help": "利润达到多少时启动移动止损", "min": 1.0, "max": 30.0, "step": 0.5, "default": 5.0},
-            "trail_pct": {"type": "float", "label": "移动止损回撤（%）", "help": "从峰值回落多少时触发止盈", "min": 1.0, "max": 20.0, "step": 0.5, "default": 3.0},
-        },
-        "default_params": {"fast": 12, "slow": 26, "signal": 9, "profit_trigger": 5.0, "trail_pct": 3.0},
-    },
-    {
-        "strategy_id": "boll_mid_stop",
-        "name": "布林中轨止损",
-        "description": "价格触及布林下轨买入，触及布林中轨时卖出（动态止盈），触及上轨时强制平仓。止损逻辑清晰。",
-        "pros": ["中轨提供动态止盈参考", "止损明确", "参数直观"],
-        "cons": ["趋势市中轨止盈过早", "单边行情利润有限", "参数选择影响大"],
-        "params_schema": {
-            "period": {"type": "int", "label": "布林周期", "help": "布林中轨计算周期", "min": 10, "max": 60, "default": 20},
-            "devfactor": {"type": "float", "label": "标准差倍数", "help": "上下轨偏离倍数", "min": 1.0, "max": 4.0, "step": 0.1, "default": 2.0},
-        },
-        "default_params": {"period": 20, "devfactor": 2.0},
-    },
-    {
-        "strategy_id": "grid",
-        "name": "网格交易",
-        "description": "在固定价格区间内等距布单，高抛低吸。适合震荡行情，无需预判方向，长期稳健收益。",
-        "pros": ["无需预判方向", "震荡市收益稳定", "逻辑清晰易实现"],
-        "cons": ["趋势市可能爆仓", "资金利用率低", "需合理设置网格密度和上下限"],
-        "params_schema": {
-            "grid_count": {"type": "int", "label": "网格数量", "help": "上下限之间布多少个网格", "min": 3, "max": 20, "default": 10},
-            "position_pct": {"type": "float", "label": "每格仓位比例（%）", "help": "每格占总资金的比例", "min": 5, "max": 30, "step": 1.0, "default": 10.0},
-            "upper_price": {"type": "float", "label": "上限价格", "help": "网格上限价格", "min": 0, "max": 100000, "default": 100.0},
-            "lower_price": {"type": "float", "label": "下限价格", "help": "网格下限价格", "min": 0, "max": 100000, "default": 50.0},
-        },
-        "default_params": {"grid_count": 10, "position_pct": 10.0, "upper_price": 100.0, "lower_price": 50.0},
-    },
-    {
-        "strategy_id": "grid_martingale",
-        "name": "马丁格尔网格",
-        "description": "在标准网格基础上，每次买入仓位加倍（亏损加仓），回到初始基准价时全部平仓获利。适合长周期低波动品种。",
-        "pros": ["回本概率高", "长周期稳健", "无需精准抄底"],
-        "cons": ["单边趋势可能爆仓", "资金需求大", "心理压力大"],
-        "params_schema": {
-            "grid_count": {"type": "int", "label": "网格数量", "help": "网格数量", "min": 3, "max": 20, "default": 10},
-            "base_position": {"type": "float", "label": "基础仓位数量", "help": "第一格的买入数量", "min": 100, "max": 100000, "default": 1000.0},
-            "multiplier": {"type": "float", "label": "仓位倍数", "help": "每次加仓的仓位倍数", "min": 1.5, "max": 3.0, "step": 0.1, "default": 2.0},
-        },
-        "default_params": {"grid_count": 10, "base_position": 1000.0, "multiplier": 2.0},
-    },
-    {
-        "strategy_id": "turtle",
-        "name": "经典海龟交易",
-        "description": "基于唐安奇通道突破规则。价格突破20日高点买入，跌破10日低点卖出。经典的趋势跟踪系统。",
-        "pros": ["经典趋势跟踪系统", "参数少", "经过长期市场验证"],
-        "cons": ["趋势反转时滞后", "震荡市频繁止损", "趋势反转假突破多"],
-        "params_schema": {
-            "entry_period": {"type": "int", "label": "入场周期", "help": "入场通道计算周期（天）", "min": 10, "max": 60, "default": 20},
-            "exit_period": {"type": "int", "label": "出场周期", "help": "出场通道计算周期（天）", "min": 5, "max": 30, "default": 10},
-            "atr_period": {"type": "int", "label": "ATR周期", "help": "计算真实波幅的周期", "min": 5, "max": 30, "default": 20},
-            "risk_per_trade": {"type": "float", "label": "每笔风险（%）", "help": "每笔交易占总资金的比例", "min": 0.5, "max": 5.0, "step": 0.1, "default": 2.0},
-        },
-        "default_params": {"entry_period": 20, "exit_period": 10, "atr_period": 20, "risk_per_trade": 2.0},
-    },
-    {
-        "strategy_id": "turtle_short",
-        "name": "海龟做空",
-        "description": "与海龟做多对称，价格跌破20日低点做空，涨回10日高点平仓。做空市场下跌行情。",
-        "pros": ["下跌行情中盈利", "与做多策略互补", "趋势信号明确"],
-        "cons": ["做空成本高（利息）", "单边上涨风险大", "需配合做多策略使用"],
-        "params_schema": {
-            "entry_period": {"type": "int", "label": "入场周期", "help": "做空入场通道", "min": 10, "max": 60, "default": 20},
-            "exit_period": {"type": "int", "label": "出场周期", "help": "平仓通道", "min": 5, "max": 30, "default": 10},
-        },
-        "default_params": {"entry_period": 20, "exit_period": 10},
-    },
-    {
-        "strategy_id": "kdj",
-        "name": "KDJ随机指标",
-        "description": "利用随机指标判断超买超卖。金叉（K上穿D）且在低位时买入，死叉且在高位时卖出。适合短线交易。",
-        "pros": ["对价格变化敏感", "适合短线操作", "超买超卖信号明确"],
-        "cons": ["噪音多，假信号多", "不适合长线持仓", "需结合其他指标过滤"],
-        "params_schema": {
-            "n": {"type": "int", "label": "RSV周期", "help": "计算RSV的周期", "min": 5, "max": 30, "default": 9},
-            "k_period": {"type": "int", "label": "K线平滑周期", "help": "K值的平滑周期", "min": 1, "max": 10, "default": 3},
-            "d_period": {"type": "int", "label": "D线平滑周期", "help": "D值的平滑周期", "min": 1, "max": 10, "default": 3},
-        },
-        "default_params": {"n": 9, "k_period": 3, "d_period": 3},
-    },
-    {
-        "strategy_id": "kdj_macd_combo",
-        "name": "KDJ+MACD组合",
-        "description": "KDJ 和 MACD 同时发出同向信号时才操作，过滤假信号。KDJ 确认方向，MACD 确认趋势。",
-        "pros": ["双重过滤，假信号少", "信号可靠性高", "趋势确认能力强"],
-        "cons": ["信号稀少", "趋势初期入场滞后", "参数组合多，调优复杂"],
-        "params_schema": {
-            "kdj_n": {"type": "int", "label": "KDJ RSV周期", "help": "KDJ RSV计算周期", "min": 5, "max": 30, "default": 9},
-            "macd_fast": {"type": "int", "label": "MACD快线", "help": "MACD 快线周期", "min": 5, "max": 30, "default": 12},
-            "macd_slow": {"type": "int", "label": "MACD慢线", "help": "MACD 慢线周期", "min": 15, "max": 60, "default": 26},
-            "macd_signal": {"type": "int", "label": "MACD Signal", "help": "MACD Signal周期", "min": 5, "max": 30, "default": 9},
-        },
-        "default_params": {"kdj_n": 9, "macd_fast": 12, "macd_slow": 26, "macd_signal": 9},
-    },
-    {
-        "strategy_id": "sar_follow",
-        "name": "SAR趋势跟随",
-        "description": "抛物线转向指标（SAR）跟踪趋势。SAR 在价格下方时持有多仓，在价格上方时持有空仓或空仓。自动追踪止损。",
-        "pros": ["自动提供止损位", "趋势跟随清晰", "无需主观判断趋势"],
-        "cons": ["横盘震荡时频繁转向", "趋势初期信号不稳定", "参数需根据波动性调整"],
-        "params_schema": {
-            "af_step": {"type": "float", "label": "加速因子步长", "help": "SAR 加速因子每次增加量", "min": 0.01, "max": 0.1, "step": 0.005, "default": 0.02},
-            "af_max": {"type": "float", "label": "加速因子上限", "help": "SAR 加速因子最大值", "min": 0.1, "max": 0.5, "step": 0.05, "default": 0.2},
-        },
-        "default_params": {"af_step": 0.02, "af_max": 0.2},
-    },
-    {
-        "strategy_id": "tide",
-        "name": "顺势指标（CCI）",
-        "description": "利用 CCI 顺势指标判断超买超卖和趋势。CCI 突破 +100 做多，跌破 -100 平仓并做空。适用于趋势明显的商品和指数。",
-        "pros": ["适合商品期货", "趋势信号明确", "参数简单"],
-        "cons": ["震荡市失效", "滞后性明显", "期货专用（需注意做空成本）"],
-        "params_schema": {
-            "period": {"type": "int", "label": "CCI周期", "help": "CCI 计算周期", "min": 5, "max": 30, "default": 14},
-            "buy_level": {"type": "float", "label": "买入水平", "help": "CCI 超过此值做多", "min": 50, "max": 200, "step": 10, "default": 100.0},
-            "sell_level": {"type": "float", "label": "卖出水平", "help": "CCI 跌破此值做空", "min": -200, "max": -50, "step": 10, "default": -100.0},
-        },
-        "default_params": {"period": 14, "buy_level": 100.0, "sell_level": -100.0},
-    },
-    {
-        "strategy_id": "dmi_adx",
-        "name": "DMI+ADX趋势强度",
-        "description": "DMI 判断方向，ADX 判断趋势强度。ADX 上升且 +DI > -DI 时做多，ADX 下降或 -DI > +DI 时平仓。",
-        "pros": ["ADX 可判断是否有趋势", "避免在震荡市交易", "方向判断准确"],
-        "cons": ["ADX 需达到一定水平才有效", "信号产生较慢", "参数需结合市场调整"],
-        "params_schema": {
-            "period": {"type": "int", "label": "DMI/ADX周期", "help": "计算周期", "min": 7, "max": 30, "default": 14},
-            "adx_threshold": {"type": "float", "label": "ADX阈值", "help": "认为有趋势的最低ADX值", "min": 10, "max": 40, "step": 1, "default": 25.0},
-        },
-        "default_params": {"period": 14, "adx_threshold": 25.0},
-    },
-    {
-        "strategy_id": "ddi",
-        "name": "DDY涨跌意愿",
-        "description": "基于涨跌意愿指标（DDY），反映主动买卖力量。DDY 为正且上升时买入，为负且下降时卖出。",
-        "pros": ["捕捉主力动向", "适合中短线", "数据来源直接"],
-        "cons": ["需Level2数据支持", "短期噪音大", "需结合价格一起看"],
-        "params_schema": {
-            "period": {"type": "int", "label": "DDY均线周期", "help": "DDY 平滑周期", "min": 3, "max": 20, "default": 5},
-            "threshold": {"type": "float", "label": "触发阈值", "help": "DDY 超过此值触发信号", "min": 0.1, "max": 10.0, "step": 0.1, "default": 1.0},
-        },
-        "default_params": {"period": 5, "threshold": 1.0},
-    },
-]
+_REGISTRY = get_strategy_registry()
+
+STRATEGIES: list[dict[str, Any]] = []
+for _sid, _meta in _REGISTRY.items():
+    STRATEGIES.append({
+        "strategy_id": _meta.strategy_id,
+        "name": _meta.name,
+        "description": _meta.description,
+        "pros": [],
+        "cons": [],
+        "params_schema": _meta.params_schema,
+        "default_params": _meta.default_params,
+        "requires_weekly": _meta.requires_weekly,
+        "requires_chan": _meta.requires_chan,
+        "requires_predictions": _meta.requires_predictions,
+    })
 
 
 # ============== 实例存储路径 ==============
@@ -354,276 +117,16 @@ def _load_daily(stock_code: str, start: str, end: str) -> pd.DataFrame:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
         df["trade_date"] = pd.to_datetime(df["trade_date"])
+        rename_map = {
+            "open_price": "open",
+            "high_price": "high",
+            "low_price": "low",
+            "close_price": "close",
+        }
+        df = df.rename(columns=rename_map)
         return df
     finally:
         conn.close()
-
-
-# ============== 简化回测引擎 ==============
-
-def _run_simple_backtest(
-    df: pd.DataFrame,
-    strategy_id: str,
-    params: dict[str, Any],
-) -> dict[str, Any]:
-    df = df.copy().reset_index(drop=True)
-    close = df["close_price"].values
-    n = len(close)
-    cash = 100000.0
-    position = 0
-    trades: list[dict[str, Any]] = []
-    equity: list[dict[str, Any]] = []
-
-    p = params.copy()
-    price_arr = close
-
-    for i in range(1, n):
-        date_str = str(df.iloc[i]["trade_date"].date())
-        current_price = price_arr[i]
-        signal = ""
-
-        if strategy_id == "dual_ma":
-            fast = int(p.get("fast", 10))
-            slow = int(p.get("slow", 30))
-            if i < slow:
-                equity.append({"date": date_str, "nav": round(cash + position * current_price, 2)})
-                continue
-            ma_fast_curr = price_arr[i - fast + 1:i + 1].mean() if i >= fast else None
-            ma_slow_curr = price_arr[i - slow + 1:i + 1].mean() if i >= slow else None
-            ma_fast_prev = price_arr[i - fast:i].mean() if i >= fast else None
-            ma_slow_prev = price_arr[i - slow:i].mean() if i >= slow else None
-            if ma_fast_curr is not None and ma_slow_curr is not None and ma_fast_prev is not None and ma_slow_prev is not None:
-                if ma_fast_prev <= ma_slow_prev and ma_fast_curr > ma_slow_curr and not position:
-                    position = int(cash * 0.95 / current_price)
-                    cost = position * current_price
-                    cash -= cost
-                    trades.append({"date": date_str, "action": "buy", "price": round(current_price, 2), "qty": position, "cost": round(cost, 2)})
-                    signal = "买入"
-                elif ma_fast_prev >= ma_slow_prev and ma_fast_curr < ma_slow_curr and position > 0:
-                    proceeds = position * current_price
-                    cash += proceeds
-                    trades.append({"date": date_str, "action": "sell", "price": round(current_price, 2), "qty": position, "proceeds": round(proceeds, 2)})
-                    position = 0
-                    signal = "卖出"
-
-        elif strategy_id == "macd_basic":
-            fast, slow_s, sig = int(p.get("fast", 12)), int(p.get("slow", 26)), int(p.get("signal", 9))
-            if i < slow_s + sig:
-                equity.append({"date": date_str, "nav": round(cash + position * current_price, 2)})
-                continue
-            ema_fast = pd.Series(price_arr[:i + 1]).ewm(span=fast, adjust=False).mean().iloc[-1]
-            ema_slow = pd.Series(price_arr[:i + 1]).ewm(span=slow_s, adjust=False).mean().iloc[-1]
-            dif_curr = ema_fast - ema_slow
-            ema_dif_prev = pd.Series(price_arr[:i]).ewm(span=sig, adjust=False).mean().ewm(span=sig, adjust=False).mean().iloc[-1] if i > sig else 0
-            dif_prev = pd.Series(price_arr[:i]).ewm(span=fast, adjust=False).mean().ewm(span=slow_s, adjust=False).mean().ewm(span=sig, adjust=False).mean().iloc[-1] if i > sig else 0
-            if dif_prev <= 0 and dif_curr > 0 and not position:
-                position = int(cash * 0.95 / current_price)
-                cost = position * current_price
-                cash -= cost
-                trades.append({"date": date_str, "action": "buy", "price": round(current_price, 2), "qty": position, "cost": round(cost, 2)})
-                signal = "买入"
-            elif dif_prev >= 0 and dif_curr < 0 and position > 0:
-                proceeds = position * current_price
-                cash += proceeds
-                trades.append({"date": date_str, "action": "sell", "price": round(current_price, 2), "qty": position, "proceeds": round(proceeds, 2)})
-                position = 0
-                signal = "卖出"
-
-        elif strategy_id == "rsi_basic":
-            period = int(p.get("period", 14))
-            oversold = float(p.get("oversold", 30))
-            overbought = float(p.get("overbought", 70))
-            if i < period:
-                equity.append({"date": date_str, "nav": round(cash + position * current_price, 2)})
-                continue
-            gains = []
-            losses = []
-            for j in range(i - period + 1, i + 1):
-                delta = price_arr[j] - price_arr[j - 1]
-                gains.append(max(delta, 0))
-                losses.append(max(-delta, 0))
-            avg_gain = sum(gains) / period
-            avg_loss = sum(losses) / period
-            rs = avg_gain / avg_loss if avg_loss != 0 else 100
-            rsi = 100 - (100 / (1 + rs)) if rs != 0 else 50
-            if rsi < oversold and not position:
-                position = int(cash * 0.95 / current_price)
-                cost = position * current_price
-                cash -= cost
-                trades.append({"date": date_str, "action": "buy", "price": round(current_price, 2), "qty": position, "cost": round(cost, 2)})
-                signal = "买入"
-            elif rsi > overbought and position > 0:
-                proceeds = position * current_price
-                cash += proceeds
-                trades.append({"date": date_str, "action": "sell", "price": round(current_price, 2), "qty": position, "proceeds": round(proceeds, 2)})
-                position = 0
-                signal = "卖出"
-
-        elif strategy_id == "boll_basic":
-            period = int(p.get("period", 20))
-            dev = float(p.get("devfactor", 2.0))
-            if i < period:
-                equity.append({"date": date_str, "nav": round(cash + position * current_price, 2)})
-                continue
-            mean = price_arr[i - period + 1:i + 1].mean()
-            std = price_arr[i - period + 1:i + 1].std(ddof=0)
-            upper = mean + dev * std
-            lower = mean - dev * std
-            if current_price <= lower and not position:
-                position = int(cash * 0.95 / current_price)
-                cost = position * current_price
-                cash -= cost
-                trades.append({"date": date_str, "action": "buy", "price": round(current_price, 2), "qty": position, "cost": round(cost, 2)})
-                signal = "买入"
-            elif current_price >= upper and position > 0:
-                proceeds = position * current_price
-                cash += proceeds
-                trades.append({"date": date_str, "action": "sell", "price": round(current_price, 2), "qty": position, "proceeds": round(proceeds, 2)})
-                position = 0
-                signal = "卖出"
-
-        elif strategy_id == "kdj":
-            n_kdj = int(p.get("n", 9))
-            k_p = int(p.get("k_period", 3))
-            d_p = int(p.get("d_period", 3))
-            if i < n_kdj:
-                equity.append({"date": date_str, "nav": round(cash + position * current_price, 2)})
-                continue
-            window = price_arr[i - n_kdj + 1:i + 1]
-            low_n = window.min()
-            high_n = window.max()
-            rsv = (current_price - low_n) / (high_n - low_n) * 100 if high_n != low_n else 50
-            k = (2 / 3) * 50 + (1 / 3) * rsv
-            d = (2 / 3) * 50 + (1 / 3) * k
-            if k > d and k < 30 and not position:
-                position = int(cash * 0.95 / current_price)
-                cost = position * current_price
-                cash -= cost
-                trades.append({"date": date_str, "action": "buy", "price": round(current_price, 2), "qty": position, "cost": round(cost, 2)})
-                signal = "买入"
-            elif k < d and k > 70 and position > 0:
-                proceeds = position * current_price
-                cash += proceeds
-                trades.append({"date": date_str, "action": "sell", "price": round(current_price, 2), "qty": position, "proceeds": round(proceeds, 2)})
-                position = 0
-                signal = "卖出"
-
-        elif strategy_id == "grid":
-            grid_count = int(p.get("grid_count", 10))
-            upper = float(p.get("upper_price", current_price * 1.1))
-            lower = float(p.get("lower_price", current_price * 0.9))
-            grid_step = (upper - lower) / grid_count
-            current_price = float(current_price)
-            if lower <= current_price <= upper:
-                grid_idx = int((current_price - lower) / grid_step)
-                grid_idx = max(0, min(grid_count - 1, grid_idx))
-                if not position:
-                    position = int(cash * 0.95 / current_price)
-                    cost = position * current_price
-                    cash -= cost
-                    trades.append({"date": date_str, "action": "buy", "price": round(current_price, 2), "qty": position, "cost": round(cost, 2), "note": f"网格{grid_idx}"})
-                    signal = "买入"
-            else:
-                if position > 0:
-                    proceeds = position * current_price
-                    cash += proceeds
-                    trades.append({"date": date_str, "action": "sell", "price": round(current_price, 2), "qty": position, "proceeds": round(proceeds, 2)})
-                    position = 0
-                    signal = "卖出"
-
-        elif strategy_id == "momentum":
-            period = int(p.get("period", 20))
-            threshold = float(p.get("threshold", 5.0))
-            if i < period:
-                equity.append({"date": date_str, "nav": round(cash + position * current_price, 2)})
-                continue
-            roc = (current_price - price_arr[i - period]) / price_arr[i - period] * 100
-            if roc > threshold and not position:
-                position = int(cash * 0.95 / current_price)
-                cost = position * current_price
-                cash -= cost
-                trades.append({"date": date_str, "action": "buy", "price": round(current_price, 2), "qty": position, "cost": round(cost, 2)})
-                signal = "买入"
-            elif roc < -threshold and position > 0:
-                proceeds = position * current_price
-                cash += proceeds
-                trades.append({"date": date_str, "action": "sell", "price": round(current_price, 2), "qty": position, "proceeds": round(proceeds, 2)})
-                position = 0
-                signal = "卖出"
-
-        elif strategy_id == "sar_follow":
-            af_step = float(p.get("af_step", 0.02))
-            af_max = float(p.get("af_max", 0.2))
-            if i < 2:
-                equity.append({"date": date_str, "nav": round(cash + position * current_price, 2)})
-                continue
-            is_long = p.get("_sar_long", True)
-            sar = p.get("_sar", current_price * 0.99)
-            af = p.get("_af", af_step)
-            ep = p.get("_ep", price_arr[i - 1])
-            low_prev = price_arr[i - 1]
-            high_prev = price_arr[i - 1]
-            for j in range(max(0, i - 20), i):
-                if price_arr[j] < low_prev:
-                    low_prev = price_arr[j]
-                if price_arr[j] > high_prev:
-                    high_prev = price_arr[j]
-            new_sar = sar + af * (ep - sar)
-            new_sar = min(new_sar, price_arr[i - 1], price_arr[i - 2] if i >= 2 else price_arr[i - 1])
-            if current_price > new_sar:
-                if not is_long and position > 0:
-                    proceeds = position * current_price
-                    cash += proceeds
-                    trades.append({"date": date_str, "action": "sell", "price": round(current_price, 2), "qty": position, "proceeds": round(proceeds, 2)})
-                    position = 0
-                    signal = "平仓"
-                is_long = True
-                ep = high_prev
-                af = min(af + af_step, af_max)
-            else:
-                if is_long and position > 0:
-                    proceeds = position * current_price
-                    cash += proceeds
-                    trades.append({"date": date_str, "action": "sell", "price": round(current_price, 2), "qty": position, "proceeds": round(proceeds, 2)})
-                    position = 0
-                    signal = "平仓"
-                is_long = False
-                ep = low_prev
-                af = min(af + af_step, af_max)
-            p["_sar_long"] = is_long
-            p["_sar"] = new_sar
-            p["_af"] = af
-            p["_ep"] = ep
-
-        else:
-            equity.append({"date": date_str, "nav": round(cash + position * current_price, 2)})
-            continue
-
-        nav = cash + position * current_price
-        equity.append({"date": date_str, "nav": round(nav, 2)})
-
-    final_nav = cash + position * close[-1]
-    initial_nav = 100000.0
-    total_return = (final_nav - initial_nav) / initial_nav * 100
-    num_trades = len([t for t in trades if t["action"] == "buy"])
-    wins = sum(1 for i in range(len(trades) - 1) if trades[i]["action"] == "buy" and i + 1 < len(trades) and trades[i + 1]["action"] == "sell" for _ in [1] if (trades[i + 1].get("proceeds", 0) or 0) > trades[i].get("cost", 0))
-    win_rate = wins / num_trades * 100 if num_trades > 0 else 0
-
-    return {
-        "metrics": {
-            "initial_nav": round(initial_nav, 2),
-            "final_nav": round(final_nav, 2),
-            "total_return": round(total_return, 2),
-            "num_trades": num_trades,
-            "win_rate": round(win_rate, 2),
-        },
-        "trades": trades,
-        "nav_log": equity,
-        "strategy_id": strategy_id,
-        "stock_code": df.iloc[0]["stock_code"] if "stock_code" in df.columns else "",
-        "start_date": str(df.iloc[0]["trade_date"].date()) if len(df) > 0 else "",
-        "end_date": str(df.iloc[-1]["trade_date"].date()) if len(df) > 0 else "",
-    }
 
 
 # ============== 请求模型 ==============
@@ -641,6 +144,70 @@ class BacktestReq(BaseModel):
     strategy_id: str
     params: dict[str, Any] = Field(default_factory=dict)
     initial_cash: float = 100000.0
+    # 新增：佣金与滑点参数
+    commission_buy: float = Field(default=0.0003, description="买入佣金率")
+    commission_sell: float = Field(default=0.0013, description="卖出佣金率（含印花税）")
+    slippage_pct: float = Field(default=0.0, description="滑点百分比")
+    slippage_fixed: float = Field(default=0.0, description="固定滑点")
+    min_commission: float = Field(default=5.0, description="最低手续费")
+    # 新增：基准代码
+    benchmark_code: str | None = Field(default=None, description="基准指数代码，如 000300.SH")
+    # 新增：区间模式
+    interval_mode: str | None = Field(default=None, description="区间模式：train_val_test")
+    train_ratio: float = Field(default=0.6, description="训练集比例")
+    val_ratio: float = Field(default=0.2, description="验证集比例")
+    test_ratio: float = Field(default=0.2, description="测试集比例")
+    custom_intervals: list[dict[str, str]] | None = Field(default=None, description="自定义区间列表")
+
+
+class BatchBacktestReq(BaseModel):
+    selection_type: str = Field(default="list", description="选择类型：list（直接列表）或 group（分组）")
+    stock_codes: list[str] = Field(default_factory=list, description="股票代码列表")
+    group_id: int | None = Field(default=None, description="分组ID（selection_type为group时必填）")
+    start: str
+    end: str
+    strategy_id: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    initial_cash: float = 100000.0
+    max_workers: int = Field(default=4, ge=1, le=16, description="最大并发数")
+
+
+class WalkForwardReq(BaseModel):
+    stock_code: str
+    start: str
+    end: str
+    strategy_id: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    initial_cash: float = 100000.0
+    train_years: int = Field(default=3, description="训练窗口年数")
+    test_years: int = Field(default=1, description="测试窗口年数")
+    step_years: int = Field(default=1, description="步进年数")
+    mode: str = Field(default="rolling", description="窗口模式：rolling 或 anchored")
+    # 佣金与滑点
+    commission_buy: float = Field(default=0.0003, description="买入佣金率")
+    commission_sell: float = Field(default=0.0013, description="卖出佣金率（含印花税）")
+    slippage_pct: float = Field(default=0.0, description="滑点百分比")
+    slippage_fixed: float = Field(default=0.0, description="固定滑点")
+    min_commission: float = Field(default=5.0, description="最低手续费")
+
+
+class ParamSearchReq(BaseModel):
+    stock_code: str
+    start: str
+    end: str
+    strategy_id: str
+    param_grid: dict[str, Any] = Field(default_factory=dict, description="参数网格，如 {\"fast\": [5,10,15], \"slow\": [20,30]}")
+    initial_cash: float = 100000.0
+    # 佣金与滑点
+    commission_buy: float = Field(default=0.0003, description="买入佣金率")
+    commission_sell: float = Field(default=0.0013, description="卖出佣金率（含印花税）")
+    slippage_pct: float = Field(default=0.0, description="滑点百分比")
+    slippage_fixed: float = Field(default=0.0, description="固定滑点")
+    min_commission: float = Field(default=5.0, description="最低手续费")
+
+
+class CompareReq(BaseModel):
+    backtest_ids: list[str] = Field(default_factory=list, description="要对比的回测ID列表")
 
 
 # ============== API 路由 ==============
@@ -652,6 +219,9 @@ def list_strategies() -> dict[str, Any]:
 
 @router.get("/strategies/{strategy_id}")
 def get_strategy(strategy_id: str) -> dict[str, Any]:
+    meta = _REGISTRY.get(strategy_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="strategy_not_found")
     for s in STRATEGIES:
         if s["strategy_id"] == strategy_id:
             return {"strategy": s}
@@ -668,21 +238,15 @@ def list_instances(strategy_id: str | None = Query(default=None)) -> dict[str, A
 
 @router.post("/strategy-instances")
 def create_instance(req: InstanceCreateReq = Body(...)) -> dict[str, Any]:
-    for s in STRATEGIES:
-        if s["strategy_id"] == req.strategy_id:
-            break
-    else:
+    if req.strategy_id not in _REGISTRY:
         raise HTTPException(status_code=400, detail="unknown_strategy")
 
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="empty_name")
 
-    defaults = {}
-    for s in STRATEGIES:
-        if s["strategy_id"] == req.strategy_id:
-            defaults = dict(s.get("default_params", {}))
-            break
+    meta = _REGISTRY[req.strategy_id]
+    defaults = dict(meta.default_params)
     params = {**defaults, **req.params}
 
     instances = _load_instances()
@@ -706,6 +270,132 @@ def delete_instance(instance_id: str) -> dict[str, Any]:
     return {"deleted": instance_id, "removed": before - len(instances)}
 
 
+def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log: list[dict] | None = None) -> dict[str, Any]:
+    """
+    格式化回测结果为API响应格式
+
+    Args:
+        bt_result: BacktestResult 回测结果对象
+        req: BacktestReq 请求对象
+        benchmark_nav_log: 基准净值日志（可选）
+
+    Returns:
+        格式化后的响应字典
+    """
+    m = bt_result.metrics
+    trades = []
+    for t in bt_result.trades:
+        trades.append({
+            "date": t.get("trade_date", ""),
+            "action": "sell",
+            "price": 0,
+            "qty": int(t.get("size", 0)),
+            "cost": 0,
+            "proceeds": 0,
+            "note": f"盈亏: {t.get('pnlcomm', 0):.2f}",
+        })
+
+    # 基础指标（百分比指标统一返回小数形式，如0.25表示25%，前端负责乘以100显示）
+    metrics = {
+        "initial_nav": round(m.get("start_value", 100000), 2),
+        "final_nav": round(m.get("end_value", 100000), 2),
+        "total_return": round(m.get("total_return", 0), 6),
+        "annual_return": round(m.get("annual_return", 0), 6),
+        "sharpe": round(m.get("sharpe", 0), 4) if m.get("sharpe") is not None else None,
+        "max_drawdown": round(m.get("max_drawdown", 0), 6),
+        "num_trades": m.get("total_trades", 0),
+        "won": m.get("won", 0),
+        "lost": m.get("lost", 0),
+        "win_rate": round(m.get("win_rate", 0), 6),
+    }
+
+    # 增强指标
+    enhanced_keys = [
+        "volatility", "sortino", "calmar",
+        "alpha", "beta", "tracking_error", "information_ratio",
+        "profit_factor", "max_consecutive_wins", "max_consecutive_losses",
+    ]
+    for key in enhanced_keys:
+        if key in m:
+            val = m[key]
+            if val is not None and not (isinstance(val, float) and pd.isna(val)):
+                metrics[key] = val
+
+    result = {
+        "metrics": metrics,
+        "trades": trades,
+        "nav_log": bt_result.nav_log,
+        "strategy_id": req.strategy_id,
+        "stock_code": req.stock_code,
+        "start_date": req.start,
+        "end_date": req.end,
+        # 新增字段
+        "drawdown_log": bt_result.drawdown_log if bt_result.drawdown_log else [],
+        "monthly_returns": bt_result.monthly_returns if bt_result.monthly_returns else [],
+        "benchmark_nav_log": benchmark_nav_log or bt_result.benchmark_nav_log or [],
+    }
+
+    return result
+
+
+def _run_single_backtest(
+    df: pd.DataFrame,
+    meta: Any,
+    params: dict[str, Any],
+    req: BacktestReq,
+) -> dict[str, Any]:
+    """
+    执行单次回测并返回增强后的结果
+
+    Args:
+        df: 日线数据
+        meta: 策略元数据
+        params: 策略参数
+        req: 回测请求
+
+    Returns:
+        格式化后的回测结果
+    """
+    from core.strategy.backtest_engine import run_backtest as bt_run
+
+    bt_result = bt_run(
+        df=df,
+        strategy_cls=meta.bt_strategy_factory(),
+        strategy_params=params,
+        initial_cash=req.initial_cash,
+        requires_weekly=meta.requires_weekly,
+        commission_buy=req.commission_buy,
+        commission_sell=req.commission_sell,
+        slippage_pct=req.slippage_pct,
+        slippage_fixed=req.slippage_fixed,
+        min_commission=req.min_commission,
+    )
+
+    if "error" in bt_result.metrics:
+        raise HTTPException(status_code=500, detail=bt_result.metrics["error"])
+
+    # 加载基准数据
+    benchmark_nav_log = []
+    if req.benchmark_code:
+        from core.strategy.benchmark_loader import calc_benchmark_nav
+        benchmark_nav_log = calc_benchmark_nav(
+            code=req.benchmark_code,
+            start=req.start,
+            end=req.end,
+            initial_cash=req.initial_cash,
+        )
+
+    # 使用 enhance_metrics 增强指标
+    from core.strategy.metrics_calculator import enhance_metrics
+    bt_result.metrics = enhance_metrics(
+        base_metrics=bt_result.metrics,
+        nav_log=bt_result.nav_log,
+        benchmark_nav_log=benchmark_nav_log if benchmark_nav_log else None,
+    )
+
+    return _format_backtest_result(bt_result, req, benchmark_nav_log=benchmark_nav_log)
+
+
 @router.post("/backtest/run")
 def run_backtest(req: BacktestReq = Body(...)) -> dict[str, Any]:
     try:
@@ -717,25 +407,189 @@ def run_backtest(req: BacktestReq = Body(...)) -> dict[str, Any]:
     if start_d > end_d:
         raise HTTPException(status_code=400, detail="start_after_end")
 
-    for s in STRATEGIES:
-        if s["strategy_id"] == req.strategy_id:
-            break
-    else:
+    meta = _REGISTRY.get(req.strategy_id)
+    if not meta:
         raise HTTPException(status_code=400, detail="unknown_strategy")
 
     df = _load_daily(req.stock_code, str(start_d), str(end_d))
     if df.empty:
         raise HTTPException(status_code=404, detail="no_data_for_stock")
 
-    defaults = {}
-    for s in STRATEGIES:
-        if s["strategy_id"] == req.strategy_id:
-            defaults = dict(s.get("default_params", {}))
-            break
-    params = {**defaults, **req.params}
+    params = dict(meta.default_params)
+    params.update(req.params)
 
-    result = _run_simple_backtest(df, req.strategy_id, params)
+    # 缠论数据
+    if meta.requires_chan:
+        from core.strategy.chan_engine import add_chan_fields
+        chan_result = add_chan_fields(df, symbol=req.stock_code)
+        df = chan_result.df
+        if df["chan_signal"].isna().all():
+            raise HTTPException(status_code=400, detail="chan_data_unavailable_当前缠论数据不可用")
+
+    # 区间模式支持
+    if req.interval_mode == "train_val_test":
+        return _run_interval_backtest(df, meta, params, req)
+
+    # 普通回测
+    result = _run_single_backtest(df, meta, params, req)
+
+    # 保存回测记录到数据库
+    _save_backtest_to_db(result, req)
+
     return result
+
+
+def _run_interval_backtest(
+    df: pd.DataFrame,
+    meta: Any,
+    params: dict[str, Any],
+    req: BacktestReq,
+) -> dict[str, Any]:
+    """
+    区间模式回测：将数据分为训练集、验证集、测试集，分别运行回测
+
+    Args:
+        df: 完整日线数据
+        meta: 策略元数据
+        params: 策略参数
+        req: 回测请求
+
+    Returns:
+        包含各区间回测结果的综合响应
+    """
+    df_all = df.copy()
+    if "trade_date" in df_all.columns:
+        df_all["trade_date"] = pd.to_datetime(df_all["trade_date"])
+
+    intervals: list[dict[str, str]] = []
+
+    if req.custom_intervals:
+        # 自定义区间
+        intervals = req.custom_intervals
+    else:
+        # 按比例划分
+        total_days = len(df_all)
+        train_end = int(total_days * req.train_ratio)
+        val_end = train_end + int(total_days * req.val_ratio)
+
+        df_train = df_all.iloc[:train_end]
+        df_val = df_all.iloc[train_end:val_end]
+        df_test = df_all.iloc[val_end:]
+
+        if not df_train.empty:
+            intervals.append({
+                "name": "train",
+                "start": str(df_train["trade_date"].iloc[0].date()),
+                "end": str(df_train["trade_date"].iloc[-1].date()),
+            })
+        if not df_val.empty:
+            intervals.append({
+                "name": "val",
+                "start": str(df_val["trade_date"].iloc[0].date()),
+                "end": str(df_val["trade_date"].iloc[-1].date()),
+            })
+        if not df_test.empty:
+            intervals.append({
+                "name": "test",
+                "start": str(df_test["trade_date"].iloc[0].date()),
+                "end": str(df_test["trade_date"].iloc[-1].date()),
+            })
+
+    interval_results = []
+    for interval in intervals:
+        i_start = interval.get("start", "")
+        i_end = interval.get("end", "")
+        i_name = interval.get("name", "unknown")
+
+        # 按区间截取数据
+        i_df = df_all[(df_all["trade_date"] >= i_start) & (df_all["trade_date"] <= i_end)].copy()
+        if i_df.empty:
+            interval_results.append({"name": i_name, "start": i_start, "end": i_end, "error": "no_data"})
+            continue
+
+        # 缠论数据
+        if meta.requires_chan:
+            from core.strategy.chan_engine import add_chan_fields
+            chan_result = add_chan_fields(i_df, symbol=req.stock_code)
+            i_df = chan_result.df
+
+        # 构造子请求
+        sub_req = BacktestReq(
+            stock_code=req.stock_code,
+            start=i_start,
+            end=i_end,
+            strategy_id=req.strategy_id,
+            params=req.params,
+            initial_cash=req.initial_cash,
+            commission_buy=req.commission_buy,
+            commission_sell=req.commission_sell,
+            slippage_pct=req.slippage_pct,
+            slippage_fixed=req.slippage_fixed,
+            min_commission=req.min_commission,
+            benchmark_code=req.benchmark_code,
+        )
+
+        try:
+            sub_result = _run_single_backtest(i_df, meta, params, sub_req)
+            interval_results.append({
+                "name": i_name,
+                "start": i_start,
+                "end": i_end,
+                "result": sub_result,
+            })
+        except HTTPException as e:
+            interval_results.append({
+                "name": i_name,
+                "start": i_start,
+                "end": i_end,
+                "error": e.detail,
+            })
+
+    return {
+        "interval_mode": "train_val_test",
+        "intervals": interval_results,
+        "strategy_id": req.strategy_id,
+        "stock_code": req.stock_code,
+        "start_date": req.start,
+        "end_date": req.end,
+    }
+
+
+def _save_backtest_to_db(result: dict[str, Any], req: BacktestReq) -> None:
+    """
+    将回测结果保存到数据库
+
+    Args:
+        result: 格式化后的回测结果
+        req: 回测请求
+    """
+    try:
+        from core.strategy.backtest_storage import save_backtest, ensure_backtest_tables
+        ensure_backtest_tables()
+        record = {
+            "strategy_id": req.strategy_id,
+            "stock_code": req.stock_code,
+            "start_date": req.start,
+            "end_date": req.end,
+            "initial_cash": req.initial_cash,
+            "commission_buy": req.commission_buy,
+            "commission_sell": req.commission_sell,
+            "slippage_pct": req.slippage_pct,
+            "slippage_fixed": req.slippage_fixed,
+            "min_commission": req.min_commission,
+            "benchmark_code": req.benchmark_code,
+            "params": req.params,
+            "metrics": result.get("metrics", {}),
+            "trades": result.get("trades", []),
+            "nav_log": result.get("nav_log", []),
+            "benchmark_nav_log": result.get("benchmark_nav_log", []),
+            "drawdown_log": result.get("drawdown_log", []),
+            "monthly_returns": result.get("monthly_returns", []),
+        }
+        backtest_id = save_backtest(record)
+        result["backtest_id"] = backtest_id
+    except Exception as e:
+        logger.error("保存回测记录失败", extra={"error": str(e)})
 
 
 @router.get("/backtest/history")
@@ -756,3 +610,312 @@ def backtest_history(
     if strategy_id:
         items = [x for x in items if x.get("strategy_id") == strategy_id]
     return {"items": items}
+
+
+@router.post("/backtest/batch")
+def run_batch_backtest(req: BatchBacktestReq = Body(...)) -> dict[str, Any]:
+    """批量回测API：支持选择多个股票或分组进行批量策略回测"""
+    try:
+        start_d = pd.to_datetime(req.start).date()
+        end_d = pd.to_datetime(req.end).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid_date")
+
+    if start_d > end_d:
+        raise HTTPException(status_code=400, detail="start_after_end")
+
+    meta = _REGISTRY.get(req.strategy_id)
+    if not meta:
+        raise HTTPException(status_code=400, detail="unknown_strategy")
+
+    # 确定要回测的股票代码列表
+    stock_codes = []
+    if req.selection_type == "group":
+        if not req.group_id:
+            raise HTTPException(status_code=400, detail="group_id_required")
+        # 从数据库获取分组的股票
+        try:
+            cfg = load_mysql_config()
+            conn = connect(cfg)
+            rows = query_dict(
+                conn,
+                "SELECT stock_code FROM trade_stock_group_item WHERE group_id = %s",
+                (req.group_id,),
+            )
+            stock_codes = [str(r.get("stock_code", "")).strip() for r in rows]
+            conn.close()
+        except Exception as e:
+            logger.error("获取分组股票失败", extra={"group_id": req.group_id, "error": str(e)})
+            raise HTTPException(status_code=500, detail="failed_to_load_group")
+    else:
+        # 使用提供的股票代码列表
+        stock_codes = [c.strip() for c in req.stock_codes if c.strip()]
+
+    if not stock_codes:
+        raise HTTPException(status_code=400, detail="no_stocks_selected")
+
+    logger.info(
+        "开始批量回测",
+        extra={
+            "strategy_id": req.strategy_id,
+            "stock_count": len(stock_codes),
+            "start": req.start,
+            "end": req.end,
+        },
+    )
+
+    # 创建并执行批量回测
+    def loader_func(code: str, s: str, e: str) -> pd.DataFrame:
+        return _load_daily(code, s, e)
+
+    engine = MultiAgentBacktestEngine(loader_func, max_workers=req.max_workers)
+    params = dict(meta.default_params)
+    params.update(req.params)
+
+    batch = engine.create_batch(
+        stock_codes=stock_codes,
+        strategy_id=req.strategy_id,
+        strategy_cls=meta.bt_strategy_factory(),
+        strategy_params=params,
+        initial_cash=req.initial_cash,
+        start_date=req.start,
+        end_date=req.end,
+    )
+
+    batch = engine.execute_batch(batch)
+
+    # 构建结果
+    results_list = []
+    for task in batch.results:
+        task_result = {
+            "task_id": task.task_id,
+            "stock_code": task.stock_code,
+            "status": task.status.value,
+            "error": task.error,
+        }
+        if task.result:
+            task_result["metrics"] = task.result.metrics
+            task_result["nav_log"] = task.result.nav_log
+            task_result["trades"] = task.result.trades
+        results_list.append(task_result)
+
+    response = {
+        "batch_id": batch.batch_id,
+        "total_tasks": batch.total_tasks,
+        "completed_tasks": batch.completed_tasks,
+        "failed_tasks": batch.failed_tasks,
+        "results": results_list,
+        "aggregated": batch.aggregated_metrics,
+        "created_at": batch.created_at,
+        "completed_at": batch.completed_at,
+    }
+
+    logger.info(
+        "批量回测完成",
+        extra={
+            "batch_id": batch.batch_id,
+            "total": batch.total_tasks,
+            "completed": batch.completed_tasks,
+            "failed": batch.failed_tasks,
+        },
+    )
+
+    return response
+
+
+# ============== Walk-Forward 滚动验证路由 ==============
+
+@router.post("/backtest/walk-forward")
+def run_walk_forward(req: WalkForwardReq = Body(...)) -> dict[str, Any]:
+    """
+    Walk-Forward 滚动验证API
+    对策略进行时序交叉验证，评估策略在不同时间窗口的稳定性
+    """
+    try:
+        start_d = pd.to_datetime(req.start).date()
+        end_d = pd.to_datetime(req.end).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid_date")
+
+    if start_d > end_d:
+        raise HTTPException(status_code=400, detail="start_after_end")
+
+    meta = _REGISTRY.get(req.strategy_id)
+    if not meta:
+        raise HTTPException(status_code=400, detail="unknown_strategy")
+
+    df = _load_daily(req.stock_code, str(start_d), str(end_d))
+    if df.empty:
+        raise HTTPException(status_code=404, detail="no_data_for_stock")
+
+    params = dict(meta.default_params)
+    params.update(req.params)
+
+    # 缠论数据
+    if meta.requires_chan:
+        from core.strategy.chan_engine import add_chan_fields
+        chan_result = add_chan_fields(df, symbol=req.stock_code)
+        df = chan_result.df
+        if df["chan_signal"].isna().all():
+            raise HTTPException(status_code=400, detail="chan_data_unavailable_当前缠论数据不可用")
+
+    from core.strategy.walk_forward_engine import generate_windows, run_walk_forward as wf_run
+
+    windows = generate_windows(
+        start=req.start,
+        end=req.end,
+        train_years=req.train_years,
+        test_years=req.test_years,
+        step_years=req.step_years,
+        mode=req.mode,
+    )
+
+    if not windows:
+        raise HTTPException(status_code=400, detail="no_valid_windows")
+
+    bt_kwargs = {
+        "commission_buy": req.commission_buy,
+        "commission_sell": req.commission_sell,
+        "slippage_pct": req.slippage_pct,
+        "slippage_fixed": req.slippage_fixed,
+        "min_commission": req.min_commission,
+    }
+
+    wf_result = wf_run(
+        df=df,
+        strategy_cls=meta.bt_strategy_factory(),
+        strategy_params=params,
+        windows=windows,
+        initial_cash=req.initial_cash,
+        **bt_kwargs,
+    )
+
+    return {
+        "strategy_id": req.strategy_id,
+        "stock_code": req.stock_code,
+        "start_date": req.start,
+        "end_date": req.end,
+        "mode": req.mode,
+        "train_years": req.train_years,
+        "test_years": req.test_years,
+        "step_years": req.step_years,
+        "windows": wf_result.windows,
+        "stability": wf_result.stability,
+        "aggregated_metrics": wf_result.aggregated_metrics,
+    }
+
+
+# ============== 回测记录管理路由 ==============
+
+@router.get("/backtest/records")
+def list_backtest_records(
+    strategy_id: str | None = Query(default=None),
+    stock_code: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> dict[str, Any]:
+    """分页查询回测记录"""
+    from core.strategy.backtest_storage import list_backtests, ensure_backtest_tables
+    ensure_backtest_tables()
+    return list_backtests(
+        strategy_id=strategy_id,
+        stock_code=stock_code,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/backtest/records/{backtest_id}")
+def get_backtest_record(backtest_id: str) -> dict[str, Any]:
+    """获取单条回测记录详情"""
+    from core.strategy.backtest_storage import get_backtest, ensure_backtest_tables
+    ensure_backtest_tables()
+    record = get_backtest(backtest_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="backtest_not_found")
+    return record
+
+
+@router.delete("/backtest/records/{backtest_id}")
+def delete_backtest_record(backtest_id: str) -> dict[str, Any]:
+    """删除回测记录"""
+    from core.strategy.backtest_storage import delete_backtest, ensure_backtest_tables
+    ensure_backtest_tables()
+    success = delete_backtest(backtest_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="backtest_not_found")
+    return {"deleted": backtest_id}
+
+
+@router.post("/backtest/compare")
+def compare_backtests(req: CompareReq = Body(...)) -> dict[str, Any]:
+    """对比多条回测记录"""
+    from core.strategy.backtest_storage import compare_backtests, ensure_backtest_tables
+    ensure_backtest_tables()
+    if not req.backtest_ids:
+        raise HTTPException(status_code=400, detail="empty_backtest_ids")
+    results = compare_backtests(req.backtest_ids)
+    return {"comparisons": results}
+
+
+# ============== 参数搜索路由 ==============
+
+@router.post("/backtest/param-search")
+def run_param_search(req: ParamSearchReq = Body(...)) -> dict[str, Any]:
+    """
+    参数搜索API
+    对策略参数进行网格搜索，找到最优参数组合
+    """
+    try:
+        start_d = pd.to_datetime(req.start).date()
+        end_d = pd.to_datetime(req.end).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid_date")
+
+    if start_d > end_d:
+        raise HTTPException(status_code=400, detail="start_after_end")
+
+    meta = _REGISTRY.get(req.strategy_id)
+    if not meta:
+        raise HTTPException(status_code=400, detail="unknown_strategy")
+
+    df = _load_daily(req.stock_code, str(start_d), str(end_d))
+    if df.empty:
+        raise HTTPException(status_code=404, detail="no_data_for_stock")
+
+    # 缠论数据
+    if meta.requires_chan:
+        from core.strategy.chan_engine import add_chan_fields
+        chan_result = add_chan_fields(df, symbol=req.stock_code)
+        df = chan_result.df
+        if df["chan_signal"].isna().all():
+            raise HTTPException(status_code=400, detail="chan_data_unavailable_当前缠论数据不可用")
+
+    from core.strategy.param_optimizer import run_param_search as ps_run
+
+    bt_kwargs = {
+        "commission_buy": req.commission_buy,
+        "commission_sell": req.commission_sell,
+        "slippage_pct": req.slippage_pct,
+        "slippage_fixed": req.slippage_fixed,
+        "min_commission": req.min_commission,
+    }
+
+    result = ps_run(
+        df=df,
+        strategy_cls=meta.bt_strategy_factory(),
+        param_grid=req.param_grid,
+        initial_cash=req.initial_cash,
+        **bt_kwargs,
+    )
+
+    return {
+        "strategy_id": req.strategy_id,
+        "stock_code": req.stock_code,
+        "start_date": req.start,
+        "end_date": req.end,
+        "total_combinations": result.total_combinations,
+        "results": result.results,
+        "best_by_return": result.best_by_return,
+        "best_by_sharpe": result.best_by_sharpe,
+    }

@@ -11,13 +11,13 @@ interface StrategyDef {
   pros: string[]
   cons: string[]
   params_schema: Record<string, {
-    type: string
+    type: 'int' | 'float' | 'bool' | 'enum' | 'object'
     label: string
     help: string
     min?: number
     max?: number
     step?: number
-    default?: number
+    default?: number | string | boolean
     values?: string[]
   }>
   default_params: Record<string, unknown>
@@ -90,10 +90,23 @@ export default function StrategyLibrary() {
                           </div>
                           <div className="mt-1 text-xs text-zinc-500">{param.help}</div>
                           <div className="mt-1 flex items-center gap-3 text-xs text-zinc-400">
-                            {param.min !== undefined && <span>最小：{param.min}</span>}
-                            {param.max !== undefined && <span>最大：{param.max}</span>}
-                            {param.step !== undefined && <span>步长：{param.step}</span>}
-                            <span>默认：{param.default ?? String(s.default_params[key] ?? '—')}</span>
+                            {param.type === 'bool' && (
+                              <span>默认：{param.default ? '开启' : '关闭'}</span>
+                            )}
+                            {param.type === 'enum' && (
+                              <span>可选值：{param.values?.join(' / ')}</span>
+                            )}
+                            {param.type === 'object' && (
+                              <span>字典类型，运行时传入</span>
+                            )}
+                            {(param.type === 'int' || param.type === 'float') && (
+                              <>
+                                {param.min !== undefined && <span>最小：{param.min}</span>}
+                                {param.max !== undefined && <span>最大：{param.max}</span>}
+                                {param.step !== undefined && <span>步长：{param.step}</span>}
+                                <span>默认：{param.default ?? '—'}</span>
+                              </>
+                            )}
                           </div>
                         </div>
                       ))}

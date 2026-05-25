@@ -8,8 +8,11 @@ interface StrategyDef {
   strategy_id: string
   name: string
   params_schema: Record<string, {
-    type: string; label: string; help: string
-    min?: number; max?: number; step?: number; default?: number; values?: string[]
+    type: 'int' | 'float' | 'bool' | 'enum' | 'object'
+    label: string; help: string
+    min?: number; max?: number; step?: number
+    default?: number | string | boolean
+    values?: string[]
   }>
   default_params: Record<string, unknown>
 }
@@ -89,7 +92,12 @@ export default function StrategyInstances() {
         const meta = def.params_schema[k]
         if (meta.type === 'int') params[k] = parseInt(String(v), 10)
         else if (meta.type === 'float') params[k] = parseFloat(String(v))
-        else params[k] = v
+        else if (meta.type === 'bool') params[k] = v === 'true'
+        else if (meta.type === 'enum') params[k] = String(v)
+        else if (meta.type === 'object') {
+          try { params[k] = JSON.parse(String(v)) }
+          catch { params[k] = {} }
+        } else params[k] = v
       }
     }
     try {
@@ -171,15 +179,45 @@ export default function StrategyInstances() {
                     {Object.entries(currentStrategy.params_schema).map(([key, meta]) => (
                       <div key={key}>
                         <div className="mb-1 text-xs text-zinc-500">{meta.label}</div>
-                        <input
-                          type={meta.type === 'int' || meta.type === 'float' ? 'number' : 'text'}
-                          value={formParams[key] ?? String(meta.default ?? '')}
-                          onChange={(e) => setFormParams((p) => ({ ...p, [key]: e.target.value }))}
-                          min={meta.min}
-                          max={meta.max}
-                          step={meta.step}
-                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
-                        />
+                        {meta.type === 'bool' ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={formParams[key] === 'true'}
+                              onChange={(e) => setFormParams((p) => ({ ...p, [key]: String(e.target.checked) }))}
+                              className="h-4 w-4 accent-zinc-900"
+                            />
+                            <span className="text-xs text-zinc-500">{formParams[key] === 'true' ? '开启' : '关闭'}</span>
+                          </div>
+                        ) : meta.type === 'enum' ? (
+                          <select
+                            value={formParams[key] ?? ''}
+                            onChange={(e) => setFormParams((p) => ({ ...p, [key]: e.target.value }))}
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                          >
+                            {meta.values?.map((v) => (
+                              <option key={v} value={v}>{v}</option>
+                            ))}
+                          </select>
+                        ) : meta.type === 'object' ? (
+                          <textarea
+                            value={formParams[key] ?? '{}'}
+                            onChange={(e) => setFormParams((p) => ({ ...p, [key]: e.target.value }))}
+                            rows={2}
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-mono outline-none focus:border-zinc-400"
+                            placeholder='{"key": "value"}'
+                          />
+                        ) : (
+                          <input
+                            type="number"
+                            value={formParams[key] ?? String(meta.default ?? '')}
+                            onChange={(e) => setFormParams((p) => ({ ...p, [key]: e.target.value }))}
+                            min={meta.min}
+                            max={meta.max}
+                            step={meta.step}
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                          />
+                        )}
                         <div className="mt-0.5 text-xs text-zinc-400">{meta.help}</div>
                       </div>
                     ))}

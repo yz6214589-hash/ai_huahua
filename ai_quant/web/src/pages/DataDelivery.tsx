@@ -40,6 +40,18 @@ export default function DataDelivery() {
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
+  const DOMAIN_LABEL_MAP: Record<string, string> = {
+    stock_daily: '行情日线（stock_daily）',
+    stock_financial: '财务季度（stock_financial）',
+    stock_news: '新闻事件（stock_news）',
+    macro_indicator: '宏观指标（macro_indicator）',
+    rate_daily: '利率日频（rate_daily）',
+    report_consensus: '研报一致预期（report_consensus）',
+    calendar: '财经日历（calendar）',
+    catalyst: '关键催化剂（catalyst）',
+    sentiment_monitor: '舆情监控（sentiment_monitor）',
+  }
+
   const [datasetName, setDatasetName] = useState<DatasetName>('trade_stock_daily')
   const [datasetPage, setDatasetPage] = useState(1)
   const [datasetLoading, setDatasetLoading] = useState(false)
@@ -47,6 +59,8 @@ export default function DataDelivery() {
   const [datasetData, setDatasetData] = useState<PagedRows<Record<string, unknown>> | null>(null)
 
   const PAGE_SIZE = 50
+  const HISTORY_PAGE_SIZE = 10
+  const [historyPage, setHistoryPage] = useState(1)
 
   const loadDataset = useCallback(async (dataset: DatasetName, page: number) => {
     setDatasetLoading(true)
@@ -77,6 +91,7 @@ export default function DataDelivery() {
   const loadHistory = async () => {
     setLoading(true)
     setErr(null)
+    setHistoryPage(1)
     try {
       const r = await fetchJson<{ runs: JobRunResult[] }>('/api/v1/jobs/runs?limit=100')
       setHistory(r.runs || [])
@@ -102,12 +117,11 @@ export default function DataDelivery() {
 
   const totalPages = datasetData ? Math.ceil(datasetData.total / PAGE_SIZE) : 0
 
+  const pagedHistory = history.slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE)
+  const historyTotalPages = Math.ceil(history.length / HISTORY_PAGE_SIZE)
+
   return (
     <div className="space-y-4">
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-zinc-900">数据与交付</h2>
-        <p className="mt-1 text-sm text-zinc-500">查看数据集和任务运行历史</p>
-      </div>
 
       <div className="flex gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-1">
         <button
@@ -132,7 +146,7 @@ export default function DataDelivery() {
           )}
         >
           <Play className="h-4 w-4" />
-          任务运行
+          历史任务记录
         </button>
       </div>
 
@@ -163,8 +177,8 @@ export default function DataDelivery() {
               <div className="px-4 py-8 text-center text-sm text-zinc-500">暂无数据</div>
             ) : (
               <>
-                <div className="max-h-[500px] overflow-auto">
-                  <table className="w-full text-left text-sm">
+                <div className="max-h-[420px] overflow-auto">
+                  <table className="text-left text-sm" style={{ width: 'max-content' }}>
                     <thead className="sticky top-0 z-10 bg-white">
                       <tr className="border-b border-zinc-100 text-xs text-zinc-500">
                         {columns.map((col) => (
@@ -247,7 +261,7 @@ export default function DataDelivery() {
 
       {activeTab === 'runs' && (
         <>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4">
             <Card>
               <CardHeader
                 title="历史记录"
@@ -270,7 +284,8 @@ export default function DataDelivery() {
                 ) : history.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-zinc-500">暂无运行记录</div>
                 ) : (
-                  <div className="max-h-96 overflow-auto">
+                  <>
+                  <div className="max-h-[295px] overflow-auto">
                     <table className="w-full text-left text-sm">
                       <thead className="sticky top-0 bg-white">
                         <tr className="border-b border-zinc-100 text-xs text-zinc-500">
@@ -281,7 +296,7 @@ export default function DataDelivery() {
                         </tr>
                       </thead>
                       <tbody>
-                        {history.map((r) => (
+                        {pagedHistory.map((r) => (
                           <tr
                             key={r.runId}
                             onClick={() => setSelected(r)}
@@ -291,7 +306,7 @@ export default function DataDelivery() {
                             )}
                           >
                             <td className="px-4 py-2 text-xs text-zinc-700">{formatDate(r.startedAt)}</td>
-                            <td className="px-4 py-2 text-xs text-zinc-700">{r.domain}</td>
+                            <td className="px-4 py-2 text-xs text-zinc-700">{DOMAIN_LABEL_MAP[r.domain] || r.domain}</td>
                             <td className="px-4 py-2"><JobStatusBadge status={r.status} /></td>
                             <td className="px-4 py-2">
                               <button
@@ -307,46 +322,66 @@ export default function DataDelivery() {
                           </tr>
                         ))}
                       </tbody>
-                    </table>
+                  </table>
+                </div>
+                {historyTotalPages > 1 && (
+                  <div className="flex items-center justify-between border-t border-zinc-100 px-4 py-3">
+                    <div className="text-xs text-zinc-500">
+                      共 {history.length} 条，第 {historyPage}/{historyTotalPages} 页
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setHistoryPage(1)}
+                        disabled={historyPage <= 1}
+                        className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        首页
+                      </button>
+                      <button
+                        onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                        disabled={historyPage <= 1}
+                        className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        上一页
+                      </button>
+                      {Array.from({ length: Math.min(5, historyTotalPages) }, (_, i) => {
+                        const start = Math.max(1, Math.min(historyPage - 2, historyTotalPages - 4))
+                        const page = start + i
+                        if (page > historyTotalPages) return null
+                        return (
+                          <button
+                            key={page}
+                            onClick={() => setHistoryPage(page)}
+                            className={cn(
+                              'min-w-[32px] rounded-lg border px-2 py-1.5 text-xs transition',
+                              page === historyPage
+                                ? 'border-zinc-900 bg-zinc-900 text-white'
+                                : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
+                            )}
+                          >
+                            {page}
+                          </button>
+                        )
+                      })}
+                      <button
+                        onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
+                        disabled={historyPage >= historyTotalPages}
+                        className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        下一页
+                      </button>
+                      <button
+                        onClick={() => setHistoryPage(historyTotalPages)}
+                        disabled={historyPage >= historyTotalPages}
+                        className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        末页
+                      </button>
+                    </div>
                   </div>
                 )}
-              </CardBody>
-            </Card>
-
-            <Card>
-              <CardHeader
-                title="Git 状态"
-              />
-              <CardBody>
-                <div className="space-y-3">
-                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                    <div className="text-xs text-zinc-500">当前版本</div>
-                    <div className="mt-1 text-sm font-medium text-zinc-900">main</div>
-                  </div>
-                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                    <div className="text-xs text-zinc-500">数据同步状态</div>
-                    <div className="mt-1 text-sm font-medium text-zinc-900">已同步</div>
-                  </div>
-                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                    <div className="text-xs text-zinc-500">最近更新</div>
-                    <div className="mt-1 text-sm font-medium text-zinc-700">
-                      {history.length > 0 ? formatDate(history[0].finishedAt) : '—'}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                    <div className="text-xs text-zinc-500">交付统计</div>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <div className="text-center">
-                        <div className="text-lg font-semibold text-zinc-900">{history.filter(h => h.status === 'success').length}</div>
-                        <div className="text-xs text-zinc-500">成功</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-lg font-semibold text-zinc-900">{history.filter(h => h.status === 'failed').length}</div>
-                        <div className="text-xs text-zinc-500">失败</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              </>
+            )}
               </CardBody>
             </Card>
           </div>

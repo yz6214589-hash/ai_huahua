@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from core.db import connect, load_mysql_config, query_dict
-from core.data import get_job_store_dir, get_summary
+from core.data import get_job_store_dir, get_summary, get_watchlist
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("data")
@@ -370,7 +370,7 @@ def export_data(body: dict[str, Any]) -> Response:
 def financial_hot() -> dict[str, Any]:
     """
     财经热点接口
-    返回今日日历事件（财经日历）和最近重要新闻
+    返回今日市场财经热点事件（财经日历+宏观事件）和近期自选股重要新闻
     """
     from core.db import load_mysql_config
     import pymysql
@@ -380,45 +380,100 @@ def financial_hot() -> dict[str, Any]:
         user=cfg.user, password=cfg.password,
         database=cfg.database
     )
-    today = datetime.now().strftime('%Y-%m-%d')
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
+        # 1. 查询市场财经热点事件（财经日历：宏观经济数据发布、利率决议等）
         cur = conn.cursor(pymysql.cursors.DictCursor)
         cur.execute(
             """
-            SELECT event_date, country, importance, source, title
+            SELECT event_date, event_time, country, category, title,
+                   importance, previous_value, forecast_value, actual_value,
+                   source, source_url
             FROM trade_calendar_event
-            WHERE event_date = %s
-            ORDER BY FIELD(importance, '高', '中', '低'), source
+            WHERE event_date >= DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+              AND event_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+            ORDER BY event_date ASC, FIELD(importance, 3, 2, 1), event_time ASC
             LIMIT 50
-            """,
-            (today,)
+            """
         )
-        events = cur.fetchall() or []
+        events_raw = cur.fetchall() or []
         cur.close()
 
-        cur2 = conn.cursor(pymysql.cursors.DictCursor)
-        cur2.execute(
-            """
-            SELECT n.stock_code, m.stock_name, n.title, n.source, n.published_at, n.source_url
-            FROM trade_stock_news n
-            LEFT JOIN trade_stock_master m ON n.stock_code = m.stock_code
-            WHERE published_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
-            ORDER BY published_at DESC
-            LIMIT 20
-            """
-        )
-        news = cur2.fetchall() or []
-        cur2.close()
+        # 2. 查询近期自选股重要新闻
+        watchlist_data = get_watchlist()
+        watchlist_items = watchlist_data.get("items", [])
+        watchlist_codes = [item["stock_code"] for item in watchlist_items if item.get("stock_code")]
+
+        news_raw = []
+        if watchlist_codes:
+            # 构建IN子句的占位符
+            placeholders = ",".join(["%s"] * len(watchlist_codes))
+            cur2 = conn.cursor(pymysql.cursors.DictCursor)
+            cur2.execute(
+                f"""
+                SELECT n.stock_code, m.stock_name, n.title, n.source, n.published_at, n.source_url
+                FROM trade_stock_news n
+                LEFT JOIN trade_stock_master m ON n.stock_code = m.stock_code
+                WHERE n.published_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
+                AND n.stock_code IN ({placeholders})
+                ORDER BY n.published_at DESC
+                LIMIT 50
+                """,
+                tuple(watchlist_codes)
+            )
+            news_raw = cur2.fetchall() or []
+            cur2.close()
+
+        # 重要性数字转中文
+        def _imp_label(v):
+            try:
+                n = int(v)
+            except Exception:
+                return "中"
+            return "高" if n >= 3 else "低" if n <= 1 else "中"
+
+        # 国家代码转中文
+        def _country_label(v):
+            m = {"CN": "中国", "US": "美国", "EU": "欧洲", "JP": "日本"}
+            return m.get(v, v or "—")
+
+        # events 按标题去重
+        seen_titles = set()
+        events_dedup = []
+        for r in events_raw:
+            t = (r.get("title") or "").strip()
+            if t and t not in seen_titles:
+                seen_titles.add(t)
+                events_dedup.append(r)
+
+        # news 按标题去重
+        seen_news_titles = set()
+        news_dedup = []
+        for r in news_raw:
+            t = (r.get("title") or "").strip()
+            if t and t not in seen_news_titles:
+                seen_news_titles.add(t)
+                news_dedup.append(r)
 
         return {
-            "date": today,
-            "events": [{"event_date": str(r["event_date"]), "country": r["country"] or "—",
-                        "importance": r["importance"] or "—", "source": r["source"] or "—",
-                        "event_name": r.get("title") or "—"} for r in events],
-            "news": [{"stock_code": r["stock_code"], "stock_name": r.get("stock_name") or "—",
-                      "title": r["title"] or "—", "source": r.get("source") or "—",
+            "updated_at": now_str,
+            "events": [{"event_date": str(r["event_date"]) if r.get("event_date") else "—",
+                        "event_time": r.get("event_time") or "",
+                        "country": _country_label(r.get("country")),
+                        "category": r.get("category") or "other",
+                        "title": r["title"] or "—",
+                        "importance": _imp_label(r.get("importance")),
+                        "previous_value": r.get("previous_value") or "",
+                        "forecast_value": r.get("forecast_value") or "",
+                        "actual_value": r.get("actual_value") or "",
+                        "source": r.get("source") or "—",
+                        "url": r.get("source_url") or ""} for r in events_dedup],
+            "news": [{"stock_code": r["stock_code"] or "—",
+                      "stock_name": r.get("stock_name") or "—",
+                      "title": r["title"] or "—",
+                      "source": r.get("source") or "—",
                       "published_at": str(r["published_at"]) if r.get("published_at") else "—",
-                      "url": r.get("source_url") or ""} for r in news],
+                      "url": r.get("source_url") or ""} for r in news_dedup],
         }
     finally:
         conn.close()

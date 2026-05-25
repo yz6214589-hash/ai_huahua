@@ -31,6 +31,9 @@ import StrategyAnalysis from '@/pages/StrategyAnalysis'
 import StrategyLibrary from '@/pages/StrategyLibrary'
 import StrategyInstances from '@/pages/StrategyInstances'
 import StrategyBacktest from '@/pages/StrategyBacktest'
+import BacktestHistory from '@/pages/BacktestHistory'
+import WalkForwardPanel from '@/components/WalkForwardPanel'
+import ParamOptimizer from '@/pages/ParamOptimizer'
 import StockSelect from '@/pages/StockSelect'
 import StockSelectFundamental from '@/pages/StockSelectFundamental'
 import StockSelectFactor from '@/pages/StockSelectFactor'
@@ -90,6 +93,9 @@ export default function App() {
             <Route path="library" element={<StrategyLibrary />} />
             <Route path="instances" element={<StrategyInstances />} />
             <Route path="backtest" element={<StrategyBacktest />} />
+            <Route path="backtest-history" element={<BacktestHistory />} />
+            <Route path="walk-forward" element={<WalkForwardPanel />} />
+            <Route path="param-optimizer" element={<ParamOptimizer />} />
             <Route path="performance" element={<PerformanceReport />} />
           </Route>
           <Route path="/stock-select" element={<StockSelect />}>

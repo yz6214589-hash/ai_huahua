@@ -20,6 +20,12 @@ logger = get_logger("sim_account")
 router = APIRouter(prefix="/api/v1/sim-account", tags=["sim-account"])
 
 
+def _get_conn():
+    """获取数据库连接"""
+    cfg = load_mysql_config()
+    return connect(cfg)
+
+
 def _ensure_sim_tables() -> None:
     try:
         conn = _get_conn()
@@ -86,7 +92,8 @@ def _ensure_sim_tables() -> None:
         finally:
             conn.close()
     except Exception as e:
-        logger.error("自动建表失败", extra={"error": str(e)})
+        import traceback
+        logger.error(f"自动建表失败: {e}\n{traceback.format_exc()}")
 
 
 _ensure_sim_tables()
@@ -108,12 +115,6 @@ class SimTradeRequest(BaseModel):
     price: float = Field(..., gt=0)
     volume: int = Field(..., gt=0)
     strategy: Optional[str] = None
-
-
-def _get_conn():
-    """获取数据库连接"""
-    cfg = load_mysql_config()
-    return connect(cfg)
 
 
 def _generate_trade_no() -> str:

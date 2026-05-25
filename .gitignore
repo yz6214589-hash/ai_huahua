@@ -78,3 +78,4 @@ submit_*.py
 verify_*.py
 full_stock_*.py
 monitor_*.py
+_test_*.py

@@ -270,6 +270,7 @@ export interface MacroIndicator {
   value: number | null         // 指标值
   date?: string | null         // 数据日期
   name?: string | null         // 指标名称
+  source?: string | null       // 数据来源
   error?: string | null        // 错误信息
 }
 
