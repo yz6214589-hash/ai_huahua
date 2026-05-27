@@ -6,6 +6,7 @@ from core.db import load_mysql_config
 from core.jobs.common import JobStats
 from core.jobs.domains.calendar import run_calendar
 from core.jobs.domains.catalyst import run_catalyst
+from core.jobs.domains.index_daily import run_index_daily
 from core.jobs.domains.macro_indicator import run_macro_indicator
 from core.jobs.domains.rate_daily import run_rate_daily
 from core.jobs.domains.report_consensus import run_report_consensus
@@ -36,5 +37,7 @@ def run_domain(domain: str, mode: str | None, params: dict[str, Any] | None, pro
         return run_catalyst(cfg, mode, params)
     if d == "sentiment_monitor":
         return run_sentiment_monitor(cfg, mode, params)
+    if d == "index_daily":
+        return run_index_daily(cfg, mode, params, progress_callback=progress_callback)
     raise RuntimeError("unknown domain")
 

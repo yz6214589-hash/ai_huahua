@@ -388,3 +388,238 @@ def get_filter_criteria() -> dict[str, Any]:
             "建议结合多个指标综合筛选，避免单一指标选股"
         ]
     }
+
+
+# ---------------------------------------------------------------------------
+# 因子评分 API
+# ---------------------------------------------------------------------------
+
+class FactorItem(BaseModel):
+    """因子配置项"""
+    key: str
+    weight: float
+    direction: str  # 'up' 表示越大越好, 'down' 表示越小越好
+
+
+class FactorScoreRequest(BaseModel):
+    """因子评分请求"""
+    factors: list[FactorItem]
+    stock_codes: list[str] | None = None
+
+
+# 因子key到数据库字段的映射
+FACTOR_FIELD_MAPPING: dict[str, str] = {
+    "pe": "pe_ttm",
+    "pb": "pb",
+    "roe": "roe",
+    "revenue_growth": "revenue_growth_yoy",
+    "profit_growth": "profit_growth_yoy",
+    "market_cap": "market_cap",
+    "gross_margin": "gross_margin",
+    "operating_margin": "operating_margin",
+    "net_margin": "net_margin",
+    "debt_ratio": "debt_ratio",
+    "quick_ratio": "quick_ratio",
+    "eps": "eps",
+    "free_cash_flow": "free_cash_flow",
+    "dividend_yield": "dividend_yield",
+    "total_asset_turnover": "total_asset_turnover",
+    "ev_ebitda": "ev_ebitda",
+    "ebitda": "ebitda",
+}
+
+
+@router.post("/score")
+def factor_score(body: FactorScoreRequest) -> dict[str, Any]:
+    """
+    因子评分接口。
+
+    接收因子权重配置，从 trade_stock_master + trade_stock_financial 表
+    查询实时数据，对股票进行综合评分并返回排名结果。
+
+    Args:
+        body: 包含因子配置和可选股票代码列表的请求体
+
+    Returns:
+        dict: 包含 items（评分结果列表）和 total（总数）
+    """
+    logger.info("因子评分请求", extra={
+        "factor_count": len(body.factors),
+        "stock_codes_provided": bool(body.stock_codes),
+        "stock_codes_count": len(body.stock_codes) if body.stock_codes else 0,
+    })
+
+    if not body.factors:
+        raise HTTPException(status_code=400, detail="至少需要提供一个因子")
+
+    try:
+        cfg = load_mysql_config()
+        conn = connect(cfg)
+    except Exception as e:
+        logger.error("数据库连接失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        # 构建select字段列表
+        select_fields = ["f.stock_code", "m.stock_name"]
+        for factor in body.factors:
+            db_field = FACTOR_FIELD_MAPPING.get(factor.key)
+            if db_field:
+                select_fields.append(f"f.{db_field}")
+
+        # 构建where条件
+        conditions: list[str] = ["f.{db_field} IS NOT NULL".format(db_field=FACTOR_FIELD_MAPPING.get(f.key, "id"))
+                                 for f in body.factors if f.key in FACTOR_FIELD_MAPPING]
+        # 实际上要用 IS NOT NULL 检查
+        conditions = []
+        params: list[Any] = []
+
+        if body.stock_codes:
+            placeholders = ",".join(["%s"] * len(body.stock_codes))
+            conditions.append(f"f.stock_code IN ({placeholders})")
+            params.extend(body.stock_codes)
+
+        where = " AND ".join(conditions) if conditions else "1=1"
+
+        # 查询最新报告期的财务数据
+        # 先找到最新的报告日期
+        latest_report = query_dict(
+            conn,
+            "SELECT MAX(report_date) as max_date FROM trade_stock_financial",
+            ()
+        )
+        latest_report_date = None
+        if latest_report and latest_report[0].get("max_date"):
+            max_dt = latest_report[0]["max_date"]
+            if hasattr(max_dt, "strftime"):
+                latest_report_date = max_dt.strftime("%Y-%m-%d")
+            else:
+                latest_report_date = str(max_dt)
+
+        if not latest_report_date:
+            return {"items": [], "total": 0}
+
+        report_condition = "f.report_date = %s"
+        params.append(latest_report_date)
+
+        # 构建完整的where条件
+        full_where = f"{report_condition}"
+        if conditions:
+            full_where += f" AND {' AND '.join(conditions)}"
+        if body.stock_codes:
+            placeholders = ",".join(["%s"] * len(body.stock_codes))
+            full_where += f" AND f.stock_code IN ({placeholders})"
+            params.extend(body.stock_codes)
+
+        select_str = ", ".join(select_fields)
+        sql = f"""
+            SELECT {select_str}
+            FROM trade_stock_financial f
+            LEFT JOIN trade_stock_master m ON f.stock_code = m.stock_code
+            WHERE {full_where}
+            ORDER BY f.stock_code
+        """
+        rows = query_dict(conn, sql, tuple(params))
+
+        if not rows:
+            return {"items": [], "total": 0}
+
+        # 计算评分
+        # 先收集每个因子的值列表，用于标准化
+        factor_values: dict[str, list[float]] = {}
+        for factor in body.factors:
+            db_field = FACTOR_FIELD_MAPPING.get(factor.key)
+            if not db_field:
+                continue
+            vals = []
+            for row in rows:
+                v = row.get(db_field)
+                if v is not None:
+                    try:
+                        vals.append(float(v))
+                    except (ValueError, TypeError):
+                        pass
+            if vals:
+                factor_values[factor.key] = vals
+
+        if not factor_values:
+            return {"items": [], "total": 0}
+
+        # 计算每个因子的Min-Max标准化参数
+        factor_stats: dict[str, dict] = {}
+        for key, vals in factor_values.items():
+            min_v = min(vals)
+            max_v = max(vals)
+            range_v = max_v - min_v if max_v > min_v else 1
+            factor_stats[key] = {"min": min_v, "range": range_v}
+
+        # 计算每只股票的得分
+        scored_items: list[dict] = []
+        for row in rows:
+            stock_code = row.get("stock_code", "")
+            stock_name = row.get("stock_name", "") or stock_code
+
+            factor_scores: dict[str, float] = {}
+            total_score = 0.0
+            total_weight = 0.0
+
+            for factor in body.factors:
+                db_field = FACTOR_FIELD_MAPPING.get(factor.key)
+                if not db_field or factor.key not in factor_stats:
+                    continue
+
+                raw_val = row.get(db_field)
+                if raw_val is None:
+                    continue
+
+                try:
+                    raw_val_f = float(raw_val)
+                except (ValueError, TypeError):
+                    continue
+
+                stats = factor_stats[factor.key]
+                # Min-Max归一化到[0, 1]
+                normalized = (raw_val_f - stats["min"]) / stats["range"]
+                # 根据方向调整
+                if factor.direction == "down":
+                    normalized = 1.0 - normalized
+                # 限制在[0, 1]范围
+                normalized = max(0.0, min(1.0, normalized))
+
+                score = normalized * factor.weight
+                factor_scores[factor.key] = round(normalized, 4)
+                total_score += score
+                total_weight += factor.weight
+
+            if total_weight > 0:
+                total_score = total_score / total_weight * 100  # 转为百分制
+            else:
+                continue
+
+            scored_items.append({
+                "code": stock_code,
+                "name": stock_name,
+                "factors": factor_scores,
+                "total_score": round(total_score, 2),
+                "rank": 0,  # 排序后填充
+            })
+
+        # 按总分降序排列
+        scored_items.sort(key=lambda x: x["total_score"], reverse=True)
+
+        # 填充排名
+        for i, item in enumerate(scored_items):
+            item["rank"] = i + 1
+
+        logger.info("因子评分计算完成",
+                    extra={"total": len(scored_items), "factors": len(body.factors)})
+
+        return {
+            "items": scored_items,
+            "total": len(scored_items),
+        }
+    except Exception as e:
+        logger.error("因子评分计算失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"因子评分计算失败: {str(e)}")
+    finally:
+        conn.close()

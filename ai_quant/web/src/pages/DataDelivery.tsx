@@ -4,7 +4,7 @@ import { fetchJson } from '@/api/client'
 import type { JobDomain, JobRunResult, DatasetName, PagedRows } from '@/api/types'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { DataSourceBadge, JobStatusBadge } from '@/components/StatusBadge'
-import { History, GitBranch, RefreshCcw, Database, Play } from 'lucide-react'
+import { GitBranch, History, RefreshCcw, Database, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const DATASETS: { value: DatasetName; label: string }[] = [
@@ -39,6 +39,21 @@ export default function DataDelivery() {
   const [selected, setSelected] = useState<JobRunResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [dataStatus, setDataStatus] = useState<{
+    branch: string
+    sync_status: string
+    last_sync_time: string
+  } | null>(null)
+
+  useEffect(() => {
+    fetchJson<{
+      branch: string
+      sync_status: string
+      last_sync_time: string
+    }>('/api/v1/data/status').then(setDataStatus).catch(() => {
+      // 忽略
+    })
+  }, [])
 
   const DOMAIN_LABEL_MAP: Record<string, string> = {
     stock_daily: '行情日线（stock_daily）',
@@ -149,6 +164,21 @@ export default function DataDelivery() {
           历史任务记录
         </button>
       </div>
+
+      {dataStatus && (
+        <div className="flex items-center gap-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs text-zinc-600">
+          <span className="flex items-center gap-1.5">
+            <GitBranch className="h-3.5 w-3.5 text-zinc-400" />
+            分支: <span className="font-medium text-zinc-800">{dataStatus.branch}</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <RefreshCcw className="h-3.5 w-3.5 text-zinc-400" />
+            同步状态: <span className="font-medium text-zinc-800">{dataStatus.sync_status}</span>
+          </span>
+          <span className="text-zinc-400">|</span>
+          <span className="text-zinc-400">上次同步: {dataStatus.last_sync_time || '—'}</span>
+        </div>
+      )}
 
       {activeTab === 'dataset' && (
         <Card>

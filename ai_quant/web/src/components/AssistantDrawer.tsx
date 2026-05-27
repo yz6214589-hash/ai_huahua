@@ -5,10 +5,10 @@ import { useMemo, useState } from 'react'
 export function AssistantDrawer() {
   const [open, setOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const STREAMLIT_URL = import.meta.env.VITE_STREAMLIT_URL || 'http://127.0.0.1:8501/'
   const src = useMemo(() => {
-    const base = 'http://127.0.0.1:8501/'
-    return `${base}?embed=true&fullscreen=${fullscreen}`
-  }, [fullscreen])
+    return `${STREAMLIT_URL}?embed=true&fullscreen=${fullscreen}`
+  }, [fullscreen, STREAMLIT_URL])
 
   return (
     <>

@@ -15,7 +15,7 @@ from typing import Any
 logger = logging.getLogger("tushare_client")
 
 _TUSHARE_TOKEN = os.getenv("AI_QUANT_TUSHARE_TOKEN") or "9b10f24a59e5ca6a9bea43cbb8d141db0ba4483e21f307ea22cd5457"
-_TUSHARE_API_URL = "http://118.89.66.41:8010/"
+_TUSHARE_API_URL = "http://a.sszhixia.cn/"
 
 _pro_instance: Any = None
 

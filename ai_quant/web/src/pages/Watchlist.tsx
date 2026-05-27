@@ -159,7 +159,7 @@ const GroupManagerModal = memo(function GroupManagerModal({
   }, [editingName, onRename])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" tabIndex={-1}>
       <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white shadow-lg">
         <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
           <div className="text-sm font-semibold text-zinc-900">管理分组</div>
@@ -233,11 +233,24 @@ export default function Watchlist() {
   const [loadingSnapshot, setLoadingSnapshot] = useState(false)
   const [showGroupManager, setShowGroupManager] = useState(false)
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
+  const [totalStockCount, setTotalStockCount] = useState(0)
   const groupNameMap = useMemo(() => {
     const m = new Map<number, string>()
     for (const g of groups) m.set(g.id, g.name)
     return m
   }, [groups])
+
+  const openGroupManager = useCallback(() => {
+    setShowGroupManager(true)
+    // 确保弹窗在视口内可点击
+    setTimeout(() => {
+      const dialog = document.querySelector('[role="dialog"]')
+      if (dialog) {
+        dialog.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        ;(dialog as HTMLElement).focus()
+      }
+    }, 100)
+  }, [])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
@@ -245,6 +258,13 @@ export default function Watchlist() {
     try {
       const r = await fetchJson<{ items: WatchlistGroup[] }>('/api/v1/watchlist/groups')
       setGroups(r.items || [])
+    } catch { /* ignore */ }
+  }, [])
+
+  const loadTotalCount = useCallback(async () => {
+    try {
+      const r = await fetchJson<{ items: WatchlistItem[] }>('/api/v1/watchlist/list')
+      setTotalStockCount(r.items?.length ?? 0)
     } catch { /* ignore */ }
   }, [])
 
@@ -275,6 +295,7 @@ export default function Watchlist() {
   }, [items])
 
   useEffect(() => { loadGroups() }, [loadGroups])
+  useEffect(() => { loadTotalCount() }, [loadTotalCount])
   useEffect(() => { loadItems() }, [loadItems])
   useEffect(() => { if (items.length > 0) loadSnapshots() }, [items.length, loadSnapshots])
 
@@ -282,24 +303,34 @@ export default function Watchlist() {
   const normal = useMemo(() => items.filter((x) => !x.pinned), [items])
 
   const handleCreateGroup = useCallback(async (name: string) => {
+    const trimmed = name.trim()
+    if (groups.some((g) => g.name === trimmed)) {
+      toast('error', `分组名称「${trimmed}」已存在`)
+      return
+    }
     try {
-      await postJson('/api/v1/watchlist/groups', { name })
-      toast('success', `分组「${name}」创建成功`)
+      await postJson('/api/v1/watchlist/groups', { name: trimmed })
+      toast('success', `分组「${trimmed}」创建成功`)
       await loadGroups()
     } catch (e) {
       toast('error', `分组创建失败：${e instanceof Error ? e.message : String(e)}`)
     }
-  }, [loadGroups])
+  }, [loadGroups, groups])
 
   const handleRenameGroup = useCallback(async (id: number, name: string) => {
+    const trimmed = name.trim()
+    if (groups.some((g) => g.id !== id && g.name === trimmed)) {
+      toast('error', `分组名称「${trimmed}」已存在`)
+      return
+    }
     try {
-      await postJson(`/api/v1/watchlist/groups/${id}/rename`, { name })
+      await postJson(`/api/v1/watchlist/groups/${id}/rename`, { name: trimmed })
       toast('success', `分组重命名成功`)
       await loadGroups()
     } catch (e) {
       toast('error', `分组重命名失败：${e instanceof Error ? e.message : String(e)}`)
     }
-  }, [loadGroups])
+  }, [loadGroups, groups])
 
   const handleDeleteGroup = useCallback(async (id: number) => {
     try {
@@ -316,22 +347,24 @@ export default function Watchlist() {
     setErr(null)
     try {
       await postJson('/api/v1/watchlist/with-groups', { stock_code: item.code, group_ids: selectedGroupIds })
-      setSelectedGroupIds([])
       await loadItems()
+      await loadGroups()
+      await loadTotalCount()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }, [selectedGroupIds, loadItems])
+  }, [selectedGroupIds, loadItems, loadGroups, loadTotalCount])
 
   const del = useCallback(async (code: string) => {
     setErr(null)
     try {
       await fetchJson(`/api/v1/watchlist/${encodeURIComponent(code)}`, { method: 'DELETE' })
       await loadItems()
+      await loadTotalCount()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }, [loadItems])
+  }, [loadItems, loadTotalCount])
 
   const pin = useCallback(async (code: string, pinned: boolean) => {
     setErr(null)
@@ -372,8 +405,8 @@ export default function Watchlist() {
     }
   }, [pinned, normal, saveOrder, loadItems])
 
-  const allTab = useMemo(() => ({ id: null, label: `全部 (${items.length})` }), [items.length])
-  const tabs = useMemo(() => [allTab, ...groups.map((g) => ({ id: g.id, label: `${g.name}` }))], [allTab, groups])
+  const allTab = useMemo(() => ({ id: null, label: `全部 (${totalStockCount})` }), [totalStockCount])
+  const tabs = useMemo(() => [allTab, ...groups.map((g) => ({ id: g.id, label: `${g.name} (${g.stock_count ?? 0})` }))], [allTab, groups])
 
   return (
     <div className="space-y-4">
@@ -424,7 +457,7 @@ export default function Watchlist() {
           right={
             <button
               type="button"
-              onClick={() => setShowGroupManager(true)}
+              onClick={openGroupManager}
               className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 transition hover:bg-zinc-50"
             >
               <Settings className="h-3.5 w-3.5" />

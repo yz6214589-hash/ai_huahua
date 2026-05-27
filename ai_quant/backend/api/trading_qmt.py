@@ -74,6 +74,9 @@ def trading_state() -> dict[str, Any]:
     """获取交易终端当前状态"""
     try:
         return qmt_gateway_client.get_state()
+    except (QMTConnectionError, QMTGatewayError) as exc:
+        logger.warning("QMT Gateway 不可达，返回降级状态", extra={"detail": str(exc)})
+        return {"status": "unavailable", "connected": False, "message": "QMT Gateway 未连接", "detail": str(exc)}
     except Exception as exc:
         raise _handle_error(exc)
 
@@ -85,6 +88,9 @@ def trading_connect() -> dict[str, Any]:
         result = qmt_gateway_client.connect()
         logger.info("QMT 连接成功", extra={"account_id": result.get("account_id")})
         return result
+    except (QMTConnectionError, QMTGatewayError) as exc:
+        logger.warning("QMT Gateway 连接失败，返回降级状态", extra={"detail": str(exc)})
+        return {"status": "unavailable", "connected": False, "message": "QMT Gateway 未连接", "detail": str(exc)}
     except Exception as exc:
         raise _handle_error(exc)
 

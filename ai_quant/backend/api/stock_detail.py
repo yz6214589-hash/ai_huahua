@@ -540,7 +540,18 @@ def stock_snapshot(code: str) -> dict[str, Any]:
                ORDER BY trade_date DESC LIMIT 2""",
             (c,))
         if not rows:
-            raise HTTPException(status_code=404, detail="stock not found")
+            # 行情数据不存在时，尝试从 trade_stock_master 获取股票名称
+            stock_name = None
+            try:
+                master_rows = qd(conn,
+                    "SELECT stock_name FROM trade_stock_master WHERE stock_code=%s LIMIT 1",
+                    (c,))
+                if master_rows:
+                    stock_name = master_rows[0].get("stock_name")
+            except Exception:
+                pass
+            return {"stock_code": c, "stock_name": stock_name, "price": None,
+                    "change": None, "pctChange": None, "asOf": None, "source": "daily"}
         latest = rows[0]
         prev_row = rows[1] if len(rows) > 1 else None
         close = _safe_float(latest.get("close_price"))
@@ -610,7 +621,17 @@ def stock_fundamentals(code: str) -> dict[str, Any]:
                 "reportDate": report_date,
                 "items": items,
             }
-        return {"stock_code": c, "stock_name": None, "reportDate": None, "items": []}
+        # 无财务数据时，尝试从 trade_stock_master 获取股票名称
+        stock_name_fallback = None
+        try:
+            master_rows = qd(conn,
+                "SELECT stock_name FROM trade_stock_master WHERE stock_code=%s LIMIT 1",
+                (c,))
+            if master_rows:
+                stock_name_fallback = master_rows[0].get("stock_name")
+        except Exception:
+            pass
+        return {"stock_code": c, "stock_name": stock_name_fallback, "reportDate": None, "items": []}
     finally:
         conn.close()
 
@@ -642,7 +663,17 @@ def stock_technical_latest(
                ORDER BY trade_date DESC LIMIT 300""",
             (c,))
         if not rows:
-            raise HTTPException(status_code=404, detail="no technical data")
+            # 行情数据不存在时返回结构化空数据，同时从 master 表获取股票名称
+            stock_name = None
+            try:
+                master_rows = qd(conn,
+                    "SELECT stock_name FROM trade_stock_master WHERE stock_code=%s LIMIT 1",
+                    (c,))
+                if master_rows:
+                    stock_name = master_rows[0].get("stock_name")
+            except Exception:
+                pass
+            return {"stock_code": c, "stock_name": stock_name, "row": {}}
         # 按日期升序排列（指标计算需要时间序列从旧到新）
         rows.reverse()
 

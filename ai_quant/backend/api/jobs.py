@@ -35,6 +35,7 @@ _KNOWN_JOB_DOMAINS = {
     "report_consensus", # 研报共识
     "catalyst",         # 催化剂事件
     "sentiment_monitor", # 舆情监控扫描
+    "index_daily",      # 指数日线数据
 }
 
 _DEFAULT_SCHEDULES: dict[str, dict[str, Any]] = {
@@ -47,6 +48,7 @@ _DEFAULT_SCHEDULES: dict[str, dict[str, Any]] = {
     "report_consensus": {"enabled": True, "cron": "0 20 * * 1-5", "timezone": "Asia/Shanghai", "mode": "full"},
     "catalyst": {"enabled": True, "cron": "0 21 * * 0", "timezone": "Asia/Shanghai", "mode": "full"},
     "sentiment_monitor": {"enabled": True, "cron": "10 15 * * 1-5", "timezone": "Asia/Shanghai", "mode": "full"},
+    "index_daily": {"enabled": True, "cron": "0 16 * * 1-5", "timezone": "Asia/Shanghai", "mode": "incremental"},
 }
 
 _DOMAIN_META: dict[str, dict[str, Any]] = {
@@ -59,6 +61,7 @@ _DOMAIN_META: dict[str, dict[str, Any]] = {
     "report_consensus": {"title": "研报一致预期", "desc": "券商评级/目标价（AkShare）", "defaultMode": "full"},
     "catalyst": {"title": "关键催化剂", "desc": "Qwen 联网搜索（需要 DASHSCOPE_API_KEY）", "defaultMode": "full"},
     "sentiment_monitor": {"title": "舆情监控", "desc": "扫描自选股（当前为轻量实现）", "defaultMode": "full"},
+    "index_daily": {"title": "指数日线", "desc": "沪深主要指数行情（AKShare > QMT > TuShare）", "defaultMode": "incremental"},
 }
 
 _SCHEDULER = None
@@ -127,13 +130,15 @@ def _ensure_job_schedule_table() -> None:
               enabled tinyint(1) NOT NULL DEFAULT 1,
               cron varchar(64) NOT NULL,
               timezone varchar(64) NOT NULL DEFAULT 'Asia/Shanghai',
-              mode varchar(10) DEFAULT NULL,
+              mode varchar(20) DEFAULT NULL,
               params_json text,
               updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               PRIMARY KEY (domain)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """,
         )
+        # 兼容旧表：已有表 mode 字段可能为 varchar(10)，长度不够
+        execute(conn, "ALTER TABLE trade_job_schedule MODIFY mode varchar(20) DEFAULT NULL")
     finally:
         conn.close()
 

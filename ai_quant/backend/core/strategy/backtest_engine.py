@@ -170,19 +170,54 @@ def run_backtest(
             super().__init__()
             self._trade_log: list[dict[str, Any]] = []
             self._nav_log: list[dict[str, Any]] = []
+            self._entry_cache: dict[int, dict[str, Any]] = {}
 
         def notify_trade(self, trade: Any) -> None:
-            if not trade.isclosed:
-                return
             dt = self.data.datetime.date(0).isoformat()
-            self._trade_log.append(
-                {
-                    "trade_date": dt,
-                    "pnl": float(trade.pnl),
-                    "pnlcomm": float(trade.pnlcomm),
-                    "size": float(trade.size),
+            tid = id(trade)
+            if trade.justopened:
+                entry_price = round(float(trade.price), 4)
+                entry_size = abs(int(trade.size))
+                self._entry_cache[tid] = {
+                    "entry_price": entry_price,
+                    "entry_size": entry_size,
                 }
-            )
+                self._trade_log.append(
+                    {
+                        "trade_date": dt,
+                        "action": "buy",
+                        "price": entry_price,
+                        "size": entry_size,
+                        "cost": round(entry_price * entry_size, 2),
+                        "proceeds": 0,
+                        "pnl": 0.0,
+                        "pnlcomm": 0.0,
+                    }
+                )
+            if trade.isclosed:
+                info = self._entry_cache.pop(tid, None)
+                if info:
+                    entry_price = info["entry_price"]
+                    entry_size = info["entry_size"]
+                    pnl = float(trade.pnl)
+                    exit_price = round(entry_price + pnl / entry_size, 4) if entry_size > 0 else 0.0
+                    proceeds = round(exit_price * entry_size, 2)
+                else:
+                    exit_price = 0.0
+                    entry_size = 0
+                    proceeds = 0.0
+                self._trade_log.append(
+                    {
+                        "trade_date": dt,
+                        "action": "sell",
+                        "price": exit_price,
+                        "size": entry_size,
+                        "cost": 0,
+                        "proceeds": proceeds,
+                        "pnl": float(trade.pnl),
+                        "pnlcomm": float(trade.pnlcomm),
+                    }
+                )
 
         def next(self) -> None:
             try:

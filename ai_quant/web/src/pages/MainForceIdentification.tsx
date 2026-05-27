@@ -13,6 +13,7 @@ import {
   Activity,
   RefreshCw
 } from 'lucide-react'
+import { postJson } from '@/api/client'
 import {
   getMainForceActivities,
   getMainForceRules,
@@ -39,36 +40,6 @@ interface MainForceMarker {
   amount: number
   mainforce_type: string
 }
-
-// 默认数据用于演示
-const MOCK_MAINFORCE_ACTIVITIES: MainForceActivity[] = [
-  { id: '1', date: '2026-05-15', stock_code: '600519.SH', stock_name: '贵州茅台', activity_type: 'BUY', volume: 850000, amount: 212500000, price: 250.00, ratio: 0.65, mainforce_type: 'institution', description: '大单买入，成交量异常放大2.5倍' },
-  { id: '2', date: '2026-05-15', stock_code: '300750.SZ', stock_name: '宁德时代', activity_type: 'SELL', volume: 620000, amount: 124000000, price: 200.00, ratio: 0.58, mainforce_type: 'hot_money', description: '大单卖出，主力资金净流出' },
-  { id: '3', date: '2026-05-14', stock_code: '002594.SZ', stock_name: '比亚迪', activity_type: 'BUY', volume: 480000, amount: 96000000, price: 200.00, ratio: 0.72, mainforce_type: 'institution', description: '连续买入，持仓比例增加5.2%' },
-  { id: '4', date: '2026-05-14', stock_code: '000001.SZ', stock_name: '平安银行', activity_type: 'SELL', volume: 350000, amount: 35000000, price: 100.00, ratio: 0.45, mainforce_type: 'retail', description: '资金外流，市场情绪偏空' },
-]
-
-const MOCK_KLINE_DATA: KLineData[] = [
-  { date: '2026-05-08', open: 245, close: 248, high: 252, low: 243, volume: 1200000 },
-  { date: '2026-05-09', open: 248, close: 251, high: 254, low: 246, volume: 1350000 },
-  { date: '2026-05-12', open: 251, close: 249, high: 255, low: 247, volume: 1580000 },
-  { date: '2026-05-13', open: 249, close: 252, high: 256, low: 248, volume: 1420000 },
-  { date: '2026-05-14', open: 252, close: 255, high: 258, low: 250, volume: 1680000 },
-  { date: '2026-05-15', open: 255, close: 258, high: 262, low: 253, volume: 1850000 },
-]
-
-const MOCK_MARKERS: MainForceMarker[] = [
-  { date: '2026-05-13', price: 252, type: 'BUY', volume: 280000, amount: 56000000, mainforce_type: 'institution' },
-  { date: '2026-05-14', price: 255, type: 'BUY', volume: 480000, amount: 96000000, mainforce_type: 'institution' },
-  { date: '2026-05-15', price: 258, type: 'BUY', volume: 850000, amount: 212500000, mainforce_type: 'institution' },
-]
-
-const MOCK_RULES: MainForceRule[] = [
-  { id: '1', name: '成交量异常告警', rule_type: 'volume_anomaly', enabled: true, threshold: 2.0, description: '当日成交量超过过去5日平均成交量的2倍' },
-  { id: '2', name: '大单卖出告警', rule_type: 'large_order', enabled: true, threshold: 500000, description: '单笔大单卖出超过50万元' },
-  { id: '3', name: '主力资金净流出告警', rule_type: 'netflow', enabled: true, threshold: 100000000, description: '主力资金净流出超过1000万元' },
-  { id: '4', name: '持仓比例异常告警', rule_type: 'position_change', enabled: false, threshold: 0.15, description: '主力持仓比例变化超过15%' },
-]
 
 const MAINFORCE_TYPE_LABELS: Record<string, string> = {
   institution: '机构主力',
@@ -393,10 +364,10 @@ function MainForceStats({ activities }: { activities: MainForceActivity[] }) {
 }
 
 export default function MainForceIdentification() {
-  const [activities, setActivities] = useState<MainForceActivity[]>(MOCK_MAINFORCE_ACTIVITIES)
-  const [rules, setRules] = useState<MainForceRule[]>(MOCK_RULES)
-  const [klineData] = useState<KLineData[]>(MOCK_KLINE_DATA)
-  const [markers] = useState<MainForceMarker[]>(MOCK_MARKERS)
+  const [activities, setActivities] = useState<MainForceActivity[]>([])
+  const [rules, setRules] = useState<MainForceRule[]>([])
+  const [klineData, setKlineData] = useState<KLineData[]>([])
+  const [markers, setMarkers] = useState<MainForceMarker[]>([])
   const [filterStock, setFilterStock] = useState('')
   const [filterType, setFilterType] = useState<'ALL' | 'BUY' | 'SELL'>('ALL')
   const [filterDateRange, setFilterDateRange] = useState({ start: '', end: '' })
@@ -404,46 +375,62 @@ export default function MainForceIdentification() {
   const [loading, setLoading] = useState(false)
   const [summary, setSummary] = useState<any>(null)
 
-  // 从API加载数据
-  useEffect(() => {
-    loadData()
-  }, [])
-
   const loadData = async () => {
     setLoading(true)
     try {
-      // 尝试从API获取数据，如果失败则使用默认数据
-      try {
-        const [activitiesData, rulesData, summaryData] = await Promise.all([
-          getMainForceActivities(),
-          getMainForceRules(),
-          getMainForceSummary(),
-        ])
-        
-        if (activitiesData.data.length > 0) {
-          setActivities(activitiesData.data)
-        }
-        
-        if (rulesData.length > 0) {
-          setRules(rulesData)
-        }
-        
-        if (summaryData) {
-          setSummary(summaryData)
-        }
-      } catch (error) {
-        console.warn('从API加载数据失败，使用默认数据:', error)
-        // 使用默认数据
-        setActivities(MOCK_MAINFORCE_ACTIVITIES)
-        setRules(MOCK_RULES)
+      const [activitiesData, rulesData, summaryData] = await Promise.all([
+        getMainForceActivities(),
+        getMainForceRules(),
+        getMainForceSummary(),
+      ])
+      
+      if (activitiesData.data && activitiesData.data.length > 0) {
+        setActivities(activitiesData.data)
+        const markersFromActivities: MainForceMarker[] = activitiesData.data
+          .filter((a) => a.activity_type === 'BUY' || a.activity_type === 'SELL')
+          .map((a) => ({
+            date: a.date,
+            price: a.price,
+            type: a.activity_type as 'BUY' | 'SELL',
+            volume: a.volume,
+            amount: a.amount,
+            mainforce_type: a.mainforce_type,
+          }))
+        setMarkers(markersFromActivities)
       }
-    } finally {
-      setLoading(false)
+      
+      if (rulesData.length > 0) {
+        setRules(rulesData)
+      }
+      
+      if (summaryData) {
+        setSummary(summaryData)
+      }
+    } catch (error) {
+      console.warn('从API加载数据失败:', error)
+    }
+    setLoading(false)
+  }
+
+  const loadKlineData = async () => {
+    try {
+      const r = await postJson<{ items: KLineData[] }>('/api/v1/trading/kline', {})
+      if (r.items && r.items.length > 0) {
+        setKlineData(r.items)
+      }
+    } catch (error) {
+      console.warn('从API加载K线数据失败:', error)
     }
   }
 
+  useEffect(() => {
+    loadData()
+    loadKlineData()
+  }, [])
+
   const handleRefresh = () => {
     loadData()
+    loadKlineData()
   }
 
   const filteredActivities = activities.filter(activity => {
@@ -599,7 +586,13 @@ export default function MainForceIdentification() {
               <span>主力卖出</span>
             </div>
           </div>
-          <MainForceKLineChart data={klineData} markers={markers} />
+          {klineData.length > 0 ? (
+            <MainForceKLineChart data={klineData} markers={markers} />
+          ) : (
+            <div className="flex items-center justify-center py-12 text-sm text-gray-500">
+              暂无K线数据
+            </div>
+          )}
         </div>
 
         {/* 主力活动列表 */}
@@ -660,7 +653,13 @@ export default function MainForceIdentification() {
             </div>
           </div>
 
-          <MainForceActivityTable activities={filteredActivities} />
+          {filteredActivities.length === 0 && !loading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-gray-500">
+              暂无主力活动数据
+            </div>
+          ) : (
+            <MainForceActivityTable activities={filteredActivities} />
+          )}
         </div>
 
         {/* 算法说明 */}

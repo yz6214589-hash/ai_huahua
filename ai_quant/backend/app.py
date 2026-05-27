@@ -48,6 +48,7 @@ from .api.approval import router as approval_router
 from .api.performance import router as performance_router
 from .api.stock_group import router as stock_group_router
 from .api.intraday import router as intraday_router
+from .api.workflow_team import router as workflow_team_router
 from .config import get_settings, get_logging_settings
 from .infra.storage.logging_service import init_logging, get_logger, shutdown_logging
 
@@ -288,6 +289,7 @@ def create_app() -> FastAPI:
     api.include_router(performance_router)    # 绩效报告路由
     api.include_router(stock_group_router)     # 股票分组管理路由
     api.include_router(intraday_router)         # 个股分时数据路由
+    api.include_router(workflow_team_router)     # 工作流团队路由
     
     logger.info("业务路由注册完成", extra={
         "routers_count": 14,

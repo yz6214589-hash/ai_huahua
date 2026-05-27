@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
@@ -124,13 +124,25 @@ def watchlist_groups_get() -> dict[str, Any]:
 @router.post("/watchlist/groups")
 def watchlist_group_create(req: GroupCreateRequest) -> dict[str, Any]:
     logger.info("新建自选股分组", extra={"group_name": req.name})
-    return create_watchlist_group(req.name)
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="分组名称不能为空")
+    result = create_watchlist_group(name)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 
 @router.put("/watchlist/groups/{group_id}/rename")
 def watchlist_group_rename(group_id: int, req: GroupRenameRequest) -> dict[str, Any]:
     logger.info("重命名自选股分组", extra={"group_id": group_id, "group_name": req.name})
-    return rename_watchlist_group(group_id, req.name)
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="分组名称不能为空")
+    result = rename_watchlist_group(group_id, name)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 
 @router.delete("/watchlist/groups/{group_id}")

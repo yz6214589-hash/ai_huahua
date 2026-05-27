@@ -35,6 +35,12 @@ class BacktestTask:
     initial_cash: float
     start_date: str
     end_date: str
+    # 新增：交易成本配置字段
+    commission_buy: float = 0.0003
+    commission_sell: float = 0.0013
+    slippage_pct: float = 0.0
+    slippage_fixed: float = 0.0
+    min_commission: float = 5.0
     status: BacktestTaskStatus = BacktestTaskStatus.PENDING
     result: Any = None
     error: str | None = None
@@ -79,8 +85,16 @@ class DataLoaderAgent:
                 with self._lock:
                     self.cache[cache_key] = df.copy()
                 return df
+            else:
+                logger.warning(
+                    "数据加载返回空结果",
+                    extra={"stock_code": stock_code, "start": start, "end": end}
+                )
         except Exception as e:
-            logger.error("数据加载失败", extra={"stock_code": stock_code, "error": str(e)})
+            logger.error(
+                "数据加载失败",
+                extra={"stock_code": stock_code, "error": str(e), "error_type": type(e).__name__}
+            )
         return None
 
 
@@ -108,6 +122,12 @@ class BacktestExecutorAgent:
                 strategy_cls=self.task.strategy_cls,
                 strategy_params=self.task.strategy_params,
                 initial_cash=self.task.initial_cash,
+                # 传递交易成本参数
+                commission_buy=self.task.commission_buy,
+                commission_sell=self.task.commission_sell,
+                slippage_pct=self.task.slippage_pct,
+                slippage_fixed=self.task.slippage_fixed,
+                min_commission=self.task.min_commission,
             )
 
             if "error" in bt_result.metrics:
@@ -228,6 +248,12 @@ class MultiAgentBacktestEngine:
         initial_cash: float,
         start_date: str,
         end_date: str,
+        # 新增：交易成本配置参数
+        commission_buy: float = 0.0003,
+        commission_sell: float = 0.0013,
+        slippage_pct: float = 0.0,
+        slippage_fixed: float = 0.0,
+        min_commission: float = 5.0,
     ) -> BatchBacktestResult:
         batch_id = str(uuid.uuid4())[:8]
 
@@ -243,6 +269,12 @@ class MultiAgentBacktestEngine:
                 initial_cash=initial_cash,
                 start_date=start_date,
                 end_date=end_date,
+                # 传递成本配置
+                commission_buy=commission_buy,
+                commission_sell=commission_sell,
+                slippage_pct=slippage_pct,
+                slippage_fixed=slippage_fixed,
+                min_commission=min_commission,
             )
             tasks.append(task)
 

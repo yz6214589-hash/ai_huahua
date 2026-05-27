@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { postJson, fetchJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
@@ -36,45 +36,6 @@ interface WorkflowDetail {
   messages: { role: string; time: string; content: string }[]
   final_verdict: string
   final_reason?: string
-}
-
-const MOCK_NODES: WorkflowNode[] = [
-  { id: 'charles', name: 'Charles', role: '投研分析师', icon: <Bot className="h-5 w-5" />, status: 'idle' },
-  { id: 'zoe', name: 'Zoe', role: '量化信号引擎', icon: <TrendingUp className="h-5 w-5" />, status: 'idle' },
-  { id: 'kris', name: 'Kris', role: '风控官', icon: <Shield className="h-5 w-5" />, status: 'idle' },
-  { id: 'human', name: 'Human', role: '人在回路', icon: <User className="h-5 w-5" />, status: 'idle' },
-  { id: 'trader', name: 'Trader', role: '执行交易员', icon: <Zap className="h-5 w-5" />, status: 'idle' },
-]
-
-const MOCK_RUNS: WorkflowRun[] = [
-  { id: 'run-001', stock_code: '600519.SH', started_at: '2026-01-20 09:32:15', status: 'completed', verdict: 'APPROVE', verdict_reason: '全部规则通过' },
-  { id: 'run-002', stock_code: '000858.SZ', started_at: '2026-01-20 10:15:43', status: 'completed', verdict: 'WARN', verdict_reason: '单笔金额偏高，缩量50%执行' },
-  { id: 'run-003', stock_code: '300750.SZ', started_at: '2026-01-19 14:22:08', status: 'failed', verdict: 'REJECT', verdict_reason: 'ST黑名单拦截' },
-  { id: 'run-004', stock_code: '002415.SZ', started_at: '2026-01-19 11:05:30', status: 'completed', verdict: 'APPROVE', verdict_reason: '全部规则通过' },
-  { id: 'run-005', stock_code: '600036.SH', started_at: '2026-01-18 13:40:22', status: 'failed', verdict: 'HALT', verdict_reason: '单日亏损熔断触发' },
-]
-
-const MOCK_DETAIL: WorkflowDetail = {
-  run_id: 'run-001',
-  stock_code: '600519.SH',
-  capital: 1000000,
-  nodes: [
-    { id: 'charles', name: 'Charles', role: '投研分析师', icon: <Bot className="h-5 w-5" />, status: 'success', duration: '3.2s', output: { stance: 'bullish', confidence: 0.82, summary: '茅台基本面稳健，春节旺季动销良好，目标价1850元' } },
-    { id: 'zoe', name: 'Zoe', role: '量化信号引擎', icon: <TrendingUp className="h-5 w-5" />, status: 'success', duration: '1.8s', output: { direction: 'buy', quantity: 100, price: 1780, strategy: 'MACD金叉', latest_signal: 'golden_cross', backtest_winrate: 0.68 } },
-    { id: 'kris', name: 'Kris', role: '风控官', icon: <Shield className="h-5 w-5" />, status: 'approved', duration: '0.5s', output: { decision: 'APPROVE', reason: '单笔金额20万（2%），符合上限；价格偏离0.3%，在5%阈值内；非ST；ATR仓位1.2%，在1%附近；新闻无利空' } },
-    { id: 'human', name: 'Human', role: '人在回路', icon: <User className="h-5 w-5" />, status: 'approved', duration: '—', output: { approved: true, note: '人工确认执行' } },
-    { id: 'trader', name: 'Trader', role: '执行交易员', icon: <Zap className="h-5 w-5" />, status: 'success', duration: '2.1s', output: { dry_run: false, order_id: 2026012001, submitted_at: '2026-01-20 09:35:22', note: '市价单成交' } },
-  ],
-  messages: [
-    { role: 'charles', time: '09:32:15', content: '开始分析 600519.SH 贵州茅台' },
-    { role: 'charles', time: '09:32:18', content: '投研观点生成：看多，置信度82%，目标价1850元' },
-    { role: 'zoe', time: '09:32:18', content: '接收投研观点，生成交易信号：买入100股，限价1780元，MACD金叉策略' },
-    { role: 'kris', time: '09:32:20', content: '风控审批通过（APPROVE），建议仓位2%' },
-    { role: 'human', time: '09:32:21', content: '人工授权确认' },
-    { role: 'trader', time: '09:32:23', content: '订单提交成功，订单号2026012001' },
-  ],
-  final_verdict: 'APPROVE',
-  final_reason: '全部风控规则通过，订单已执行',
 }
 
 function statusConfig(s: NodeStatus) {
@@ -146,14 +107,36 @@ function VerdictBadge({ verdict }: { verdict: string }) {
 }
 
 export default function WorkFlowTeam() {
-  const [runs, setRuns] = useState<WorkflowRun[]>(MOCK_RUNS)
+  const [runs, setRuns] = useState<WorkflowRun[]>([])
   const [selectedRun, setSelectedRun] = useState<string | null>(null)
+  const [detail, setDetail] = useState<WorkflowDetail | null>(null)
   const [loading, setLoading] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [triggerStock, setTriggerStock] = useState('600519.SH')
   const [triggerCapital, setTriggerCapital] = useState('1000000')
   const [triggerQuestion, setTriggerQuestion] = useState('请分析贵州茅台的投资价值')
 
-  const detail = selectedRun ? MOCK_DETAIL : null
+  useEffect(() => {
+    fetchJson<WorkflowRun[]>('/api/v1/workflow/team/runs').then(data => {
+      if (Array.isArray(data)) setRuns(data)
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!selectedRun) {
+      setDetail(null)
+      return
+    }
+    setDetailLoading(true)
+    fetchJson<{ detail: WorkflowDetail }>(`/api/v1/workflow/team/detail/${selectedRun}`)
+      .then(data => {
+        setDetail(data.detail || null)
+      })
+      .catch(() => {
+        setDetail(null)
+      })
+      .finally(() => setDetailLoading(false))
+  }, [selectedRun])
 
   const trigger = async () => {
     if (!triggerStock.trim()) return
@@ -193,7 +176,7 @@ export default function WorkFlowTeam() {
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50"
             >
               {loading ? <Clock className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {loading ? '执行中…' : '启动工作流'}
+              {loading ? '执行中...' : '启动工作流'}
             </button>
           </CardBody>
         </Card>
@@ -231,7 +214,12 @@ export default function WorkFlowTeam() {
             subtitle={detail ? `${detail.stock_code} · 运行ID: ${detail.run_id}` : '选择一条记录查看'}
           />
           <CardBody>
-            {detail ? (
+            {detailLoading ? (
+              <div className="flex items-center justify-center py-16 text-zinc-400">
+                <Clock className="mr-2 h-5 w-5 animate-spin" />
+                <span>加载中...</span>
+              </div>
+            ) : detail ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-3 text-xs text-zinc-500">
                   <span>资金: {detail.capital.toLocaleString()}元</span>

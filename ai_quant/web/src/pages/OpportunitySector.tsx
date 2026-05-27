@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { fetchJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { ArrowUp, ArrowDown } from 'lucide-react'
+import { ArrowUp, ArrowDown, RefreshCcw } from 'lucide-react'
 
 interface Sector {
   name: string
@@ -13,30 +14,15 @@ interface Sector {
   hotRank: number
 }
 
-const MOCK_SECTORS: Sector[] = [
-  { name: '人工智能', changePercent: 4.82, change3d: 12.5, mainFlow: 158.2, amount: 2850, topStocks: [
-    { code: '688256.SH', name: '寒武纪', change: 15.82 },
-    { code: '002415.SZ', name: '海康威视', change: 8.45 },
-    { code: '688041.SH', name: '寒武纪', change: 15.82 },
-  ], hotRank: 1 },
-  { name: '新能源', changePercent: 3.21, change3d: 8.4, mainFlow: 92.5, amount: 1680, topStocks: [
-    { code: '300750.SZ', name: '宁德时代', change: 5.41 },
-    { code: '002466.SZ', name: '天齐锂业', change: 6.28 },
-  ], hotRank: 2 },
-  { name: '半导体', changePercent: 2.58, change3d: 6.2, mainFlow: 68.4, amount: 1240, topStocks: [
-    { code: '688981.SH', name: '中芯国际', change: 4.12 },
-  ], hotRank: 3 },
-  { name: '白酒', changePercent: 1.85, change3d: 3.2, mainFlow: 28.6, amount: 620, topStocks: [
-    { code: '600519.SH', name: '贵州茅台', change: 2.14 },
-    { code: '000858.SZ', name: '五粮液', change: 1.42 },
-  ], hotRank: 4 },
-  { name: '房地产', changePercent: -2.14, change3d: -5.8, mainFlow: -45.2, amount: 480, topStocks: [
-    { code: '000002.SZ', name: '万科A', change: -3.85 },
-  ], hotRank: 5 },
-  { name: '银行', changePercent: -0.85, change3d: -1.2, mainFlow: -18.5, amount: 320, topStocks: [
-    { code: '600036.SH', name: '招商银行', change: -1.24 },
-  ], hotRank: 6 },
-]
+interface SectorApiItem {
+  name: string
+  change_pct: number
+  change_3d: number
+  net_inflow: number
+  turnover: number
+  top_stocks: { code: string; name: string; change_pct: number }[]
+  hot_rank: number
+}
 
 function HeatCell({ value }: { value: number }) {
   const abs = Math.abs(value)
@@ -120,10 +106,79 @@ function SectorRow({ s }: { s: Sector }) {
   )
 }
 
+function mapApiItem(item: SectorApiItem): Sector {
+  return {
+    name: item.name,
+    changePercent: item.change_pct,
+    change3d: item.change_3d,
+    mainFlow: item.net_inflow,
+    amount: item.turnover,
+    topStocks: (item.top_stocks || []).map((st) => ({
+      code: st.code,
+      name: st.name,
+      change: st.change_pct,
+    })),
+    hotRank: item.hot_rank,
+  }
+}
+
 export default function OpportunitySector() {
-  const sorted = [...MOCK_SECTORS].sort((a, b) => b.mainFlow - a.mainFlow)
-  const totalUp = MOCK_SECTORS.filter((s) => s.changePercent > 0).length
-  const totalDown = MOCK_SECTORS.length - totalUp
+  const [sectors, setSectors] = useState<Sector[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadSectors = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const r = await fetchJson<{ items: SectorApiItem[]; total: number }>('/api/v1/intraday/sectors')
+      setSectors((r.items || []).map(mapApiItem))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '数据加载失败')
+      setSectors([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadSectors()
+  }, [])
+
+  const sorted = [...sectors].sort((a, b) => b.mainFlow - a.mainFlow)
+  const totalUp = sectors.filter((s) => s.changePercent > 0).length
+  const totalDown = sectors.length - totalUp
+
+  if (loading && sectors.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-12 text-sm text-zinc-500">
+        加载中...
+      </div>
+    )
+  }
+
+  if (error && sectors.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-zinc-400">
+        <p className="text-sm text-zinc-500">{error}</p>
+        <button
+          onClick={loadSectors}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-4 py-2 text-xs text-zinc-600 hover:bg-zinc-50"
+        >
+          <RefreshCcw className="h-3.5 w-3.5" />
+          重新加载
+        </button>
+      </div>
+    )
+  }
+
+  if (sectors.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-12 text-sm text-zinc-500">
+        暂无板块数据
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -133,7 +188,7 @@ export default function OpportunitySector() {
           <div className="mt-1 text-xs text-zinc-500">上涨板块</div>
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-center">
-          <div className="text-2xl font-bold text-zinc-900">{MOCK_SECTORS.length}</div>
+          <div className="text-2xl font-bold text-zinc-900">{sectors.length}</div>
           <div className="mt-1 text-xs text-zinc-500">监测板块</div>
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-center">
@@ -143,7 +198,19 @@ export default function OpportunitySector() {
       </div>
 
       <Card>
-        <CardHeader title="板块轮动排名（按主力净流入排序）" />
+        <CardHeader
+          title="板块轮动排名（按主力净流入排序）"
+          right={
+            <button
+              onClick={loadSectors}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
+            >
+              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+              刷新
+            </button>
+          }
+        />
         <CardBody className="p-0">
           <div className="overflow-auto">
             <table className="w-full text-sm">

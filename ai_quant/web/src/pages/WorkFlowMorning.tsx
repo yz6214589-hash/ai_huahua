@@ -1,9 +1,9 @@
-import { useState } from 'react'
-import { postJson } from '@/api/client'
+import { useState, useEffect, useCallback } from 'react'
+import { postJson, fetchJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
 import { cn } from '@/lib/utils'
-import { Play, Clock, CheckCircle2, ChevronRight, ArrowRight, BarChart3, TrendingUp, FileText, Bell, RefreshCcw, Eye } from 'lucide-react'
+import { Play, Clock, CheckCircle2, ChevronRight, ArrowRight, BarChart3, TrendingUp, FileText, Bell, RefreshCcw, Eye, AlertTriangle } from 'lucide-react'
 
 type Stage = 'idle' | 'industry' | 'stock_picker' | 'report' | 'push' | 'done' | 'error'
 
@@ -35,6 +35,15 @@ interface MorningResult {
   report_md: string
   push_result: { success: boolean; channels: string[] }
   duration_sec: number
+}
+
+interface HistoryItem {
+  date: string
+  triggered_at: string
+  industries: number
+  stocks: number
+  duration_sec: number
+  status: string
 }
 
 const STAGE_ORDER: { key: Stage; label: string; node: string }[] = [
@@ -82,38 +91,6 @@ function StagePipeline({ stage }: { stage: Stage }) {
   )
 }
 
-const MOCK_RESULT: MorningResult = {
-  triggered_at: '2026-01-20 09:05:32',
-  industry_level: 2,
-  top_n_industries: 5,
-  top_n_stocks: 5,
-  industry_rank: [
-    { rank: 1, industry: '软件开发', score: 2.84, phase: '上升', MOM_21: 8.42, RS_60: 72.3, ROC_20: 5.18, members: 128 },
-    { rank: 2, industry: '半导体', score: 2.51, phase: '上升', MOM_21: 7.15, RS_60: 68.4, ROC_20: 4.32, members: 85 },
-    { rank: 3, industry: '通用设备', score: 1.98, phase: '加速', MOM_21: 5.83, RS_60: 61.2, ROC_20: 3.87, members: 156 },
-    { rank: 4, industry: '化学制药', score: 1.62, phase: '突破', MOM_21: 4.26, RS_60: 58.7, ROC_20: 2.95, members: 92 },
-    { rank: 5, industry: '消费电子', score: 1.24, phase: '回升', MOM_21: 3.41, RS_60: 52.1, ROC_20: 1.88, members: 143 },
-  ],
-  picked_stocks: [
-    { code: '688256.SH', industry: '软件开发', alpha: 0.842, MOM_3M: 18.5 },
-    { code: '002415.SZ', industry: '软件开发', alpha: 0.791, MOM_3M: 15.2 },
-    { code: '688981.SH', industry: '半导体', alpha: 0.768, MOM_3M: 14.8 },
-    { code: '300750.SZ', industry: '通用设备', alpha: 0.724, MOM_3M: 12.4 },
-    { code: '002460.SZ', industry: '化学制药', alpha: 0.698, MOM_3M: 11.7 },
-  ],
-  report_md: '# 晨会分析简报 -- 2026-01-20 周一\n\n## Top 5 强势板块 (申万二级)\n\n## Top 5 选中标的\n\n## 盘中应对建议',
-  push_result: { success: true, channels: ['企业微信', '钉钉', '控制台'] },
-  duration_sec: 28,
-}
-
-const MOCK_HISTORY = [
-  { date: '2026-01-20', triggered_at: '09:05:32', industries: 5, stocks: 5, duration_sec: 28, status: 'success' },
-  { date: '2026-01-19', triggered_at: '09:03:15', industries: 5, stocks: 5, duration_sec: 31, status: 'success' },
-  { date: '2026-01-18', triggered_at: '09:04:48', industries: 5, stocks: 5, duration_sec: 25, status: 'success' },
-  { date: '2026-01-17', triggered_at: '09:06:02', industries: 5, stocks: 4, duration_sec: 35, status: 'success' },
-  { date: '2026-01-16', triggered_at: '09:05:11', industries: 5, stocks: 5, duration_sec: 29, status: 'success' },
-]
-
 export default function WorkFlowMorning() {
   const [stage, setStage] = useState<Stage>('idle')
   const [industryLevel, setIndustryLevel] = useState<1 | 2>(2)
@@ -125,6 +102,13 @@ export default function WorkFlowMorning() {
   const [result, setResult] = useState<MorningResult | null>(null)
   const [reportVisible, setReportVisible] = useState(false)
   const [historyDate, setHistoryDate] = useState<string | null>(null)
+  const [history, setHistory] = useState<HistoryItem[]>([])
+
+  useEffect(() => {
+    fetchJson<HistoryItem[]>('/api/v1/workflow/morning/history').then(data => {
+      if (Array.isArray(data)) setHistory(data)
+    }).catch(() => {})
+  }, [])
 
   const run = async () => {
     setStage('industry')
@@ -138,24 +122,23 @@ export default function WorkFlowMorning() {
       else if (sec < 10) setStage('stock_picker')
       else if (sec < 18) setStage('report')
       else if (sec < 22) setStage('push')
-      else {
-        clearInterval(timer)
-        setStage('done')
-        setResult(MOCK_RESULT)
-      }
     }, 1000)
     setElapsedSec(0)
     try {
-      await postJson('/api/v1/workflow/morning/trigger', {
+      const response = await postJson<MorningResult>('/api/v1/workflow/morning/trigger', {
         industry_level: industryLevel,
         top_n_industries: Number(topIndustries),
         top_n_stocks: Number(topStocks),
         lookback_days: Number(lookbackDays),
         sample_stocks: Number(sampleStocks),
       })
+      clearInterval(timer)
+      setResult(response)
+      setStage('done')
     } catch {
       clearInterval(timer)
       setStage('error')
+      setResult(null)
     }
   }
 
@@ -374,7 +357,7 @@ export default function WorkFlowMorning() {
             <Card>
               <CardHeader title="历史晨报" />
               <CardBody className="space-y-1">
-                {MOCK_HISTORY.map((h) => (
+                {history.map((h) => (
                   <button
                     key={h.date}
                     onClick={() => setHistoryDate(h.date === historyDate ? null : h.date)}

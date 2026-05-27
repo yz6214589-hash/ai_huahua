@@ -5,10 +5,11 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 export default defineConfig({
   envDir: '..',
   server: {
-    port: 5173,
+    host: '0.0.0.0',
+    port: Number(process.env.VITE_DEV_PORT) || 5173,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
     },
@@ -20,9 +21,9 @@ export default defineConfig({
   plugins: [
     react({
       babel: {
-        plugins: [
-          'react-dev-locator',
-        ],
+        plugins: process.env.NODE_ENV === 'development'
+          ? ['react-dev-locator']
+          : [],
       },
     }),
     tsconfigPaths(),

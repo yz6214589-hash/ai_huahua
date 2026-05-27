@@ -21,7 +21,8 @@ router = APIRouter(prefix="/api/v1", tags=["data"])
 # 允许查询的表和字段白名单
 ALLOWED_TABLES = {
     "trade_stock_daily": "trade_date",
-    "trade_stock_financial": "report_date"
+    "trade_stock_financial": "report_date",
+    "trade_index_daily": "trade_date",
 }
 
 
@@ -94,16 +95,80 @@ def data_status() -> dict[str, Any]:
     """
     获取数据更新状态
 
-    返回行情数据和财务数据的最新更新时间
+    返回行情数据、财务数据和指数数据的最新更新时间
 
     Returns:
-        dict: 包含market和financial的更新时间
+        dict: 包含market、financial和index的更新时间
     """
     market_update = _get_latest_update_time("trade_stock_daily", "trade_date")
     financial_update = _get_latest_update_time("trade_stock_financial", "report_date")
+    index_update = _get_latest_update_time("trade_index_daily", "trade_date")
 
     return {
         "market": market_update,
         "financial": financial_update,
+        "index": index_update,
         "query_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
+
+
+@router.get("/data/index-status")
+def index_data_status() -> dict[str, Any]:
+    """
+    获取指数数据详细状态
+
+    返回各指数的数据条数、时间范围和最新采集时间
+
+    Returns:
+        dict: 包含各指数数据状态详情
+    """
+    from core.data.index_data import INDEX_META
+
+    try:
+        cfg = load_mysql_config()
+        conn = connect(cfg)
+        try:
+            indices: list[dict[str, Any]] = []
+            for code, name in INDEX_META.items():
+                rows = query_dict(
+                    conn,
+                    """
+                    SELECT COUNT(*) AS total_days,
+                           MIN(trade_date) AS min_date,
+                           MAX(trade_date) AS max_date,
+                           MAX(collected_at) AS last_collected
+                    FROM trade_index_daily
+                    WHERE index_code = %s
+                    """,
+                    (code,),
+                )
+                if rows and rows[0]["total_days"] > 0:
+                    row = rows[0]
+                    indices.append({
+                        "code": code,
+                        "name": name,
+                        "total_days": row["total_days"],
+                        "min_date": str(row["min_date"]) if row["min_date"] else None,
+                        "max_date": str(row["max_date"]) if row["max_date"] else None,
+                        "last_collected": str(row["last_collected"]) if row["last_collected"] else None,
+                    })
+                else:
+                    indices.append({
+                        "code": code,
+                        "name": name,
+                        "total_days": 0,
+                        "min_date": None,
+                        "max_date": None,
+                        "last_collected": None,
+                    })
+
+            return {
+                "ok": True,
+                "total_indices": len(indices),
+                "indices": indices,
+                "query_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        finally:
+            conn.close()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

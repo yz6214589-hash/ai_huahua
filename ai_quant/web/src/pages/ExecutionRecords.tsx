@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { fetchJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { RefreshCcw } from 'lucide-react'
+import { RefreshCcw, AlertTriangle } from 'lucide-react'
 
 interface TradeRecord {
   id: string
@@ -18,19 +19,6 @@ interface TradeRecord {
   remark?: string
 }
 
-const MOCK: TradeRecord[] = [
-  { id: 'T001', timestamp: '2024-12-16 14:32:15', symbol: '600519.SH', name: '贵州茅台', side: 'buy', qty: 100, price: 1852.3, amount: 185230, strategy: 'TWAP', status: 'filled', account: '实盘' },
-  { id: 'T002', timestamp: '2024-12-16 14:28:05', symbol: '300750.SZ', name: '宁德时代', side: 'buy', qty: 200, price: 295.8, amount: 59160, strategy: 'VWAP', status: 'filled', account: '实盘' },
-  { id: 'T003', timestamp: '2024-12-16 11:05:42', symbol: '688256.SH', name: '寒武纪', side: 'buy', qty: 300, price: 128.5, amount: 38550, strategy: 'TWAP', status: 'filled', account: '实盘' },
-  { id: 'T004', timestamp: '2024-12-16 10:52:18', symbol: '002415.SZ', name: '海康威视', side: 'buy', qty: 500, price: 42.5, amount: 21250, strategy: 'RL', status: 'partial', account: '实盘', remark: '部分成交，剩余 200 股' },
-  { id: 'T005', timestamp: '2024-12-16 09:45:30', symbol: '000858.SZ', name: '五粮液', side: 'buy', qty: 150, price: 158.2, amount: 23730, strategy: 'TWAP', status: 'filled', account: '实盘' },
-  { id: 'T006', timestamp: '2024-12-15 15:10:05', symbol: '600036.SH', name: '招商银行', side: 'sell', qty: 1000, price: 38.2, amount: 38200, strategy: 'VWAP', status: 'filled', account: '实盘' },
-  { id: 'S001', timestamp: '2024-12-16 14:30:00', symbol: '600519.SH', name: '贵州茅台', side: 'buy', qty: 50, price: 1850.0, amount: 92500, strategy: '模拟-均线策略', status: 'filled', account: '模拟盘' },
-  { id: 'S002', timestamp: '2024-12-16 13:15:00', symbol: '002594.SZ', name: '比亚迪', side: 'buy', qty: 200, price: 200.0, amount: 40000, strategy: '模拟-均线策略', status: 'filled', account: '模拟盘' },
-  { id: 'T007', timestamp: '2024-12-15 13:20:00', symbol: '002466.SZ', name: '天齐锂业', side: 'buy', qty: 200, price: 68.4, amount: 13680, strategy: 'TWAP', status: 'rejected', account: '实盘', remark: '风控拒绝：超过单笔限额' },
-  { id: 'T008', timestamp: '2024-12-15 10:30:15', symbol: '002475.SZ', name: '立讯精密', side: 'sell', qty: 300, price: 44.8, amount: 13440, strategy: 'RL', status: 'cancelled', account: '实盘', remark: '用户取消' },
-]
-
 const STATUS_MAP: Record<string, { label: string; tone: 'green' | 'amber' | 'red' | 'blue' | 'zinc' }> = {
   filled: { label: '已成交', tone: 'green' },
   partial: { label: '部分成交', tone: 'amber' },
@@ -44,12 +32,31 @@ function fmt(v: string) {
 }
 
 export default function ExecutionRecords() {
+  const [records, setRecords] = useState<TradeRecord[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [filterSide, setFilterSide] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterAccount, setFilterAccount] = useState<string>('all')
   const [filterCode, setFilterCode] = useState('')
 
-  const filtered = MOCK.filter((r) => {
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await fetchJson<{ records: TradeRecord[]; total: number }>('/api/v1/execution/records')
+      setRecords(data.records || [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '数据加载失败')
+      setRecords([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  const filtered = records.filter((r) => {
     if (filterSide !== 'all' && r.side !== filterSide) return false
     if (filterStatus !== 'all' && r.status !== filterStatus) return false
     if (filterAccount !== 'all' && r.account !== filterAccount) return false
@@ -59,6 +66,30 @@ export default function ExecutionRecords() {
 
   const totalBuy = filtered.filter((r) => r.side === 'buy').reduce((s, r) => s + r.amount, 0)
   const totalSell = filtered.filter((r) => r.side === 'sell').reduce((s, r) => s + r.amount, 0)
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-zinc-400">
+        <RefreshCcw className="mr-2 h-5 w-5 animate-spin" />
+        <span>加载中...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
+        <AlertTriangle className="mb-3 h-10 w-10 text-zinc-300" />
+        <p className="text-sm text-zinc-500">{error}</p>
+        <button
+          onClick={loadData}
+          className="mt-3 rounded-lg border border-zinc-200 px-4 py-2 text-xs text-zinc-600 hover:bg-zinc-50"
+        >
+          重新加载
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">

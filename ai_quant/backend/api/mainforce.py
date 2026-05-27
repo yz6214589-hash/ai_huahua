@@ -6,7 +6,7 @@
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Any, Optional, List
 from datetime import datetime, date
 import json
 import uuid
@@ -16,7 +16,7 @@ from infra.storage.logging_service import get_logger
 
 logger = get_logger("mainforce")
 
-router = APIRouter(prefix="/api/mainforce", tags=["主力识别"])
+router = APIRouter(prefix="/api/v1/mainforce", tags=["主力识别"])
 
 
 def _get_conn():
@@ -511,5 +511,154 @@ async def get_summary():
             "week": {"total_count": 0, "total_amount": 0},
             "active_rules": 0
         }
+    finally:
+        conn.close()
+
+
+# ============ 异动监控 ============
+
+@router.get("/abnormal")
+async def get_abnormal_stocks(
+    alert_type: Optional[str] = Query(None, description="异动类型: volume/amplitude/turnover/price"),
+    limit: int = Query(20, ge=1, le=100, description="返回条数"),
+) -> dict[str, Any]:
+    """
+    获取异动监控数据。
+
+    从 trade_mainforce_activity 表查询主力异动记录，
+    关联 trade_stock_daily 获取最新行情指标。
+
+    Args:
+        alert_type: 异动类型筛选（volume-放量/amplitude-振幅/turnover-换手率/price-价格）
+        limit: 返回条数上限
+
+    Returns:
+        dict: 包含 items（异动股票列表）和 total（总数）
+    """
+    logger.info("异动监控数据请求", extra={
+        "alert_type": alert_type or "all",
+        "limit": limit,
+    })
+    conn = _get_conn()
+    try:
+        # 查询最新的交易日期
+        latest_date_rows = query_dict(
+            conn,
+            "SELECT MAX(activity_date) as max_date FROM trade_mainforce_activity",
+            ()
+        )
+        latest_date = None
+        if latest_date_rows and latest_date_rows[0].get("max_date"):
+            max_dt = latest_date_rows[0]["max_date"]
+            if hasattr(max_dt, "strftime"):
+                latest_date = max_dt.strftime("%Y-%m-%d")
+            else:
+                latest_date = str(max_dt)
+
+        if not latest_date:
+            return {"items": [], "total": 0}
+
+        # 构建查询 - 从主力活动表关联日线行情
+        conditions = ["a.activity_date = %s"]
+        params: list[Any] = [latest_date]
+
+        if alert_type:
+            conditions.append("a.alert_status = 'triggered'")
+            # 根据异动类型添加额外条件
+            if alert_type == "volume":
+                # 放量异动：成交量大
+                conditions.append("a.ratio >= 0.5")
+            elif alert_type == "amplitude":
+                # 振幅异动：筛选大单活动
+                pass
+            elif alert_type == "turnover":
+                # 换手率异动：高成交额
+                conditions.append("a.amount >= 10000000")
+            elif alert_type == "price":
+                # 价格异动：大单买卖
+                conditions.append("a.activity_type IN ('BUY', 'SELL')")
+
+        where = " AND ".join(conditions)
+
+        sql = f"""
+            SELECT
+                a.stock_code,
+                a.stock_name,
+                a.activity_type,
+                a.volume,
+                a.amount,
+                a.price,
+                a.ratio,
+                a.mainforce_type,
+                a.is_anomaly,
+                a.alert_status,
+                a.description,
+                a.indicators,
+                m.sector_level1 as sector,
+                d.change_pct,
+                d.volume_ratio,
+                d.turnover_rate,
+                d.amplitude,
+                d.change_pct_5d,
+                d.change_pct_20d
+            FROM trade_mainforce_activity a
+            LEFT JOIN trade_stock_master m ON a.stock_code = m.stock_code
+            LEFT JOIN trade_stock_daily d ON a.stock_code = d.stock_code AND d.trade_date = a.activity_date
+            WHERE {where}
+            ORDER BY a.amount DESC
+            LIMIT %s
+        """
+        rows = query_dict(conn, sql, tuple(params + [limit]))
+
+        items = []
+        for row in rows:
+            # 确定异动类型
+            row_alert_type = alert_type or "volume"
+            # 构建异动原因
+            alert_reason = row.get("description") or ""
+            if not alert_reason:
+                activity_type = row.get("activity_type", "")
+                mainforce_type = row.get("mainforce_type", "")
+                ratio_val = float(row.get("ratio") or 0)
+                if activity_type == "BUY":
+                    alert_reason = f"{mainforce_type}大额买入，占比{round(ratio_val * 100, 1)}%"
+                elif activity_type == "SELL":
+                    alert_reason = f"{mainforce_type}大额卖出，占比{round(ratio_val * 100, 1)}%"
+                else:
+                    alert_reason = f"{mainforce_type}异动，占比{round(ratio_val * 100, 1)}%"
+
+            def _safe_float(v):
+                if v is None:
+                    return None
+                try:
+                    f = float(v)
+                    return f if float("inf") > f > float("-inf") else None
+                except (ValueError, TypeError):
+                    return None
+
+            items.append({
+                "code": row.get("stock_code", ""),
+                "name": row.get("stock_name", ""),
+                "change_pct": _safe_float(row.get("change_pct")),
+                "volume_ratio": _safe_float(row.get("volume_ratio")),
+                "turnover_rate": _safe_float(row.get("turnover_rate")),
+                "amplitude": _safe_float(row.get("amplitude")),
+                "change_5d": _safe_float(row.get("change_pct_5d")),
+                "change_20d": _safe_float(row.get("change_pct_20d")),
+                "alert_reason": alert_reason,
+                "sector": row.get("sector") or "",
+                "alert_type": row_alert_type,
+            })
+
+        logger.info("异动监控数据查询完成",
+                    extra={"date": latest_date, "count": len(items)})
+
+        return {
+            "items": items,
+            "total": len(items),
+        }
+    except Exception as e:
+        logger.error("获取异动监控数据失败", extra={"error": str(e)})
+        return {"items": [], "total": 0}
     finally:
         conn.close()

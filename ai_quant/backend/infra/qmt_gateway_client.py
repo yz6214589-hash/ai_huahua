@@ -214,7 +214,7 @@ def disconnect() -> dict[str, Any]:
 
 def get_state() -> dict[str, Any]:
     """获取交易终端当前状态"""
-    return request_json("GET", "/api/trading/state")
+    return request_json("GET", "/api/trading/state", timeout_seconds=10.0)
 
 
 def get_asset() -> dict[str, Any]:

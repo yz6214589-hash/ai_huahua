@@ -52,26 +52,6 @@ const DEFAULT_PARAMS: FilterParams = {
   min_listed_days: 60,
 }
 
-const MOCK_CANDIDATES: DragonCandidate[] = [
-  { code: '301536.SZ', name: '某科技', day_change_pct: 8.42, price: 18.6, volume_ratio: 4.2, float_market_cap: 78e8, dragon_score: 4.28, sector: '软件开发', sector_change_pct: 3.2, sector_rise_ratio: 0.72, reasons: ['涨幅8.4%', '量比4.2', '市值78亿', '板块共振+1.2'] },
-  { code: '688256.SH', name: '寒武纪', day_change_pct: 12.85, price: 85.4, volume_ratio: 5.8, float_market_cap: 420e8, dragon_score: 3.15, sector: '半导体', sector_change_pct: 2.8, sector_rise_ratio: 0.65, reasons: ['涨幅12.9%', '量比5.8', '接近涨停'] },
-  { code: '002415.SZ', name: '海康威视', day_change_pct: 7.21, price: 28.5, volume_ratio: 3.6, float_market_cap: 280e8, dragon_score: 3.85, sector: '软件开发', sector_change_pct: 3.2, sector_rise_ratio: 0.72, reasons: ['涨幅7.2%', '量比3.6', '市值280亿', '价格合适', '板块共振+0.8'] },
-  { code: '300750.SZ', name: '宁德时代', day_change_pct: 5.84, price: 168.2, volume_ratio: 2.1, float_market_cap: 1200e8, dragon_score: 2.45, sector: '通用设备', sector_change_pct: 1.5, sector_rise_ratio: 0.58, reasons: ['涨幅5.8%', '价格偏高'] },
-  { code: '002460.SZ', name: '赣锋锂业', day_change_pct: 6.53, price: 22.8, volume_ratio: 3.2, float_market_cap: 185e8, dragon_score: 3.62, sector: '化学制药', sector_change_pct: 1.8, sector_rise_ratio: 0.52, reasons: ['涨幅6.5%', '量比3.2', '市值185亿', '价格合适'] },
-  { code: '000001.SZ', name: '平安银行', day_change_pct: 3.21, price: 9.8, volume_ratio: 1.4, float_market_cap: 1800e8, dragon_score: 0.82, sector: '银行', sector_change_pct: -0.3, sector_rise_ratio: 0.3, reasons: ['涨幅不足5%', '板块下跌'] },
-]
-
-const MOCK_BACKTEST: BacktestResult = {
-  start_date: '2025-01-01',
-  end_date: '2025-12-31',
-  total_trades: 128,
-  win_rate: 0.642,
-  avg_return: 0.0248,
-  max_drawdown: -0.082,
-  sharpe_ratio: 1.85,
-  profit_factor: 1.72,
-}
-
 const FILTER_RULES = [
   { label: '当日涨幅', condition: '> 5%', desc: '动量信号，过滤无方向股票' },
   { label: '价格上限', condition: '< 30元', desc: '低价股波动强，易受散户追捧' },
@@ -114,7 +94,7 @@ export default function WorkFlowDragon() {
       const r = await postJson<{ candidates: DragonCandidate[] }>('/api/v1/workflow/dragon/pick', params)
       setCandidates(r.candidates || [])
     } catch {
-      setCandidates(MOCK_CANDIDATES)
+      setCandidates([])
     } finally {
       setLoading(false)
     }
@@ -127,7 +107,7 @@ export default function WorkFlowDragon() {
       const r = await postJson<BacktestResult>('/api/v1/workflow/dragon/backtest', params)
       setBacktest(r)
     } catch {
-      setBacktest(MOCK_BACKTEST)
+      setBacktest(null)
     } finally {
       setBacktestLoading(false)
     }
@@ -211,7 +191,7 @@ export default function WorkFlowDragon() {
               className="flex items-center gap-2 rounded-lg bg-red-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
             >
               {loading ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-              {loading ? '筛选中…' : '筛选龙头候选'}
+              {loading ? '筛选中...' : '筛选龙头候选'}
             </button>
             <button
               onClick={runBacktest}
@@ -219,7 +199,7 @@ export default function WorkFlowDragon() {
               className="flex items-center gap-2 rounded-lg border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50"
             >
               {backtestLoading ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <BarChart2 className="h-4 w-4" />}
-              {backtestLoading ? '回测中…' : '策略回测'}
+              {backtestLoading ? '回测中...' : '策略回测'}
             </button>
           </div>
         </CardBody>
@@ -305,7 +285,7 @@ export default function WorkFlowDragon() {
       {tab === 'backtest' && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
-            <CardHeader title="回测结果" subtitle={`回测区间: ${MOCK_BACKTEST.start_date} ~ ${MOCK_BACKTEST.end_date}`} />
+            <CardHeader title="回测结果" subtitle={backtest ? `回测区间: ${backtest.start_date} ~ ${backtest.end_date}` : ''} />
             <CardBody>
               {backtest ? (
                 <div className="space-y-4">

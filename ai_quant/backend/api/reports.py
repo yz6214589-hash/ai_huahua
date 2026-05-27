@@ -166,6 +166,36 @@ def _parse_date(v: str) -> date | None:
         return None
 
 
+def _check_llm_available(mode: str) -> str | None:
+    """
+    检查 LLM 生成所需的环境配置是否就绪。
+    
+    在创建研报任务前进行前置校验，避免任务创建后因 LLM 不可用
+    导致轮询超时。根据不同的生成模式检查对应的配置项。
+    
+    Args:
+        mode: 生成模式 - qwen / deepseek / deepseek_with_web
+        
+    Returns:
+        None 表示检查通过，非 None 字符串表示错误信息
+    """
+    if mode == "deepseek_with_web":
+        api_key = str(os.getenv("DASHSCOPE_API_KEY", "")).strip()
+        if not api_key:
+            return "DASHSCOPE_API_KEY 未配置，无法使用 deepseek_with_web 模式进行研报生成"
+        return None
+
+    env_use_llm = str(os.getenv("AI_QUANT_REPORT_USE_LLM", "")).strip() in ("1", "true", "True")
+    if not env_use_llm:
+        return "LLM 未启用，请设置环境变量 AI_QUANT_REPORT_USE_LLM=1 以启用 LLM 研报生成"
+
+    api_key = str(os.getenv("DASHSCOPE_API_KEY", "")).strip()
+    if not api_key:
+        return "DASHSCOPE_API_KEY 未配置，无法调用 LLM 生成研报"
+
+    return None
+
+
 def _resolve_stock_names(stock_codes: list[str]) -> list[str]:
     """
     根据股票代码列表解析对应的中文名称
@@ -943,6 +973,7 @@ def reports_create_task(req: ReportTaskCreateRequest) -> dict[str, Any]:
     - model：支持qwen-max/deepseek两种LLM模型
     - stock_codes：至少选择一只股票
     - 内部会先通过RAG或search_stocks解析股票中文名称
+    - 任务创建前检查 LLM 环境配置是否就绪，避免轮询超时
     - 任务创建后立即推入后台队列异步生成，返回任务记录（含task_id）
     
     Args:
@@ -958,8 +989,15 @@ def reports_create_task(req: ReportTaskCreateRequest) -> dict[str, Any]:
     if not stock_codes:
         raise HTTPException(status_code=400, detail="请选择至少一只股票")
 
-    stock_names = _resolve_stock_names(stock_codes)
     mode_val = str(req.mode or "qwen")
+
+    # LLM 前置检查：确认环境配置就绪，避免任务入队后因 LLM 不可用导致轮询超时
+    check_result = _check_llm_available(mode_val)
+    if check_result is not None:
+        logger.error("创建任务前 LLM 检查失败", extra={"mode": mode_val, "error": check_result})
+        raise HTTPException(status_code=400, detail=check_result)
+
+    stock_names = _resolve_stock_names(stock_codes)
     rec = create_task(
         model=model,
         stock_codes=stock_codes,
@@ -990,6 +1028,57 @@ def reports_delete_task(task_id: str) -> dict[str, Any]:
     if not deleted:
         raise HTTPException(status_code=404, detail="task not found")
     return ok({"ok": True})
+
+
+@router.get("/tasks/{task_id}/status")
+def reports_task_status(task_id: str) -> dict[str, Any]:
+    """
+    查询研报任务状态（含超时熔断检测）
+    
+    返回任务当前状态、创建时间等信息。如果任务处于 waiting 状态
+    且创建时间超过 5 分钟，自动标记为 timeout 状态并返回，
+    避免前端无限期轮询等待。
+    
+    Args:
+        task_id: 任务唯一标识符
+        
+    Returns:
+        dict: 包含任务状态信息
+    """
+    task = get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+
+    status = str(task.status or "").strip()
+
+    # 超时熔断检测：如果任务处于 waiting 或 running 状态且超过阈值，标记为超时
+    timeout_seconds = 300  # 5 分钟
+    if status in ("waiting", "running"):
+        created_at = str(getattr(task, "created_at", "") or "").strip()
+        if created_at:
+            try:
+                created_dt = datetime.strptime(created_at[:19], "%Y-%m-%dT%H:%M:%S")
+                age = (datetime.now() - created_dt).total_seconds()
+                if age > timeout_seconds:
+                    logger.warning("任务超时熔断", extra={
+                        "task_id": task_id,
+                        "status": status,
+                        "age_seconds": round(age, 1),
+                    })
+                    update_task(task_id, status="timeout", finished_at=now_iso(),
+                                error_message="任务执行超时（超过5分钟），请稍后重试")
+                    status = "timeout"
+            except Exception:
+                pass
+
+    return ok({
+        "task_id": task_id,
+        "status": status,
+        "created_at": str(getattr(task, "created_at", "") or ""),
+        "started_at": str(getattr(task, "started_at", "") or ""),
+        "finished_at": str(getattr(task, "finished_at", "") or ""),
+        "error_message": str(getattr(task, "error_message", "") or ""),
+    })
 
 
 @router.post("/tasks/{task_id}/retry")

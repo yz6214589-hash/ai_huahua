@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { fetchJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { ArrowUp, Flame } from 'lucide-react'
+import { ArrowUp, Flame, AlertTriangle, RefreshCcw } from 'lucide-react'
 
 interface LimitUpStock {
   code: string
@@ -15,16 +16,6 @@ interface LimitUpStock {
   status: 'limit_up' | 'limit_down' | 'break_limit_up' | 'break_limit_down'
   firstBoardTime: string
 }
-
-const MOCK_LIMIT_UP: LimitUpStock[] = [
-  { code: '300864.SZ', name: '南大光电', boardTime: '09:32:15', sealAmount: 4820, sealAmountY: 4.82, consecutiveBoards: 5, floatCap: 35.2, sector: '光刻胶', status: 'limit_up', firstBoardTime: '09:32:15' },
-  { code: '688256.SH', name: '寒武纪', boardTime: '09:41:08', sealAmount: 12800, sealAmountY: 12.8, consecutiveBoards: 3, floatCap: 128.5, sector: 'AI芯片', status: 'limit_up', firstBoardTime: '09:41:08' },
-  { code: '002466.SZ', name: '天齐锂业', boardTime: '10:15:42', sealAmount: 6200, sealAmountY: 6.2, consecutiveBoards: 2, floatCap: 68.4, sector: '锂矿', status: 'limit_up', firstBoardTime: '10:15:42' },
-  { code: '002594.SZ', name: '比亚迪', boardTime: '13:28:05', sealAmount: 0, sealAmountY: 0, consecutiveBoards: 0, floatCap: 245.8, sector: '新能源车', status: 'break_limit_up', firstBoardTime: '09:52:00' },
-  { code: '600036.SH', name: '招商银行', boardTime: '—', sealAmount: 0, sealAmountY: 0, consecutiveBoards: 0, floatCap: 38.2, sector: '银行', status: 'break_limit_down', firstBoardTime: '—' },
-  { code: '002415.SZ', name: '海康威视', boardTime: '14:52:30', sealAmount: 2800, sealAmountY: 2.8, consecutiveBoards: 2, floatCap: 42.5, sector: 'AI安防', status: 'limit_up', firstBoardTime: '14:52:30' },
-  { code: '000858.SZ', name: '五粮液', boardTime: '—', sealAmount: 0, sealAmountY: 0, consecutiveBoards: 0, floatCap: 158.2, sector: '白酒', status: 'break_limit_down', firstBoardTime: '—' },
-]
 
 function fmtY(v: number) {
   if (v >= 10000) return `${(v / 10000).toFixed(1)}亿`
@@ -55,8 +46,33 @@ function BoardTag({ n }: { n: number }) {
 
 export default function OpportunityLimitUp() {
   const [view, setView] = useState<'all' | 'limit_up' | 'break'>('all')
+  const [stocks, setStocks] = useState<LimitUpStock[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const filtered = MOCK_LIMIT_UP.filter((s) => {
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await fetchJson<LimitUpStock[] | { items: LimitUpStock[] }>('/api/v1/intraday/limit-up')
+      if (Array.isArray(data)) {
+        setStocks(data)
+      } else if (data.items) {
+        setStocks(data.items)
+      } else {
+        setStocks([])
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '数据加载失败')
+      setStocks([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  const filtered = stocks.filter((s) => {
     if (view === 'limit_up') return s.status === 'limit_up' || s.status === 'limit_down'
     if (view === 'break') return s.status === 'break_limit_up' || s.status === 'break_limit_down'
     return true
@@ -64,6 +80,39 @@ export default function OpportunityLimitUp() {
 
   const limitUps = filtered.filter((s) => s.status === 'limit_up' || s.status === 'limit_down')
   const breaks = filtered.filter((s) => s.status === 'break_limit_up' || s.status === 'break_limit_down')
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-zinc-400">
+        <RefreshCcw className="mr-2 h-5 w-5 animate-spin" />
+        <span>加载中...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
+        <AlertTriangle className="mb-3 h-10 w-10 text-zinc-300" />
+        <p className="text-sm text-zinc-500">{error}</p>
+        <button
+          onClick={loadData}
+          className="mt-3 rounded-lg border border-zinc-200 px-4 py-2 text-xs text-zinc-600 hover:bg-zinc-50"
+        >
+          重新加载
+        </button>
+      </div>
+    )
+  }
+
+  if (stocks.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
+        <AlertTriangle className="mb-3 h-10 w-10 text-zinc-300" />
+        <p className="text-sm text-zinc-500">暂无涨停数据</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">

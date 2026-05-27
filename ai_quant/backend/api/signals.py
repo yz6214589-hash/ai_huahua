@@ -13,6 +13,7 @@ from fastapi import APIRouter, Query, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from core.db import connect, load_mysql_config, query_dict, execute
+from core.analysis.tech_signals import generate_signals as _compute_tech_signals
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("signals")
@@ -561,5 +562,146 @@ async def delete_signal_by_id(signal_id: str) -> dict[str, str]:
     except Exception as e:
         logger.error("删除信号失败", extra={"error": str(e)})
         return {"deleted": signal_id}
+    finally:
+        conn.close()
+
+
+# ============ 规则引擎信号生成 ============
+
+class RuleBasedSignalRequest(BaseModel):
+    """规则引擎信号生成请求"""
+    model: str = Field(default="rule_engine", description="模型名称")
+    rules: list[str] = Field(default_factory=lambda: ["rsi", "macd", "ma"], description="需要应用的规则列表")
+
+
+@router.post("/rule-based")
+async def rule_based_signals(request: RuleBasedSignalRequest) -> dict[str, Any]:
+    """
+    基于规则引擎的选股信号生成。
+
+    从 trade_stock_daily 获取近期K线数据，基于技术指标（RSI/MACD/MA）
+    计算出买卖持有信号。复用 core/analysis/tech_signals.py 中的计算逻辑。
+
+    Args:
+        request: 包含模型名称和规则列表的请求体
+
+    Returns:
+        dict: 包含 items（信号列表）和 total（总数）
+    """
+    logger.info("规则引擎信号请求", extra={
+        "model": request.model,
+        "rules": request.rules,
+    })
+
+    conn = _get_conn()
+    try:
+        # 查询最新的交易日期
+        latest_date_rows = query_dict(
+            conn,
+            "SELECT MAX(trade_date) as max_date FROM trade_stock_daily",
+            ()
+        )
+        if not latest_date_rows or not latest_date_rows[0].get("max_date"):
+            return {"items": [], "total": 0}
+
+        max_dt = latest_date_rows[0]["max_date"]
+        if hasattr(max_dt, "strftime"):
+            latest_date = max_dt.strftime("%Y-%m-%d")
+        else:
+            latest_date = str(max_dt)
+
+        # 获取活跃股票池（取有流通市值且非 ST 的股票，限制最多200只）
+        pool_sql = """
+            SELECT m.stock_code, m.stock_name
+            FROM trade_stock_master m
+            JOIN trade_stock_daily d ON m.stock_code = d.stock_code AND d.trade_date = %s
+            WHERE m.status = 'active' AND (m.is_st IS NULL OR m.is_st = 0)
+              AND d.close_price IS NOT NULL AND d.close_price > 0
+            GROUP BY m.stock_code
+            ORDER BY d.amount DESC
+            LIMIT 200
+        """
+        pool_rows = query_dict(conn, pool_sql, (latest_date,))
+        if not pool_rows:
+            return {"items": [], "total": 0}
+
+        logger.info("获取股票池完成", extra={"count": len(pool_rows), "date": latest_date})
+
+        # 对每只股票，获取最近60个交易日的日K线数据
+        items: list[dict[str, Any]] = []
+
+        for pool_item in pool_rows:
+            stock_code = pool_item["stock_code"]
+            stock_name = pool_item["stock_name"] or stock_code
+
+            try:
+                # 获取近60日K线数据用于计算指标
+                kline_rows = query_dict(
+                    conn,
+                    """SELECT trade_date, close_price FROM trade_stock_daily
+                       WHERE stock_code = %s AND trade_date <= %s AND close_price IS NOT NULL
+                       ORDER BY trade_date ASC
+                       LIMIT 60""",
+                    (stock_code, latest_date)
+                )
+
+                if len(kline_rows) < 30:
+                    continue
+
+                trade_dates = [str(r["trade_date"]) for r in kline_rows]
+                closes = [float(r["close_price"]) for r in kline_rows]
+
+                # 使用 tech_signals 模块生成信号
+                signals = _compute_tech_signals(trade_dates, closes)
+
+                if not signals:
+                    continue
+
+                # 取最新的一条信号
+                latest_signal = signals[-1]
+                signal_type = latest_signal.get("signal", "HOLD")
+                score_val = float(latest_signal.get("score", 50))
+                reasons = latest_signal.get("reasons", [])
+                snapshot = latest_signal.get("snapshot", {})
+
+                # 计算置信度
+                confidence = round(score_val / 100.0, 2)
+
+                items.append({
+                    "code": stock_code,
+                    "name": stock_name,
+                    "signal": signal_type,
+                    "confidence": confidence,
+                    "reasons": reasons,
+                    "indicators": {
+                        "rsi": snapshot.get("rsi14"),
+                        "macd": snapshot.get("macd_hist"),
+                        "ma20": snapshot.get("ma20"),
+                        "close": snapshot.get("close"),
+                    },
+                })
+
+            except Exception as e:
+                logger.warning("处理股票信号异常",
+                               extra={"stock_code": stock_code, "error": str(e)})
+                continue
+
+        # 按信号强度排序（BUY优先于SELL，BUY中按置信度降序）
+        def _sort_key(item: dict) -> tuple:
+            signal_order = {"BUY": 0, "SELL": 1, "HOLD": 2}
+            return (signal_order.get(item["signal"], 3), -item.get("confidence", 0))
+
+        items.sort(key=_sort_key)
+
+        logger.info("规则引擎信号生成完成",
+                    extra={"total": len(items), "buys": sum(1 for i in items if i["signal"] == "BUY")})
+
+        return {
+            "items": items,
+            "total": len(items),
+        }
+    except Exception as e:
+        logger.error("规则引擎信号生成失败", extra={"error": str(e)})
+        return {"items": [], "total": 0}
     finally:
         conn.close()

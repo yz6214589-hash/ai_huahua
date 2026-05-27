@@ -368,6 +368,7 @@ def delete_watchlist_item(stock_code: str) -> dict[str, Any]:
     try:
         cur = conn.cursor()
         try:
+            cur.execute("DELETE FROM trade_watchlist_item_group WHERE stock_code=%s", (code,))
             cur.execute("DELETE FROM trade_watchlist WHERE stock_code=%s", (code,))
             try:
                 conn.commit()
@@ -876,14 +877,25 @@ def get_watchlist_snapshots() -> dict[str, Any]:
 
 
 def get_watchlist_groups() -> dict[str, Any]:
-    """获取所有自定义分组"""
+    """获取所有自定义分组（含股票数量）"""
     conn, query_dict_func = _get_conn_and_query()
     if conn is None or query_dict_func is None:
         return {"items": []}
     try:
         rows = query_dict_func(conn,
-            "SELECT id, name, sort_order FROM trade_watchlist_group ORDER BY sort_order, id", ())
-        return {"items": [{"id": r["id"], "name": r["name"], "sort_order": r["sort_order"]} for r in (rows or [])]}
+            """SELECT g.id, g.name, g.sort_order,
+                      COUNT(w.stock_code) AS stock_count
+               FROM trade_watchlist_group g
+               LEFT JOIN trade_watchlist_item_group wig ON g.id = wig.group_id
+               LEFT JOIN trade_watchlist w ON wig.stock_code = w.stock_code
+               GROUP BY g.id
+               ORDER BY g.sort_order, g.id""", ())
+        return {"items": [{
+            "id": r["id"],
+            "name": r["name"],
+            "sort_order": r["sort_order"],
+            "stock_count": int(r["stock_count"] or 0),
+        } for r in (rows or [])]}
     finally:
         conn.close()
 
@@ -895,6 +907,11 @@ def create_watchlist_group(name: str) -> dict[str, Any]:
         return {"error": "数据库连接失败"}
     try:
         cur = conn.cursor()
+        # 检查分组名是否已存在
+        cur.execute("SELECT id FROM trade_watchlist_group WHERE name=%s", (name,))
+        if cur.fetchone():
+            cur.close()
+            return {"error": f"分组名称「{name}」已存在"}
         cur.execute("SELECT MAX(sort_order) AS m FROM trade_watchlist_group", ())
         row = cur.fetchone()
         next_order = (row["m"] or 0) + 1
@@ -914,6 +931,11 @@ def rename_watchlist_group(group_id: int, name: str) -> dict[str, Any]:
         return {"error": "数据库连接失败"}
     try:
         cur = conn.cursor()
+        # 检查其他分组是否已使用该名称
+        cur.execute("SELECT id FROM trade_watchlist_group WHERE name=%s AND id!=%s", (name, group_id))
+        if cur.fetchone():
+            cur.close()
+            return {"error": f"分组名称「{name}」已存在"}
         cur.execute("UPDATE trade_watchlist_group SET name=%s WHERE id=%s", (name, group_id))
         conn.commit()
         cur.close()

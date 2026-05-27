@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from datetime import date
 from pathlib import Path
@@ -170,6 +171,12 @@ class BatchBacktestReq(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     initial_cash: float = 100000.0
     max_workers: int = Field(default=4, ge=1, le=16, description="最大并发数")
+    # 新增：佣金与滑点参数（与单股回测保持一致）
+    commission_buy: float = Field(default=0.0003, description="买入佣金率")
+    commission_sell: float = Field(default=0.0013, description="卖出佣金率（含印花税）")
+    slippage_pct: float = Field(default=0.0, description="滑点百分比")
+    slippage_fixed: float = Field(default=0.0, description="固定滑点")
+    min_commission: float = Field(default=5.0, description="最低手续费")
 
 
 class WalkForwardReq(BaseModel):
@@ -285,15 +292,28 @@ def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log:
     m = bt_result.metrics
     trades = []
     for t in bt_result.trades:
-        trades.append({
-            "date": t.get("trade_date", ""),
-            "action": "sell",
-            "price": 0,
-            "qty": int(t.get("size", 0)),
-            "cost": 0,
-            "proceeds": 0,
-            "note": f"盈亏: {t.get('pnlcomm', 0):.2f}",
-        })
+        action = t.get("action", "sell")
+        if action == "buy":
+            trades.append({
+                "date": t.get("trade_date", ""),
+                "action": "buy",
+                "price": t.get("price", 0),
+                "qty": int(t.get("size", 0)),
+                "cost": t.get("cost", 0),
+                "proceeds": 0,
+                "note": "买入",
+            })
+        else:
+            pnlcomm = t.get("pnlcomm", 0)
+            trades.append({
+                "date": t.get("trade_date", ""),
+                "action": "sell",
+                "price": t.get("price", 0),
+                "qty": int(t.get("size", 0)),
+                "cost": 0,
+                "proceeds": t.get("proceeds", 0),
+                "note": f"盈亏: {pnlcomm:.2f}",
+            })
 
     # 基础指标（百分比指标统一返回小数形式，如0.25表示25%，前端负责乘以100显示）
     metrics = {
@@ -344,35 +364,95 @@ def _run_single_backtest(
     params: dict[str, Any],
     req: BacktestReq,
 ) -> dict[str, Any]:
-    """
-    执行单次回测并返回增强后的结果
-
-    Args:
-        df: 日线数据
-        meta: 策略元数据
-        params: 策略参数
-        req: 回测请求
-
-    Returns:
-        格式化后的回测结果
-    """
     from core.strategy.backtest_engine import run_backtest as bt_run
 
-    bt_result = bt_run(
-        df=df,
-        strategy_cls=meta.bt_strategy_factory(),
-        strategy_params=params,
-        initial_cash=req.initial_cash,
-        requires_weekly=meta.requires_weekly,
-        commission_buy=req.commission_buy,
-        commission_sell=req.commission_sell,
-        slippage_pct=req.slippage_pct,
-        slippage_fixed=req.slippage_fixed,
-        min_commission=req.min_commission,
+    _t0 = time.time()
+    logger.info(
+        "单次回测开始",
+        extra={
+            "stock_code": req.stock_code,
+            "strategy_id": req.strategy_id,
+            "data_rows": len(df),
+            "params": params,
+            "initial_cash": req.initial_cash,
+        }
     )
 
+    try:
+        bt_result = bt_run(
+            df=df,
+            strategy_cls=meta.bt_strategy_factory(),
+            strategy_params=params,
+            initial_cash=req.initial_cash,
+            requires_weekly=meta.requires_weekly,
+            commission_buy=req.commission_buy,
+            commission_sell=req.commission_sell,
+            slippage_pct=req.slippage_pct,
+            slippage_fixed=req.slippage_fixed,
+            min_commission=req.min_commission,
+        )
+        _t1 = time.time()
+        logger.info(
+            "回测引擎执行完成",
+            extra={
+                "stock_code": req.stock_code,
+                "strategy_id": req.strategy_id,
+                "engine_duration_ms": round((_t1 - _t0) * 1000),
+                "has_error": "error" in bt_result.metrics,
+                "metrics_keys": list(bt_result.metrics.keys()),
+            }
+        )
+    except Exception as e:
+        logger.error(
+            "回测引擎执行异常",
+            extra={
+                "stock_code": req.stock_code,
+                "strategy_id": req.strategy_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "duration_ms": round((time.time() - _t0) * 1000),
+            }
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"回测引擎执行异常：{type(e).__name__}: {str(e)}"
+        )
+
+    # 增强错误处理：记录详细日志并返回更有意义的错误信息
     if "error" in bt_result.metrics:
-        raise HTTPException(status_code=500, detail=bt_result.metrics["error"])
+        error_info = bt_result.metrics["error"]
+        error_detail = bt_result.metrics.get("detail", "")
+
+        # 记录详细错误日志
+        logger.error(
+            "回测执行失败",
+            extra={
+                "stock_code": req.stock_code,
+                "strategy_id": req.strategy_id,
+                "error": error_info,
+                "detail": error_detail,
+                "start": req.start,
+                "end": req.end,
+            }
+        )
+
+        # 根据错误类型返回不同的HTTP状态码和详细信息
+        if error_info == "backtrader_missing":
+            raise HTTPException(
+                status_code=500,
+                detail=f"回测引擎初始化失败：Backtrader库未正确安装或导入失败。详情：{error_detail}"
+            )
+        elif error_info == "empty_data":
+            raise HTTPException(
+                status_code=404,
+                detail="回测数据为空，请检查股票代码和日期范围是否正确"
+            )
+        else:
+            # 其他未知错误
+            raise HTTPException(
+                status_code=500,
+                detail=f"回测执行失败：{error_info}。详情：{error_detail}" if error_detail else f"回测执行失败：{error_info}"
+            )
 
     # 加载基准数据
     benchmark_nav_log = []
@@ -387,17 +467,36 @@ def _run_single_backtest(
 
     # 使用 enhance_metrics 增强指标
     from core.strategy.metrics_calculator import enhance_metrics
-    bt_result.metrics = enhance_metrics(
+    enhanced_metrics = enhance_metrics(
         base_metrics=bt_result.metrics,
         nav_log=bt_result.nav_log,
-        benchmark_nav_log=benchmark_nav_log if benchmark_nav_log else None,
+        benchmark_nav_log=benchmark_nav_log if benchmark_nav_log is not None else None,
     )
+
+    # 创建新的 BacktestResult 实例（因为原实例是 frozen dataclass，不可修改）
+    from core.strategy.backtest_engine import BacktestResult
+    from dataclasses import replace
+    bt_result = replace(bt_result, metrics=enhanced_metrics)
 
     return _format_backtest_result(bt_result, req, benchmark_nav_log=benchmark_nav_log)
 
 
 @router.post("/backtest/run")
 def run_backtest(req: BacktestReq = Body(...)) -> dict[str, Any]:
+    _t0 = time.time()
+    logger.info(
+        "回测请求开始",
+        extra={
+            "stock_code": req.stock_code,
+            "strategy_id": req.strategy_id,
+            "start": req.start,
+            "end": req.end,
+            "interval_mode": req.interval_mode,
+            "params": req.params,
+            "benchmark_code": req.benchmark_code,
+        }
+    )
+
     try:
         start_d = pd.to_datetime(req.start).date()
         end_d = pd.to_datetime(req.end).date()
@@ -428,13 +527,73 @@ def run_backtest(req: BacktestReq = Body(...)) -> dict[str, Any]:
 
     # 区间模式支持
     if req.interval_mode == "train_val_test":
-        return _run_interval_backtest(df, meta, params, req)
+        _load_cost = time.time()
+        logger.info(
+            "数据加载完成，开始区间模式回测",
+            extra={"stock_code": req.stock_code, "data_rows": len(df), "load_cost_ms": round((_load_cost - _t0) * 1000)}
+        )
+        result = _run_interval_backtest(df, meta, params, req)
+        _t1 = time.time()
+        logger.info(
+            "回测请求结束（区间模式）",
+            extra={
+                "stock_code": req.stock_code,
+                "strategy_id": req.strategy_id,
+                "duration_ms": round((_t1 - _t0) * 1000),
+                "interval_count": len(result.get("interval_results", [])),
+            }
+        )
+        return result
 
-    # 普通回测
-    result = _run_single_backtest(df, meta, params, req)
+    # 普通回测（增加异常包装）
+    try:
+        _bt_start = time.time()
+        result = _run_single_backtest(df, meta, params, req)
+        _bt_end = time.time()
+        _trades_count = len(result.get("trades", []))
+        _metrics = result.get("metrics", {})
+        logger.info(
+            "回测执行完成",
+            extra={
+                "stock_code": req.stock_code,
+                "strategy_id": req.strategy_id,
+                "duration_ms": round((_bt_end - _t0) * 1000),
+                "backtest_duration_ms": round((_bt_end - _bt_start) * 1000),
+                "trades_count": _trades_count,
+                "total_return": _metrics.get("total_return"),
+                "sharpe": _metrics.get("sharpe"),
+                "max_drawdown": _metrics.get("max_drawdown"),
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "回测执行发生未预期异常",
+            extra={
+                "stock_code": req.stock_code,
+                "strategy_id": req.strategy_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "duration_ms": round((time.time() - _t0) * 1000),
+            }
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"回测执行失败：系统内部错误（{type(e).__name__}）。请联系管理员查看详细日志"
+        )
 
     # 保存回测记录到数据库
+    _save_start = time.time()
     _save_backtest_to_db(result, req)
+    logger.info(
+        "回测记录保存完成",
+        extra={
+            "stock_code": req.stock_code,
+            "save_duration_ms": round((time.time() - _save_start) * 1000),
+            "total_duration_ms": round((time.time() - _t0) * 1000),
+        }
+    )
 
     return result
 
@@ -445,18 +604,7 @@ def _run_interval_backtest(
     params: dict[str, Any],
     req: BacktestReq,
 ) -> dict[str, Any]:
-    """
-    区间模式回测：将数据分为训练集、验证集、测试集，分别运行回测
-
-    Args:
-        df: 完整日线数据
-        meta: 策略元数据
-        params: 策略参数
-        req: 回测请求
-
-    Returns:
-        包含各区间回测结果的综合响应
-    """
+    _t0 = time.time()
     df_all = df.copy()
     if "trade_date" in df_all.columns:
         df_all["trade_date"] = pd.to_datetime(df_all["trade_date"])
@@ -464,10 +612,12 @@ def _run_interval_backtest(
     intervals: list[dict[str, str]] = []
 
     if req.custom_intervals:
-        # 自定义区间
         intervals = req.custom_intervals
+        logger.info(
+            "区间模式-自定义区间",
+            extra={"interval_count": len(intervals), "intervals": intervals}
+        )
     else:
-        # 按比例划分
         total_days = len(df_all)
         train_end = int(total_days * req.train_ratio)
         val_end = train_end + int(total_days * req.val_ratio)
@@ -495,25 +645,41 @@ def _run_interval_backtest(
                 "end": str(df_test["trade_date"].iloc[-1].date()),
             })
 
+        logger.info(
+            "区间模式-按比例划分",
+            extra={
+                "total_days": total_days,
+                "train_ratio": req.train_ratio,
+                "val_ratio": req.val_ratio,
+                "test_ratio": req.test_ratio,
+                "train_days": len(df_train),
+                "val_days": len(df_val),
+                "test_days": len(df_test),
+                "intervals": intervals,
+            }
+        )
+
     interval_results = []
     for interval in intervals:
         i_start = interval.get("start", "")
         i_end = interval.get("end", "")
         i_name = interval.get("name", "unknown")
 
-        # 按区间截取数据
+        _it0 = time.time()
         i_df = df_all[(df_all["trade_date"] >= i_start) & (df_all["trade_date"] <= i_end)].copy()
         if i_df.empty:
             interval_results.append({"name": i_name, "start": i_start, "end": i_end, "error": "no_data"})
+            logger.warning(
+                "区间模式-子区间无数据",
+                extra={"name": i_name, "start": i_start, "end": i_end}
+            )
             continue
 
-        # 缠论数据
         if meta.requires_chan:
             from core.strategy.chan_engine import add_chan_fields
             chan_result = add_chan_fields(i_df, symbol=req.stock_code)
             i_df = chan_result.df
 
-        # 构造子请求
         sub_req = BacktestReq(
             stock_code=req.stock_code,
             start=i_start,
@@ -531,12 +697,27 @@ def _run_interval_backtest(
 
         try:
             sub_result = _run_single_backtest(i_df, meta, params, sub_req)
+            _it1 = time.time()
+            _sub_metrics = sub_result.get("metrics", {})
             interval_results.append({
                 "name": i_name,
                 "start": i_start,
                 "end": i_end,
                 "result": sub_result,
             })
+            logger.info(
+                "区间模式-子区间回测完成",
+                extra={
+                    "name": i_name,
+                    "start": i_start,
+                    "end": i_end,
+                    "duration_ms": round((_it1 - _it0) * 1000),
+                    "data_rows": len(i_df),
+                    "total_return": _sub_metrics.get("total_return"),
+                    "sharpe": _sub_metrics.get("sharpe"),
+                    "trades_count": len(sub_result.get("trades", [])),
+                }
+            )
         except HTTPException as e:
             interval_results.append({
                 "name": i_name,
@@ -544,14 +725,24 @@ def _run_interval_backtest(
                 "end": i_end,
                 "error": e.detail,
             })
+            logger.error(
+                "区间模式-子区间回测异常",
+                extra={"name": i_name, "start": i_start, "end": i_end, "error": e.detail}
+            )
 
     return {
         "interval_mode": "train_val_test",
-        "intervals": interval_results,
+        "interval_results": interval_results,
         "strategy_id": req.strategy_id,
         "stock_code": req.stock_code,
         "start_date": req.start,
         "end_date": req.end,
+        "metrics": None,
+        "trades": [],
+        "nav_log": [],
+        "benchmark_nav_log": [],
+        "drawdown_log": [],
+        "monthly_returns": [],
     }
 
 
@@ -590,6 +781,54 @@ def _save_backtest_to_db(result: dict[str, Any], req: BacktestReq) -> None:
         result["backtest_id"] = backtest_id
     except Exception as e:
         logger.error("保存回测记录失败", extra={"error": str(e)})
+
+
+def _save_batch_backtest_to_db(
+    task_result: dict[str, Any],
+    req: BatchBacktestReq,
+    stock_code: str
+) -> None:
+    """
+    将批量回测中的单个任务结果保存到数据库
+
+    Args:
+        task_result: 单个任务的回测结果
+        req: 批量回测请求
+        stock_code: 股票代码
+    """
+    try:
+        from core.strategy.backtest_storage import save_backtest, ensure_backtest_tables
+        ensure_backtest_tables()
+        record = {
+            "strategy_id": req.strategy_id,
+            "stock_code": stock_code,
+            "start_date": req.start,
+            "end_date": req.end,
+            "initial_cash": req.initial_cash,
+            "commission_buy": req.commission_buy,
+            "commission_sell": req.commission_sell,
+            "slippage_pct": req.slippage_pct,
+            "slippage_fixed": req.slippage_fixed,
+            "min_commission": req.min_commission,
+            "benchmark_code": None,  # 批量回测暂不支持基准
+            "params": req.params,
+            "metrics": task_result.get("metrics", {}),
+            "trades": task_result.get("trades", []),
+            "nav_log": task_result.get("nav_log", []),
+            "benchmark_nav_log": [],
+            "drawdown_log": [],
+            "monthly_returns": [],
+            # 标记为批量回测的一部分
+            "batch_mode": True,
+        }
+        backtest_id = save_backtest(record)
+        task_result["backtest_id"] = backtest_id
+    except Exception as e:
+        logger.error(
+            "保存批量回测任务记录失败",
+            extra={"stock_code": stock_code, "error": str(e)}
+        )
+        raise  # 重新抛出异常，让调用方处理
 
 
 @router.get("/backtest/history")
@@ -680,6 +919,12 @@ def run_batch_backtest(req: BatchBacktestReq = Body(...)) -> dict[str, Any]:
         initial_cash=req.initial_cash,
         start_date=req.start,
         end_date=req.end,
+        # 传递交易成本配置
+        commission_buy=req.commission_buy,
+        commission_sell=req.commission_sell,
+        slippage_pct=req.slippage_pct,
+        slippage_fixed=req.slippage_fixed,
+        min_commission=req.min_commission,
     )
 
     batch = engine.execute_batch(batch)
@@ -697,6 +942,16 @@ def run_batch_backtest(req: BatchBacktestReq = Body(...)) -> dict[str, Any]:
             task_result["metrics"] = task.result.metrics
             task_result["nav_log"] = task.result.nav_log
             task_result["trades"] = task.result.trades
+
+            # 对成功的任务保存回测记录到数据库
+            try:
+                _save_batch_backtest_to_db(task_result, req, task.stock_code)
+            except Exception as e:
+                logger.error(
+                    "保存批量回测记录失败",
+                    extra={"task_id": task.task_id, "stock_code": task.stock_code, "error": str(e)}
+                )
+
         results_list.append(task_result)
 
     response = {
@@ -862,10 +1117,18 @@ def compare_backtests(req: CompareReq = Body(...)) -> dict[str, Any]:
 
 @router.post("/backtest/param-search")
 def run_param_search(req: ParamSearchReq = Body(...)) -> dict[str, Any]:
-    """
-    参数搜索API
-    对策略参数进行网格搜索，找到最优参数组合
-    """
+    _t0 = time.time()
+    logger.info(
+        "参数搜索请求开始",
+        extra={
+            "stock_code": req.stock_code,
+            "strategy_id": req.strategy_id,
+            "start": req.start,
+            "end": req.end,
+            "param_grid": req.param_grid,
+        }
+    )
+
     try:
         start_d = pd.to_datetime(req.start).date()
         end_d = pd.to_datetime(req.end).date()
@@ -883,7 +1146,6 @@ def run_param_search(req: ParamSearchReq = Body(...)) -> dict[str, Any]:
     if df.empty:
         raise HTTPException(status_code=404, detail="no_data_for_stock")
 
-    # 缠论数据
     if meta.requires_chan:
         from core.strategy.chan_engine import add_chan_fields
         chan_result = add_chan_fields(df, symbol=req.stock_code)
@@ -901,12 +1163,44 @@ def run_param_search(req: ParamSearchReq = Body(...)) -> dict[str, Any]:
         "min_commission": req.min_commission,
     }
 
+    param_count = 1
+    for v in req.param_grid.values():
+        param_count *= len(v) if isinstance(v, list) else 1
+
+    logger.info(
+        "参数搜索开始执行",
+        extra={
+            "stock_code": req.stock_code,
+            "param_count": param_count,
+            "data_rows": len(df),
+        }
+    )
+
+    _ps_start = time.time()
     result = ps_run(
         df=df,
         strategy_cls=meta.bt_strategy_factory(),
         param_grid=req.param_grid,
         initial_cash=req.initial_cash,
         **bt_kwargs,
+    )
+    _ps_end = time.time()
+
+    best_return_val = result.best_by_return.get("total_return") if result.best_by_return else None
+    best_sharpe_val = result.best_by_sharpe.get("sharpe") if result.best_by_sharpe else None
+
+    logger.info(
+        "参数搜索请求结束",
+        extra={
+            "stock_code": req.stock_code,
+            "strategy_id": req.strategy_id,
+            "total_combinations": result.total_combinations,
+            "successful_count": len(result.results),
+            "duration_ms": round((_ps_end - _t0) * 1000),
+            "search_duration_ms": round((_ps_end - _ps_start) * 1000),
+            "best_return": best_return_val,
+            "best_sharpe": best_sharpe_val,
+        }
     )
 
     return {

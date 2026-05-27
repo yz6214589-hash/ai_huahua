@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { fetchJson, postJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
+import { RefreshCcw } from 'lucide-react'
 
 interface Factor {
   key: string
@@ -10,7 +12,15 @@ interface Factor {
   desc: string
 }
 
-const FACTORS: Factor[] = [
+interface StockScore {
+  code: string
+  name: string
+  factors: Record<string, number>
+  total_score: number
+  rank: number
+}
+
+const DEFAULT_FACTORS: Factor[] = [
   { key: 'pe', label: '市盈率（TTM）', weight: 15, direction: 'down', desc: '越低估值越合理' },
   { key: 'pb', label: '市净率（MRQ）', weight: 10, direction: 'down', desc: '越低资产质量越好' },
   { key: 'roe', label: 'ROE', weight: 20, direction: 'up', desc: '越高盈利能力越强' },
@@ -21,31 +31,12 @@ const FACTORS: Factor[] = [
   { key: 'market_cap', label: '市值规模', weight: 5, direction: 'up', desc: '适中规模更具弹性' },
 ]
 
-const MOCK_STOCKS = [
-  { code: '600519.SH', name: '贵州茅台', pe: 28.5, pb: 8.2, roe: 45.2, gross: 91.8, rev_growth: 16.7, profit_growth: 18.8, debt_ratio: 14.2, market_cap: 22000 },
-  { code: '300750.SZ', name: '宁德时代', pe: 22.1, pb: 5.8, roe: 24.6, gross: 22.1, rev_growth: 78.1, profit_growth: 92.5, debt_ratio: 58.3, market_cap: 10500 },
-  { code: '002594.SZ', name: '比亚迪', pe: 31.2, pb: 6.1, roe: 18.9, gross: 19.8, rev_growth: 42.1, profit_growth: 85.2, debt_ratio: 68.4, market_cap: 8500 },
-  { code: '688041.SH', name: '寒武纪', pe: -45.2, pb: 8.4, roe: -12.3, gross: 62.1, rev_growth: 45.8, profit_growth: -15.2, debt_ratio: 18.4, market_cap: 1800 },
-  { code: '600036.SH', name: '招商银行', pe: 7.8, pb: 1.2, roe: 16.8, gross: 0, rev_growth: 8.1, profit_growth: 11.4, debt_ratio: 90.2, market_cap: 11000 },
-  { code: '000858.SZ', name: '五粮液', pe: 18.2, pb: 4.1, roe: 28.4, gross: 75.4, rev_growth: 12.4, profit_growth: 14.2, debt_ratio: 22.8, market_cap: 6800 },
-]
-
-function calcScore(stock: typeof MOCK_STOCKS[0], activeFactors: Set<string>): number {
-  let total = 0
-  let scored = 0
-  for (const f of FACTORS) {
-    if (!activeFactors.has(f.key)) continue
-    const val = (stock as Record<string, unknown>)[f.key] as number
-    if (typeof val !== 'number' || val === 0) continue
-    scored += f.weight
-    if (f.direction === 'up') total += f.weight
-    else total += f.weight * 0.5
-  }
-  return scored > 0 ? (total / scored) * 100 : 0
-}
-
 export default function StockSelectFactor() {
-  const [activeFactors, setActiveFactors] = useState<Set<string>>(new Set(FACTORS.map((f) => f.key)))
+  const [factors, setFactors] = useState<Factor[]>([...DEFAULT_FACTORS])
+  const [activeFactors, setActiveFactors] = useState<Set<string>>(new Set(DEFAULT_FACTORS.map((f) => f.key)))
+  const [stocks, setStocks] = useState<StockScore[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const toggleFactor = (key: string) => {
     setActiveFactors((prev) => {
@@ -56,11 +47,38 @@ export default function StockSelectFactor() {
     })
   }
 
-  const scored = MOCK_STOCKS
-    .map((s) => ({ ...s, score: calcScore(s, activeFactors) }))
-    .sort((a, b) => b.score - a.score)
+  const loadScores = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const activeFactorList = factors.filter((f) => activeFactors.has(f.key))
+      const body = {
+        factors: activeFactorList.map((f) => ({
+          key: f.key,
+          weight: f.weight,
+          direction: f.direction,
+        })),
+      }
+      const r = await postJson<{ items: StockScore[]; total: number }>('/api/v1/stock-select/score', body)
+      setStocks((r.items || []).sort((a, b) => b.total_score - a.total_score))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '数据加载失败')
+      setStocks([])
+    } finally {
+      setLoading(false)
+    }
+  }, [factors, activeFactors])
 
-  const topScore = scored[0]?.score || 1
+  useEffect(() => {
+    loadScores()
+  }, [])
+
+  const sorted = [...stocks].sort((a, b) => b.total_score - a.total_score)
+  const topScore = sorted[0]?.total_score || 1
+
+  const updateFactorWeight = (key: string, weight: number) => {
+    setFactors((prev) => prev.map((f) => (f.key === key ? { ...f, weight: Math.max(1, Math.min(100, weight)) } : f)))
+  }
 
   return (
     <div className="space-y-4">
@@ -68,20 +86,19 @@ export default function StockSelectFactor() {
         <CardHeader title="因子权重配置" />
         <CardBody>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {FACTORS.map((f) => {
+            {factors.map((f) => {
               const active = activeFactors.has(f.key)
-              const totalWeight = Array.from(activeFactors).reduce((sum, k) => sum + (FACTORS.find((x) => x.key === k)?.weight || 0), 0)
+              const totalWeight = Array.from(activeFactors).reduce((sum, k) => sum + (factors.find((x) => x.key === k)?.weight || 0), 0)
               return (
                 <div
                   key={f.key}
-                  onClick={() => toggleFactor(f.key)}
-                  className={`cursor-pointer rounded-lg border p-3 transition ${
+                  className={`rounded-lg border p-3 transition ${
                     active ? 'border-blue-300 bg-blue-50' : 'border-zinc-100 bg-zinc-50 opacity-60'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between" onClick={() => toggleFactor(f.key)}>
                     <span className="text-sm font-medium text-zinc-900">{f.label}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    <span className={`cursor-pointer rounded-full px-2 py-0.5 text-xs font-medium ${
                       active ? 'bg-blue-200 text-blue-800' : 'bg-zinc-200 text-zinc-500'
                     }`}>
                       {active ? `×${f.weight}%` : '停用'}
@@ -91,78 +108,122 @@ export default function StockSelectFactor() {
                     {f.desc} · {f.direction === 'up' ? '↑ 越高越好' : '↓ 越低越好'}
                   </div>
                   {active && (
-                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
-                      <div
-                        className="h-full rounded-full bg-blue-500"
-                        style={{ width: `${(f.weight / totalWeight) * 100}%` }}
-                      />
+                    <div className="mt-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="1"
+                          max="50"
+                          value={f.weight}
+                          onChange={(e) => updateFactorWeight(f.key, Number(e.target.value))}
+                          className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-blue-100 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500"
+                        />
+                        <span className="w-8 text-right text-xs text-zinc-500">{f.weight}%</span>
+                      </div>
+                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
+                        <div
+                          className="h-full rounded-full bg-blue-500"
+                          style={{ width: `${(f.weight / Math.max(totalWeight, 1)) * 100}%` }}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
               )
             })}
           </div>
-          <div className="mt-3 flex items-center gap-2 text-xs text-zinc-500">
-            <span>有效权重：{Array.from(activeFactors).reduce((s, k) => s + (FACTORS.find((f) => f.key === k)?.weight || 0), 0)}%</span>
+          <div className="mt-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs text-zinc-500">
+              <span>有效权重：{Array.from(activeFactors).reduce((s, k) => s + (factors.find((f) => f.key === k)?.weight || 0), 0)}%</span>
+            </div>
+            <button
+              onClick={loadScores}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
+            >
+              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+              重新评分
+            </button>
           </div>
         </CardBody>
       </Card>
 
       <Card>
-        <CardHeader title={`多因子评分排名（${scored.length} 只）`} />
+        <CardHeader title={`多因子评分排名（${sorted.length} 只）`} />
         <CardBody className="p-0">
-          <div className="overflow-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-50 text-xs text-zinc-500">
-                <tr>
-                  <th className="px-3 py-2 w-8">#</th>
-                  <th className="px-3 py-2">股票</th>
-                  <th className="px-3 py-2 text-center">综合评分</th>
-                  <th className="px-3 py-2 text-right">市盈率</th>
-                  <th className="px-3 py-2 text-right">ROE(%)</th>
-                  <th className="px-3 py-2 text-right">毛利率(%)</th>
-                  <th className="px-3 py-2 text-right">营收增(%)</th>
-                  <th className="px-3 py-2 text-right">利润增(%)</th>
-                  <th className="px-3 py-2">因子贡献</th>
-                </tr>
-              </thead>
-              <tbody>
-                {scored.map((s, i) => {
-                  const pct = topScore > 0 ? (s.score / topScore) * 100 : 0
-                  const tone = pct >= 80 ? 'green' : pct >= 50 ? 'amber' : 'zinc'
-                  return (
-                    <tr key={s.code} className="border-t border-zinc-100 hover:bg-zinc-50">
-                      <td className="px-3 py-2 text-center text-zinc-400">{i + 1}</td>
-                      <td className="px-3 py-2">
-                        <div className="text-sm font-medium text-zinc-900">{s.code}</div>
-                        <div className="text-xs text-zinc-500">{s.name}</div>
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-24 overflow-hidden rounded-full bg-zinc-100">
-                            <div className={`h-full rounded-full bg-${tone}-400`} style={{ width: `${pct}%`, backgroundColor: pct >= 80 ? '#4ade80' : pct >= 50 ? '#fbbf24' : '#d1d5db' }} />
+          {loading && sorted.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-zinc-500">加载中...</div>
+          ) : error && sorted.length === 0 ? (
+            <div className="flex flex-col items-center px-4 py-8">
+              <p className="text-sm text-red-600">{error}</p>
+              <button
+                onClick={loadScores}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-4 py-2 text-xs text-zinc-600 hover:bg-zinc-50"
+              >
+                <RefreshCcw className="h-3.5 w-3.5" />
+                重新加载
+              </button>
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-zinc-500">暂无评分数据</div>
+          ) : (
+            <div className="overflow-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-zinc-50 text-xs text-zinc-500">
+                  <tr>
+                    <th className="px-3 py-2 w-8">#</th>
+                    <th className="px-3 py-2">股票</th>
+                    <th className="px-3 py-2 text-center">综合评分</th>
+                    {factors.filter((f) => activeFactors.has(f.key)).map((f) => (
+                      <th key={f.key} className="px-3 py-2 text-right">{f.label}</th>
+                    ))}
+                    <th className="px-3 py-2">因子贡献</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((s, i) => {
+                    const pct = topScore > 0 ? (s.total_score / topScore) * 100 : 0
+                    const activeFactorKeys = factors.filter((f) => activeFactors.has(f.key)).map((f) => f.key)
+                    return (
+                      <tr key={s.code} className="border-t border-zinc-100 hover:bg-zinc-50">
+                        <td className="px-3 py-2 text-center text-zinc-400">{i + 1}</td>
+                        <td className="px-3 py-2">
+                          <div className="text-sm font-medium text-zinc-900">{s.code}</div>
+                          <div className="text-xs text-zinc-500">{s.name}</div>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-24 overflow-hidden rounded-full bg-zinc-100">
+                              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: pct >= 80 ? '#4ade80' : pct >= 50 ? '#fbbf24' : '#d1d5db' }} />
+                            </div>
+                            <span className="text-sm font-bold text-zinc-900">{s.total_score.toFixed(1)}</span>
                           </div>
-                          <span className="text-sm font-bold text-zinc-900">{s.score.toFixed(1)}</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right text-zinc-700">{s.pe < 0 ? '亏损' : s.pe.toFixed(1)}</td>
-                      <td className={`px-3 py-2 text-right ${s.roe >= 15 ? 'text-red-600 font-medium' : 'text-zinc-700'}`}>{s.roe.toFixed(1)}</td>
-                      <td className="px-3 py-2 text-right text-zinc-700">{s.gross.toFixed(1)}</td>
-                      <td className={`px-3 py-2 text-right ${s.rev_growth > 0 ? 'text-red-600' : 'text-green-600'}`}>{s.rev_growth > 0 ? '+' : ''}{s.rev_growth.toFixed(1)}</td>
-                      <td className={`px-3 py-2 text-right ${s.profit_growth > 0 ? 'text-red-600' : 'text-green-600'}`}>{s.profit_growth > 0 ? '+' : ''}{s.profit_growth.toFixed(1)}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-1">
-                          {FACTORS.filter((f) => activeFactors.has(f.key)).map((f) => (
-                            <span key={f.key} className="h-1.5 w-6 rounded-full bg-blue-400" />
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        {activeFactorKeys.map((key) => {
+                          const val = s.factors[key]
+                          const factorDef = factors.find((f) => f.key === key)
+                          const isUp = factorDef?.direction === 'up'
+                          const displayVal = val !== undefined ? val : 0
+                          return (
+                            <td key={key} className={`px-3 py-2 text-right ${isUp && displayVal > 0 ? 'text-red-600 font-medium' : displayVal < 0 ? 'text-green-600' : 'text-zinc-700'}`}>
+                              {typeof displayVal === 'number' ? displayVal.toFixed(1) : displayVal}
+                            </td>
+                          )
+                        })}
+                        <td className="px-3 py-2">
+                          <div className="flex gap-1">
+                            {activeFactorKeys.map((key) => (
+                              <span key={key} className="h-1.5 w-6 rounded-full bg-blue-400" />
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardBody>
       </Card>
     </div>

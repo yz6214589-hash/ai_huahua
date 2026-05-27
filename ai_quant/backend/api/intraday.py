@@ -573,3 +573,144 @@ def stock_intraday(
 
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 板块轮动数据
+# ---------------------------------------------------------------------------
+
+@router.get("/intraday/sectors")
+def get_sector_rotation(
+    date_param: str = Query(default="", alias="date"),
+    sort: str = Query(default="inflow", alias="sort"),
+) -> dict[str, Any]:
+    """
+    获取板块轮动数据。
+
+    从 trade_sector_daily 表查询指定日期的板块数据，
+    支持按主力净流入或涨跌幅排序。
+
+    Args:
+        date_param: 交易日期（YYYY-MM-DD），不传则查询最新交易日
+        sort: 排序方式 inflow（按成交额排序）/ change（按涨跌幅排序）
+
+    Returns:
+        dict: 包含 items（板块列表）和 total（总数）
+    """
+    logger.info("板块轮动数据请求", extra={
+        "date": date_param or "auto",
+        "sort": sort,
+    })
+    conn, qd = _get_conn_qd()
+    if conn is None or qd is None:
+        raise HTTPException(status_code=503, detail="数据库不可用")
+
+    try:
+        # 确定目标日期
+        if date_param:
+            try:
+                target_date = date_param
+                datetime.strptime(target_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="日期格式错误，请使用 YYYY-MM-DD 格式")
+        else:
+            # 查询 trade_sector_daily 中最新的交易日期
+            latest_rows = qd(conn, "SELECT MAX(trade_date) as max_date FROM trade_sector_daily", ())
+            if not latest_rows or not latest_rows[0].get("max_date"):
+                return {"items": [], "total": 0}
+            max_dt = latest_rows[0]["max_date"]
+            if hasattr(max_dt, "strftime"):
+                target_date = max_dt.strftime("%Y-%m-%d")
+            else:
+                target_date = str(max_dt)
+
+        # 确定排序字段
+        sort_column = "amount" if sort == "inflow" else "change_pct"
+        sort_order = "DESC"
+
+        # 查询板块数据
+        sql = f"""
+            SELECT
+                sector_code,
+                sector_name,
+                sector_level,
+                trade_date,
+                change_pct,
+                amount,
+                composite_score,
+                rank_position,
+                phase,
+                strength_score
+            FROM trade_sector_daily
+            WHERE trade_date = %s AND sector_level = 1
+            ORDER BY {sort_column} {sort_order}
+        """
+        rows = qd(conn, sql, (target_date,))
+
+        # 对于每个板块，尝试获取3日涨跌幅（通过查询前3个交易日的数据）
+        items = []
+        for row in rows:
+            sector_code = row.get("sector_code", "")
+            sector_name = row.get("sector_name", "")
+
+            # 查询前3日涨跌幅
+            change_3d_sql = """
+                SELECT change_pct FROM trade_sector_daily
+                WHERE sector_code = %s AND sector_level = 1 AND trade_date < %s
+                ORDER BY trade_date DESC LIMIT 1 OFFSET 2
+            """
+            change_3d_rows = qd(conn, change_3d_sql, (sector_code, target_date))
+            change_3d_val = None
+            if change_3d_rows and change_3d_rows[0].get("change_pct") is not None:
+                current_pct = _to_float(row.get("change_pct")) or 0
+                prev_3d_pct = _to_float(change_3d_rows[0]["change_pct"]) or 0
+                # 3日涨跌幅 = (1 + 今日%) * (1 + 昨日%) * (1 + 前日%) - 1 的近似
+                # 改用累计涨跌幅差值
+                change_3d_val = round(current_pct - prev_3d_pct, 4)
+
+            # 查询板块内top股票
+            top_stocks_sql = """
+                SELECT m.stock_code, m.stock_name, d.change_pct
+                FROM trade_stock_daily d
+                JOIN trade_stock_master m ON d.stock_code = m.stock_code
+                WHERE m.sector_level1 = %s AND d.trade_date = %s
+                ORDER BY d.change_pct DESC
+                LIMIT 5
+            """
+            top_rows = qd(conn, top_stocks_sql, (sector_name, target_date))
+            top_stocks = []
+            for ts in top_rows:
+                top_stocks.append({
+                    "code": ts.get("stock_code", ""),
+                    "name": ts.get("stock_name", ""),
+                    "change_pct": _to_float(ts.get("change_pct")),
+                })
+
+            amount_val = _to_float(row.get("amount"))
+            # 将 amount（元）转为亿元
+            net_inflow_val = round(amount_val / 100000000, 2) if amount_val else 0
+
+            items.append({
+                "name": sector_name,
+                "change_pct": _to_float(row.get("change_pct")),
+                "change_3d": change_3d_val,
+                "net_inflow": net_inflow_val,
+                "turnover": net_inflow_val,
+                "top_stocks": top_stocks,
+                "hot_rank": _to_int(row.get("rank_position")),
+            })
+
+        logger.info("板块轮动数据查询完成",
+                    extra={"date": target_date, "count": len(items)})
+
+        return {
+            "items": items,
+            "total": len(items),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("板块轮动数据查询失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"板块轮动数据查询失败: {str(e)}")
+    finally:
+        conn.close()

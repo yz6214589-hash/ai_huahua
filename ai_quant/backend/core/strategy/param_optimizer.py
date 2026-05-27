@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import itertools
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -83,7 +84,20 @@ def run_param_search(
     total = len(combinations)
     results: list[dict[str, Any]] = []
 
+    _t_start = time.time()
+    _error_count = 0
+
+    logger.info(
+        "参数网格搜索开始",
+        extra={
+            "total_combinations": total,
+            "param_grid_keys": list(param_grid.keys()),
+            "data_rows": len(df),
+        }
+    )
+
     for i, params in enumerate(combinations):
+        _comb_t0 = time.time()
         try:
             bt_result = run_backtest(
                 df=df,
@@ -95,38 +109,57 @@ def run_param_search(
             if "error" not in bt_result.metrics:
                 result_item = {
                     "params": params,
-                    "metrics": {
-                        "total_return": bt_result.metrics.get("total_return", 0),
-                        "annual_return": bt_result.metrics.get("annual_return", 0),
-                        "sharpe": bt_result.metrics.get("sharpe", None),
-                        "max_drawdown": bt_result.metrics.get("max_drawdown", 0),
-                        "total_trades": bt_result.metrics.get("total_trades", 0),
-                        "win_rate": bt_result.metrics.get("win_rate", 0),
-                    },
+                    "total_return": bt_result.metrics.get("total_return", 0),
+                    "annual_return": bt_result.metrics.get("annual_return", 0),
+                    "sharpe": bt_result.metrics.get("sharpe", None),
+                    "max_drawdown": bt_result.metrics.get("max_drawdown", 0),
+                    "num_trades": bt_result.metrics.get("total_trades", 0),
+                    "win_rate": bt_result.metrics.get("win_rate", 0),
                 }
                 results.append(result_item)
             else:
                 results.append({"params": params, "error": bt_result.metrics.get("error", "unknown")})
+                _error_count += 1
         except Exception as e:
             results.append({"params": params, "error": str(e)})
+            _error_count += 1
 
-        if (i + 1) % 50 == 0:
-            logger.info(f"参数搜索进度: {i+1}/{total}")
+        _comb_t1 = time.time()
+        logger.info(
+            "参数组合回测完成",
+            extra={
+                "index": i + 1,
+                "total": total,
+                "progress_pct": round((i + 1) / total * 100, 1),
+                "params": params,
+                "duration_ms": round((_comb_t1 - _comb_t0) * 1000),
+            }
+        )
 
-    # 找出最佳参数（按收益率）
-    valid_results = [r for r in results if "metrics" in r]
+    _t_end = time.time()
+    valid_results = [r for r in results if "error" not in r]
+    logger.info(
+        "参数网格搜索完成",
+        extra={
+            "total_combinations": total,
+            "successful": len(valid_results),
+            "failed": _error_count,
+            "total_duration_ms": round((_t_end - _t_start) * 1000),
+            "avg_per_combination_ms": round((_t_end - _t_start) / max(total, 1) * 1000, 1),
+        }
+    )
     best_by_return = None
     best_by_sharpe = None
 
     if valid_results:
         # 按总收益率排序
-        sorted_by_return = sorted(valid_results, key=lambda x: x["metrics"].get("total_return", float("-inf")), reverse=True)
+        sorted_by_return = sorted(valid_results, key=lambda x: x.get("total_return", float("-inf")), reverse=True)
         best_by_return = sorted_by_return[0]
 
         # 按Sharpe排序（过滤掉 None/NaN）
-        sharpe_valid = [r for r in valid_results if r["metrics"].get("sharpe") is not None and pd.notna(r["metrics"].get("sharpe"))]
+        sharpe_valid = [r for r in valid_results if r.get("sharpe") is not None and pd.notna(r.get("sharpe"))]
         if sharpe_valid:
-            sorted_by_sharpe = sorted(sharpe_valid, key=lambda x: x["metrics"].get("sharpe", float("-inf")), reverse=True)
+            sorted_by_sharpe = sorted(sharpe_valid, key=lambda x: x.get("sharpe", float("-inf")), reverse=True)
             best_by_sharpe = sorted_by_sharpe[0]
 
     return ParamSearchResult(

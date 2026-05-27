@@ -204,6 +204,23 @@ class UnifiedFormatter(logging.Formatter):
                 parts = [f"{k}={v}" for k, v in extra_dict.items()]
                 extra_info = " " + " ".join(parts)
 
+        _BUILTIN_ATTRS = frozenset({
+            "name", "msg", "args", "created", "relativeCreated", "exc_info",
+            "exc_text", "stack_info", "lineno", "funcName", "pathname", "filename",
+            "module", "thread", "threadName", "process", "processName", "levelname",
+            "levelno", "message", "msecs", "taskName",
+        })
+        extra_items: dict[str, object] = {}
+        for k, v in record.__dict__.items():
+            if k.startswith("_") or k in _BUILTIN_ATTRS:
+                continue
+            extra_items[k] = v
+        if extra_items:
+            sanitized = sanitize_dict(extra_items)
+            if sanitized:
+                parts = [f"{k}={v}" for k, v in sanitized.items()]
+                extra_info = extra_info + " " + " ".join(parts) if extra_info else " " + " ".join(parts)
+
         return f"[{timestamp}] [{module}] [{level}] {message}{extra_info}"
 
 

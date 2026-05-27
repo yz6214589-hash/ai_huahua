@@ -114,7 +114,7 @@ export default function StrategyLibrary() {
                   </div>
                   <div className="flex gap-2">
                     <a
-                      href="/strategy/instances"
+                      href={`/strategy/instances?strategy_id=${s.strategy_id}`}
                       className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
                     >
                       创建实例 <ArrowRight className="h-3 w-3" />

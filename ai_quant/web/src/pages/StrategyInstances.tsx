@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { fetchJson, postJson } from '@/api/client'
 import { toast } from '@/components/Toast'
 import { Card, CardBody, CardHeader } from '@/components/Card'
@@ -25,6 +26,8 @@ interface StrategyInstance {
 }
 
 export default function StrategyInstances() {
+  const [searchParams] = useSearchParams()
+  const urlStrategyId = searchParams.get('strategy_id')
   const [strategies, setStrategies] = useState<StrategyDef[]>([])
   const [instances, setInstances] = useState<StrategyInstance[]>([])
   const [loading, setLoading] = useState(false)
@@ -32,6 +35,8 @@ export default function StrategyInstances() {
   const [formStrategyId, setFormStrategyId] = useState('')
   const [formName, setFormName] = useState('')
   const [formParams, setFormParams] = useState<Record<string, string>>({})
+  // 记录用户是否手动编辑过实例名称
+  const nameEditedByUser = useRef(false)
 
   const loadAll = async () => {
     setLoading(true)
@@ -42,6 +47,12 @@ export default function StrategyInstances() {
       ])
       setStrategies(s.strategies || [])
       setInstances(i.instances || [])
+      // 如果 URL 中携带了 strategy_id，自动打开表单并选中该策略
+      if (urlStrategyId && s.strategies?.find((st) => st.strategy_id === urlStrategyId)) {
+        setShowForm(true)
+        setFormName('')
+        handleStrategyChange(urlStrategyId, s.strategies)
+      }
     } catch (e) {
       toast('error', e instanceof Error ? e.message : String(e))
     } finally {
@@ -53,7 +64,25 @@ export default function StrategyInstances() {
 
   const currentStrategy = strategies.find((s) => s.strategy_id === formStrategyId)
 
+  /** 根据策略名称和参数值自动生成实例名 */
+  const generateAutoName = (sid: string, params: Record<string, string>) => {
+    const def = strategies.find((s) => s.strategy_id === sid)
+    if (!def) return ''
+    const paramValues = Object.values(params)
+      .filter((v) => v !== '' && v !== undefined && v !== null)
+      .join('_')
+    return paramValues ? `${def.name}_${paramValues}` : def.name
+  }
+
+  // 当策略或参数变化时，自动生成实例名称（仅当用户未手动编辑时）
+  useEffect(() => {
+    if (!nameEditedByUser.current) {
+      setFormName(generateAutoName(formStrategyId, formParams))
+    }
+  }, [formStrategyId, formParams])
+
   const openForm = () => {
+    nameEditedByUser.current = false
     setShowForm(true)
     setFormStrategyId(strategies[0]?.strategy_id || '')
     setFormName('')
@@ -65,11 +94,20 @@ export default function StrategyInstances() {
       }
       setFormParams(p)
     }
+    // 确保新建实例面板在视口内可见
+    setTimeout(() => {
+      const formCard = document.querySelector('[data-testid="create-instance-form"]')
+      if (formCard) {
+        formCard.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 100)
   }
 
-  const handleStrategyChange = (sid: string) => {
+  const handleStrategyChange = (sid: string, allStrategies?: StrategyDef[]) => {
+    nameEditedByUser.current = false
     setFormStrategyId(sid)
-    const def = strategies.find((s) => s.strategy_id === sid)
+    const src = allStrategies || strategies
+    const def = src.find((s) => s.strategy_id === sid)
     if (def) {
       const p: Record<string, string> = {}
       for (const [k, v] of Object.entries(def.default_params)) {
@@ -104,6 +142,7 @@ export default function StrategyInstances() {
       await postJson('/api/v1/analysis/strategy-instances', { strategy_id: formStrategyId, name: formName.trim(), params })
       toast('success', `实例「${formName}」创建成功`)
       setShowForm(false)
+      nameEditedByUser.current = false
       await loadAll()
     } catch (e) {
       toast('error', e instanceof Error ? e.message : String(e))
@@ -145,7 +184,7 @@ export default function StrategyInstances() {
       </div>
 
       {showForm && (
-        <Card>
+        <Card data-testid="create-instance-form">
           <CardHeader title="新建策略实例" />
           <CardBody>
             <div className="space-y-4">
@@ -166,8 +205,11 @@ export default function StrategyInstances() {
                   <div className="mb-1 text-xs text-zinc-500">实例名称</div>
                   <input
                     value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    placeholder="例如：我的MACD参数"
+                    onChange={(e) => {
+                      nameEditedByUser.current = true
+                      setFormName(e.target.value)
+                    }}
+                    placeholder="自动生成策略名称_参数值"
                     className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                   />
                 </div>
@@ -229,7 +271,7 @@ export default function StrategyInstances() {
                   <Plus className="h-4 w-4" />
                   保存实例
                 </button>
-                <button onClick={() => setShowForm(false)} className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+                <button onClick={() => { nameEditedByUser.current = false; setShowForm(false) }} className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
                   取消
                 </button>
               </div>

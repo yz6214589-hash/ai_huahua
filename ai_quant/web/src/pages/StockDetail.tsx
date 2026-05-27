@@ -277,8 +277,8 @@ export default function StockDetail() {
       <CardBody>
         {loadingFund ? <div className="text-sm text-zinc-500">加载中…</div> : null}
         {fund?.reportDate ? <div className="mb-3 text-xs text-zinc-500">最新财报期：{fund.reportDate}</div> : null}
-        {!loadingFund && (!fund || fund.items.length === 0) ? <div className="text-sm text-zinc-500">暂无数据</div> : null}
-        {fund && fund.items.length > 0 ? (
+        {!loadingFund && (!fund || !fund?.items || fund.items.length === 0) ? <div className="text-sm text-zinc-500">暂无数据</div> : null}
+        {fund?.items && fund.items.length > 0 ? (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {fund.items.map((it) => (
               <div key={it.key} className="rounded-lg border border-zinc-200 bg-white px-3 py-2" title={it.tooltip}>
@@ -910,10 +910,10 @@ export default function StockDetail() {
       />
       <CardBody>
         {loadingIntraday ? <div className="text-sm text-zinc-500">加载中…</div> : null}
-        {!loadingIntraday && (!intraday || intraday.minute_data.length === 0) ? (
+        {!loadingIntraday && (!intraday || !intraday?.minute_data || intraday.minute_data.length === 0) ? (
           <div className="text-sm text-zinc-500">暂无分时数据</div>
         ) : null}
-        {!loadingIntraday && intraday && intraday.minute_data.length > 0 ? (
+        {!loadingIntraday && intraday?.minute_data && intraday.minute_data.length > 0 ? (
           <div>
             {/* 价格摘要信息 */}
             <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">
@@ -922,7 +922,7 @@ export default function StockDetail() {
                 <span className="font-semibold text-zinc-900">{fmtNum(intraday.pre_close, 2)}</span>
               </div>
               {(() => {
-                const lastData = intraday.minute_data[intraday.minute_data.length - 1]
+                const lastData = intraday?.minute_data?.[intraday.minute_data.length - 1]
                 if (!lastData || !lastData.price || !intraday.pre_close) return null
                 const change = lastData.price - intraday.pre_close
                 const pct = (change / intraday.pre_close) * 100
@@ -972,8 +972,8 @@ export default function StockDetail() {
       />
       <CardBody>
         {loadingFeed ? <div className="text-sm text-zinc-500">加载中…</div> : null}
-        {!loadingFeed && (!feed || feed.items.length === 0) ? <div className="text-sm text-zinc-500">暂无数据</div> : null}
-        {feed && feed.items.length > 0 ? (
+        {!loadingFeed && (!feed || !feed?.items || feed.items.length === 0) ? <div className="text-sm text-zinc-500">暂无数据</div> : null}
+        {feed?.items && feed.items.length > 0 ? (
           <div className="space-y-2">
             {feed.items.map((it, idx) => (
               <div key={`${it.title}-${idx}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2">

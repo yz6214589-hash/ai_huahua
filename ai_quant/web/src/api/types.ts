@@ -103,6 +103,7 @@ export interface WatchlistGroup {
   id: number
   name: string
   sort_order: number
+  stock_count?: number
 }
 
 // 自选股行情快照，用于自选股列表展示价格

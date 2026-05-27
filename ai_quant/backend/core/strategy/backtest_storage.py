@@ -163,6 +163,8 @@ def save_backtest(record: dict) -> str:
                     "INSERT INTO backtest_nav_log (backtest_id, log_date, nav) VALUES (%s, %s, %s)",
                     nav_rows,
                 )
+        # 提交事务，确保数据持久化
+        conn.commit()
     except Exception as e:
         logger.error("保存回测失败", extra={"backtest_id": backtest_id, "error": str(e)})
     finally:
@@ -303,6 +305,7 @@ def delete_backtest(backtest_id: str) -> bool:
     try:
         # nav_log 通过外键 ON DELETE CASCADE 自动删除
         affected = execute(conn, "DELETE FROM backtest_records WHERE backtest_id = %s", (backtest_id,))
+        conn.commit()
         return affected > 0
     except Exception as e:
         logger.error("删除回测失败", extra={"backtest_id": backtest_id, "error": str(e)})

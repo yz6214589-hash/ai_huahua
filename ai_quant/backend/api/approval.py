@@ -618,3 +618,92 @@ def get_pending_approvals(
         return {"items": [], "total": 0, "page": page, "page_size": page_size}
     finally:
         conn.close()
+
+
+# ============ 审批流程默认配置 ============
+
+@router.get("/config")
+def get_approval_config() -> dict[str, Any]:
+    """
+    获取审批流程的默认配置模板。
+
+    返回审批流程设计器的默认节点配置、条件字段、操作符
+    和阈值设置等默认值。
+
+    Returns:
+        dict: 包含默认配置的字典
+    """
+    logger.info("审批流程默认配置查询")
+
+    return {
+        "default_nodes": [
+            {
+                "id": "node_start",
+                "type": "start",
+                "label": "开始",
+                "x": 100,
+                "y": 200,
+            },
+            {
+                "id": "node_approver_1",
+                "type": "approver",
+                "label": "风控经理审批",
+                "x": 300,
+                "y": 200,
+                "approver_type": "role",
+                "approver_id": "risk_manager",
+                "approver_name": "风控经理",
+            },
+            {
+                "id": "node_end",
+                "type": "end",
+                "label": "结束",
+                "x": 500,
+                "y": 200,
+            },
+        ],
+        "default_edges": [
+            {"id": "edge_1", "source": "node_start", "target": "node_approver_1"},
+            {"id": "edge_2", "source": "node_approver_1", "target": "node_end"},
+        ],
+        "condition_fields": [
+            {"key": "amount", "label": "成交金额", "unit": "元", "type": "number"},
+            {"key": "volume", "label": "成交量", "unit": "股", "type": "number"},
+            {"key": "price", "label": "价格", "unit": "元", "type": "number"},
+            {"key": "stock_code", "label": "股票代码", "type": "string"},
+            {"key": "side", "label": "买卖方向", "type": "enum",
+             "options": [{"value": "buy", "label": "买入"}, {"value": "sell", "label": "卖出"}]},
+            {"key": "position_pct", "label": "持仓占比", "unit": "%", "type": "number"},
+            {"key": "total_amount", "label": "累计成交额", "unit": "元", "type": "number"},
+        ],
+        "operators": [
+            {"value": "gt", "label": "大于"},
+            {"value": "gte", "label": "大于等于"},
+            {"value": "lt", "label": "小于"},
+            {"value": "lte", "label": "小于等于"},
+            {"value": "eq", "label": "等于"},
+            {"value": "neq", "label": "不等于"},
+            {"value": "in", "label": "包含"},
+            {"value": "not_in", "label": "不包含"},
+        ],
+        "default_thresholds": {
+            "amount": 1000000,
+            "volume": 10000,
+            "price": 50,
+            "position_pct": 10,
+            "total_amount": 5000000,
+        },
+        "approver_roles": [
+            {"id": "risk_manager", "name": "风控经理"},
+            {"id": "ceo", "name": "总经理"},
+            {"id": "trader", "name": "交易员"},
+            {"id": "compliance", "name": "合规专员"},
+        ],
+        "flow_settings": {
+            "max_nodes": 20,
+            "max_edges": 30,
+            "support_parallel": True,
+            "support_condition": True,
+            "default_logic": "AND",
+        },
+    }

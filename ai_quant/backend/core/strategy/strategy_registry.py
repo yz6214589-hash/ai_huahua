@@ -1009,8 +1009,11 @@ def _make_grid_classic():
         def next(self) -> None:
             close = float(self.data.close[0])
             if self.engine is None:
-                lo = float(self.range_low[0])
-                hi = float(self.range_high[0])
+                try:
+                    lo = float(self.range_low[0])
+                    hi = float(self.range_high[0])
+                except (TypeError, IndexError, ValueError):
+                    return
                 if not (lo > 0 and hi > lo):
                     return
                 lower = lo * (1.0 - float(self.p.margin_pct))
@@ -1044,14 +1047,20 @@ def _make_chan_grid():
             self.last_zd = None
 
         def _has_center(self) -> bool:
-            zg = float(getattr(self.data, "chan_zg", [0.0])[0] or 0.0)
-            zd = float(getattr(self.data, "chan_zd", [0.0])[0] or 0.0)
+            try:
+                zg = float(getattr(self.data, "chan_zg", [0.0])[0] or 0.0)
+                zd = float(getattr(self.data, "chan_zd", [0.0])[0] or 0.0)
+            except (TypeError, IndexError, ValueError):
+                return False
             return zg > 0 and zd > 0 and zg > zd
 
         def next(self) -> None:
-            close = float(self.data.close[0])
-            zg = float(getattr(self.data, "chan_zg", [0.0])[0] or 0.0)
-            zd = float(getattr(self.data, "chan_zd", [0.0])[0] or 0.0)
+            try:
+                close = float(self.data.close[0])
+                zg = float(getattr(self.data, "chan_zg", [0.0])[0] or 0.0)
+                zd = float(getattr(self.data, "chan_zd", [0.0])[0] or 0.0)
+            except (TypeError, IndexError, ValueError):
+                return
 
             if not self._has_center():
                 self.engine = None

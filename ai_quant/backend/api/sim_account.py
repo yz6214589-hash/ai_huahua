@@ -93,7 +93,7 @@ def _ensure_sim_tables() -> None:
             conn.close()
     except Exception as e:
         import traceback
-        logger.error(f"自动建表失败: {e}\n{traceback.format_exc()}")
+        logger.error("自动建表失败", extra={"error": str(e), "traceback": traceback.format_exc()})
 
 
 _ensure_sim_tables()
