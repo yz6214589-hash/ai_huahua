@@ -127,13 +127,12 @@ const Topbar = memo(function Topbar() {
     if (location.pathname.startsWith('/execution')) return '交易终端'
     if (location.pathname.startsWith('/risk')) return '风控中心'
     if (location.pathname.startsWith('/workflow')) return '工作流'
+    if (location.pathname.startsWith('/strategy/backtest-history')) return '回测历史'
     if (location.pathname.startsWith('/strategy')) return '策略分析'
     if (location.pathname.startsWith('/stock-select')) return '选股'
     if (location.pathname.startsWith('/opportunity')) return '机会捕捉'
     if (location.pathname.startsWith('/watchlist')) return '自选股'
-    if (location.pathname.startsWith('/risk')) return '风控中心'
     if (location.pathname.startsWith('/performance')) return '绩效报告'
-    if (location.pathname.startsWith('/execution')) return '交易终端'
     if (location.pathname.startsWith('/stock/')) return '个股详情'
     return '首页'
   }, [location.pathname])
@@ -154,7 +153,7 @@ const Topbar = memo(function Topbar() {
   }, [selectedStock, navigate, location.pathname])
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-3 md:px-6">
+    <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-3 md:px-6">
       {/* 左侧：页面标题和日期 */}
       <div>
         <div className="text-sm font-semibold text-zinc-900">{title}</div>
@@ -193,15 +192,16 @@ export default function AppShell() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <div className="flex">
-        {/* 侧边栏，可折叠 */}
+    /** 外层容器固定为视口高度，隐藏溢出，防止全页滚动 */
+    <div className="h-screen overflow-hidden bg-zinc-50">
+      <div className="flex h-full">
+        {/* 侧边栏，可折叠（固定左侧） */}
         <Sidebar collapsed={sidebarCollapsed} onToggle={handleToggleSidebar} />
         {/* 主内容区域 */}
-        <div className="flex min-h-screen flex-1 flex-col min-w-0">
+        <div className="flex flex-1 flex-col min-w-0">
           <Topbar />
-          {/* 页面内容，通过路由 Outlet 渲染 */}
-          <main className="flex-1 px-4 py-6 md:px-6 min-w-0">
+          {/* 页面内容，通过路由 Outlet 渲染（可滚动区域） */}
+          <main className="flex-1 overflow-y-auto px-4 pb-6 md:px-6 min-w-0">
             <Outlet />
           </main>
         </div>

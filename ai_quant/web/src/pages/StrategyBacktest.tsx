@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { fetchJson, postJson } from '@/api/client'
+import { fetchJson, postJson, translateApiError } from '@/api/client'
 import { toast } from '@/components/Toast'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
 import { Play, RefreshCcw, TrendingUp, TrendingDown, XCircle, CheckCircle2, ChevronDown, ChevronRight, History, BarChart3 } from 'lucide-react'
 import BacktestCharts from '@/components/BacktestCharts'
-import BacktestHistory from '@/pages/BacktestHistory'
 import { StockPicker } from '@/components/StockPicker'
 import type { StockSearchItem } from '@/api/types'
 
@@ -301,8 +300,6 @@ export default function StrategyBacktest() {
   const [backtestError, setBacktestError] = useState<string | null>(null)
   // 参数校验错误列表
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
-  // 回测历史模态框可见性
-  const [historyVisible, setHistoryVisible] = useState(false)
   // 页面数据是否已就绪（用于处理 URL 实例ID）
   const [pageReady, setPageReady] = useState(false)
 
@@ -310,7 +307,7 @@ export default function StrategyBacktest() {
   const [selectedInstanceId, setSelectedInstanceId] = useState('')
   const [selectedStrategyId, setSelectedStrategyId] = useState('')
   const [overrideParams, setOverrideParams] = useState<Record<string, string>>({})
-  const [stockCode, setStockCode] = useState<StockSearchItem>({ code: '' } as StockSearchItem)
+  const [stockCode, setStockCode] = useState<StockSearchItem | null>(null)
   const [batchStockCodes, setBatchStockCodes] = useState<StockSearchItem[]>([])
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
   const [selectionType, setSelectionType] = useState<'list' | 'group'>('list')
@@ -358,7 +355,7 @@ export default function StrategyBacktest() {
       toast('success', `绩效报告已生成：${stockCode}`)
       navigate('/strategy/performance')
     } catch (e) {
-      toast('error', `生成绩效报告失败：${e instanceof Error ? e.message : String(e)}`)
+      toast('error', `生成绩效报告失败：${translateApiError(e instanceof Error ? e.message : String(e))}`)
     }
   }
 
@@ -379,7 +376,7 @@ export default function StrategyBacktest() {
         setSelectedInstanceId(urlInstanceId)
       }
       setPageReady(true)
-    }).catch((e) => toast('error', e instanceof Error ? e.message : String(e)))
+    }).catch((e) => toast('error', translateApiError(e instanceof Error ? e.message : String(e))))
   }, [])
 
   const currentInstance = instances.find((x) => x.instance_id === selectedInstanceId)
@@ -603,7 +600,7 @@ export default function StrategyBacktest() {
       const errorMsg = e instanceof Error ? e.message : String(e)
       console.error(`[回测失败] ${errorMsg}`)
       setBacktestError(errorMsg)
-      toast('error', `回测失败：${errorMsg}`)
+      toast('error', `回测失败：${translateApiError(errorMsg)}`)
     } finally {
       setRunning(false)
     }
@@ -641,7 +638,7 @@ export default function StrategyBacktest() {
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e)
       setBacktestError(errorMsg)
-      toast('error', `回测失败：${errorMsg}`)
+      toast('error', `回测失败：${translateApiError(errorMsg)}`)
     } finally {
       setRunning(false)
     }
@@ -676,7 +673,7 @@ export default function StrategyBacktest() {
       <Card>
         <CardHeader title="回测参数" right={
           <button
-            onClick={() => setHistoryVisible(true)}
+            onClick={() => navigate('/strategy/backtest-history')}
             className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
           >
             <History className="h-3.5 w-3.5" />
@@ -801,7 +798,7 @@ export default function StrategyBacktest() {
                               setGroupItems(res.items || [])
                               setGroupPreviewVisible(true)
                             } catch (e) {
-                              toast('error', `加载分组股票失败：${e instanceof Error ? e.message : String(e)}`)
+                              toast('error', `加载分组股票失败：${translateApiError(e instanceof Error ? e.message : String(e))}`)
                             }
                           }}
                           disabled={!selectedGroupId}
@@ -854,7 +851,7 @@ export default function StrategyBacktest() {
                                     setGroups((prev) => prev.map((g) => g.id === selectedGroupId ? { ...g, stock_count: Math.max(0, g.stock_count - 1) } : g))
                                     toast('success', `已删除 ${item.stock_code}`)
                                   } catch (e) {
-                                    toast('error', `删除失败：${e instanceof Error ? e.message : String(e)}`)
+                                    toast('error', `删除失败：${translateApiError(e instanceof Error ? e.message : String(e))}`)
                                   }
                                 }}
                                 className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50"
@@ -906,7 +903,7 @@ export default function StrategyBacktest() {
                                   const res = await fetchJson<{ ok: boolean; items: Array<{ id: number; stock_code: string; stock_name: string }> }>(`/api/v1/stock-groups/${selectedGroupId}/items`)
                                   setGroupItems(res.items || [])
                                 } catch (e) {
-                                  toast('error', `追加失败：${e instanceof Error ? e.message : String(e)}`)
+                                  toast('error', `追加失败：${translateApiError(e instanceof Error ? e.message : String(e))}`)
                                 }
                               }}
                               disabled={groupAddStocks.length === 0}
@@ -1157,7 +1154,7 @@ export default function StrategyBacktest() {
 
             {currentStrategy?.requires_chan && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                此策略依赖缠论数据，当前环境暂不支持缠论策略回测
+                此策略依赖缠论数据，已支持缠论策略回测，请确保已安装缠论分析库
               </div>
             )}
             {currentStrategy?.requires_predictions && (
@@ -1417,26 +1414,6 @@ export default function StrategyBacktest() {
         </>
       )}
 
-      {/* 回测历史模态框 */}
-      {historyVisible && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 pt-12" onClick={() => setHistoryVisible(false)}>
-          <div className="w-[1000px] max-h-[85vh] overflow-auto rounded-lg bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
-              <button
-                onClick={() => setHistoryVisible(false)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-              >
-                ← 返回
-              </button>
-              <h3 className="text-lg font-semibold text-zinc-900">回测历史</h3>
-              <div className="w-20" />
-            </div>
-            <div className="p-6">
-              <BacktestHistory />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

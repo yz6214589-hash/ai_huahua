@@ -166,8 +166,8 @@ def run_backtest(
         cerebro.resampledata(feed, timeframe=bt.TimeFrame.Weeks, compression=1)
 
     class _Wrapped(strategy_cls):  # type: ignore[misc,valid-type]
-        def __init__(self) -> None:
-            super().__init__()
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
             self._trade_log: list[dict[str, Any]] = []
             self._nav_log: list[dict[str, Any]] = []
             self._entry_cache: dict[int, dict[str, Any]] = {}
@@ -229,7 +229,17 @@ def run_backtest(
                 pass
             return super().next()
 
-    cerebro.addstrategy(_Wrapped, **(strategy_params or {}))
+    filtered_params = {}
+    for k, v in (strategy_params or {}).items():
+        try:
+            if hasattr(strategy_cls, 'params') and hasattr(strategy_cls.params, k):
+                filtered_params[k] = v
+            elif not hasattr(strategy_cls, 'params'):
+                filtered_params[k] = v
+        except Exception:
+            pass
+
+    cerebro.addstrategy(_Wrapped, **filtered_params)
 
     start_value = cerebro.broker.getvalue()
     results = cerebro.run()
@@ -258,7 +268,7 @@ def run_backtest(
         "end_value": float(end_value),
         "total_return": float(total_return),
         "annual_return": float(annual_return),
-        "sharpe": float(sharpe.get("sharperatio", np.nan)) if isinstance(sharpe, dict) else np.nan,
+        "sharpe": float(sharpe.get("sharperatio") or np.nan) if isinstance(sharpe, dict) else np.nan,
         "max_drawdown": float(max_dd),
         "total_trades": total_trades,
         "won": won,

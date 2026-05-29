@@ -87,3 +87,17 @@ _diag_*.py
 # e2e测试产物
 **/playwright-report/
 **/test-results/
+**/e2e/screenshots/
+
+# 临时工具脚本
+find_stocks.py
+get_available_stocks.py
+upload_app*.py
+deploy_remote.py
+playwright_setup.py
+
+# 运行时测试结果
+strategy_test_results.json
+
+# 打包产物
+*.tar.gz

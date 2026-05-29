@@ -28,6 +28,7 @@ export default function StrategyLibrary() {
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [descExpandedId, setDescExpandedId] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -59,7 +60,19 @@ export default function StrategyLibrary() {
               }
             />
             <CardBody>
-              <p className="text-xs text-zinc-600 line-clamp-2">{s.description}</p>
+              <div>
+                <p className={`text-xs text-zinc-600 ${descExpandedId === s.strategy_id ? '' : 'line-clamp-2'}`}>
+                  {s.description}
+                </p>
+                {s.description.length > 80 && (
+                  <button
+                    onClick={() => setDescExpandedId(descExpandedId === s.strategy_id ? null : s.strategy_id)}
+                    className="mt-1 text-xs text-zinc-400 hover:text-zinc-600"
+                  >
+                    {descExpandedId === s.strategy_id ? '收起' : '展开'}
+                  </button>
+                )}
+              </div>
 
               <div className="mt-3 flex flex-wrap gap-1.5">
                 <span className="inline-flex items-center gap-1 rounded-md border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700">
@@ -91,7 +104,7 @@ export default function StrategyLibrary() {
                           <div className="mt-1 text-xs text-zinc-500">{param.help}</div>
                           <div className="mt-1 flex items-center gap-3 text-xs text-zinc-400">
                             {param.type === 'bool' && (
-                              <span>默认：{param.default ? '开启' : '关闭'}</span>
+                              <span>默认：{param.default === true ? '开启' : param.default === false ? '关闭' : '—'}</span>
                             )}
                             {param.type === 'enum' && (
                               <span>可选值：{param.values?.join(' / ')}</span>

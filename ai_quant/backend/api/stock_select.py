@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import os
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+import pymysql
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.db import connect, load_mysql_config, query_dict
@@ -34,6 +35,9 @@ class StockSelectRequest(BaseModel):
     market_cap_max: float | None = None
     gross_margin_min: float | None = None
     gross_margin_max: float | None = None
+    net_margin_min: float | None = None
+    net_margin_max: float | None = None
+    debt_ratio_min: float | None = None
     debt_ratio_max: float | None = None
     report_date: str | None = None
     page: int = 1
@@ -52,6 +56,7 @@ class StockSelectRequest(BaseModel):
     ebitda_max: float | None = None
     ev_ebitda_min: float | None = None
     ev_ebitda_max: float | None = None
+    industries: list[str] | None = None
 
 
 FILTER_FIELD_MAPPING: dict[str, str] = {
@@ -70,6 +75,15 @@ FILTER_FIELD_MAPPING: dict[str, str] = {
     "dividend_yield": "dividend_yield",
     "ebitda": "ebitda",
     "ev_ebitda": "ev_ebitda",
+    "net_margin": "net_margin",
+}
+
+# 数据库中存储为比率的字段（0.10 表示 10%），前端传入百分比值（10 表示 10%），
+# 查询时需要将前端值除以 100 转换为比率
+RATIO_FIELDS: set[str] = {
+    "roe", "gross_margin", "net_margin", "operating_margin",
+    "revenue_growth", "profit_growth", "dividend_yield",
+    "debt_ratio",
 }
 
 
@@ -80,20 +94,60 @@ def _build_where_clause(params: dict[str, Any]) -> tuple[str, list[Any]]:
     for prefix, db_column in FILTER_FIELD_MAPPING.items():
         min_val = params.get(f"{prefix}_min")
         if min_val is not None:
-            conditions.append(f"{db_column} >= %s")
+            conditions.append(f"f.{db_column} >= %s")
+            if prefix in RATIO_FIELDS:
+                min_val = min_val / 100.0
             values.append(min_val)
 
         max_val = params.get(f"{prefix}_max")
         if max_val is not None:
-            conditions.append(f"{db_column} <= %s")
+            conditions.append(f"f.{db_column} <= %s")
+            if prefix in RATIO_FIELDS:
+                max_val = max_val / 100.0
             values.append(max_val)
 
     if params.get("report_date"):
-        conditions.append("report_date = %s")
+        conditions.append("f.report_date = %s")
         values.append(params["report_date"])
+
+    # 行业筛选 - sector_level1 在 trade_stock_master 表中
+    industries = params.get("industries")
+    if industries:
+        placeholders = ",".join(["%s"] * len(industries))
+        conditions.append(f"m.sector_level1 IN ({placeholders})")
+        values.extend(industries)
 
     where = " AND ".join(conditions) if conditions else "1=1"
     return where, values
+
+
+def _create_direct_connection(cfg):
+    """创建独立的数据库连接（非连接池），使用较长的超时时间"""
+    return pymysql.connect(
+        host=cfg.host,
+        port=cfg.port,
+        user=cfg.user,
+        password=cfg.password,
+        database=cfg.database,
+        charset="utf8mb4",
+        autocommit=True,
+        connect_timeout=5,
+        read_timeout=15,
+        write_timeout=10,
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
+# 子查询SQL常量：取每只股票最新的报告期数据
+_LATEST_REPORT_SUBQUERY = """
+    SELECT f2.*
+    FROM trade_stock_financial f2
+    INNER JOIN (
+        SELECT stock_code, MAX(report_date) as latest_date
+        FROM trade_stock_financial
+        GROUP BY stock_code
+    ) latest ON f2.stock_code = latest.stock_code AND f2.report_date = latest.latest_date
+"""
 
 
 @router.post("/query")
@@ -125,7 +179,7 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
 
     try:
         cfg = load_mysql_config()
-        conn = connect(cfg)
+        conn = _create_direct_connection(cfg)
     except Exception as e:
         logger.error("数据库连接失败", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail="数据库连接失败")
@@ -146,6 +200,9 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
             "market_cap_max": body.market_cap_max,
             "gross_margin_min": body.gross_margin_min,
             "gross_margin_max": body.gross_margin_max,
+            "net_margin_min": body.net_margin_min,
+            "net_margin_max": body.net_margin_max,
+            "debt_ratio_min": body.debt_ratio_min,
             "debt_ratio_max": body.debt_ratio_max,
             "operating_margin_min": body.operating_margin_min,
             "operating_margin_max": body.operating_margin_max,
@@ -162,6 +219,7 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
             "ev_ebitda_min": body.ev_ebitda_min,
             "ev_ebitda_max": body.ev_ebitda_max,
             "report_date": body.report_date,
+            "industries": body.industries,
         }
 
         where, values = _build_where_clause(params)
@@ -170,14 +228,17 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
         page_size = min(max(body.page_size, 1), 200)
         offset = (page - 1) * page_size
 
+        # 统计总数（使用子查询确保每只股票只计算一次）
         count_sql = f"""
-            SELECT COUNT(DISTINCT stock_code) as total
-            FROM trade_stock_financial
+            SELECT COUNT(DISTINCT f.stock_code) as total
+            FROM ({_LATEST_REPORT_SUBQUERY}) f
+            LEFT JOIN trade_stock_master m ON f.stock_code = m.stock_code
             WHERE {where}
         """
         count_result = query_dict(conn, count_sql, tuple(values))
         total = count_result[0]["total"] if count_result else 0
 
+        # 查询数据（使用子查询确保每只股票只取最新报告期数据）
         data_sql = f"""
             SELECT
                 f.stock_code,
@@ -204,13 +265,20 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
                 f.dividend_yield,
                 f.ebitda,
                 f.ev_ebitda
-            FROM trade_stock_financial f
+            FROM ({_LATEST_REPORT_SUBQUERY}) f
             LEFT JOIN trade_stock_master m ON f.stock_code = m.stock_code
             WHERE {where}
-            ORDER BY f.report_date DESC, f.roe DESC
+            ORDER BY f.roe DESC
             LIMIT %s OFFSET %s
         """
         rows = query_dict(conn, data_sql, tuple(values + [page_size, offset]))
+
+        # 将比率字段转回百分比，方便前端展示
+        ratio_db_columns = {FILTER_FIELD_MAPPING[k] for k in RATIO_FIELDS}
+        for row in rows:
+            for col in ratio_db_columns:
+                if col in row and row[col] is not None:
+                    row[col] = round(row[col] * 100, 4)
 
         logger.info("股票筛选完成", extra={
             "total": total,
@@ -221,7 +289,7 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
             "page": page,
             "page_size": page_size,
             "total": total,
-            "rows": rows,
+            "items": rows,
             "filters_applied": {
                 "pe": {"min": body.pe_min, "max": body.pe_max},
                 "pb": {"min": body.pb_min, "max": body.pb_max},
@@ -454,7 +522,7 @@ def factor_score(body: FactorScoreRequest) -> dict[str, Any]:
 
     try:
         cfg = load_mysql_config()
-        conn = connect(cfg)
+        conn = _create_direct_connection(cfg)
     except Exception as e:
         logger.error("数据库连接失败", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail="数据库连接失败")
@@ -468,10 +536,7 @@ def factor_score(body: FactorScoreRequest) -> dict[str, Any]:
                 select_fields.append(f"f.{db_field}")
 
         # 构建where条件
-        conditions: list[str] = ["f.{db_field} IS NOT NULL".format(db_field=FACTOR_FIELD_MAPPING.get(f.key, "id"))
-                                 for f in body.factors if f.key in FACTOR_FIELD_MAPPING]
-        # 实际上要用 IS NOT NULL 检查
-        conditions = []
+        conditions: list[str] = []
         params: list[Any] = []
 
         if body.stock_codes:
@@ -479,46 +544,18 @@ def factor_score(body: FactorScoreRequest) -> dict[str, Any]:
             conditions.append(f"f.stock_code IN ({placeholders})")
             params.extend(body.stock_codes)
 
-        where = " AND ".join(conditions) if conditions else "1=1"
-
         # 查询最新报告期的财务数据
-        # 先找到最新的报告日期
-        latest_report = query_dict(
-            conn,
-            "SELECT MAX(report_date) as max_date FROM trade_stock_financial",
-            ()
-        )
-        latest_report_date = None
-        if latest_report and latest_report[0].get("max_date"):
-            max_dt = latest_report[0]["max_date"]
-            if hasattr(max_dt, "strftime"):
-                latest_report_date = max_dt.strftime("%Y-%m-%d")
-            else:
-                latest_report_date = str(max_dt)
-
-        if not latest_report_date:
-            return {"items": [], "total": 0}
-
-        report_condition = "f.report_date = %s"
-        params.append(latest_report_date)
-
-        # 构建完整的where条件
-        full_where = f"{report_condition}"
-        if conditions:
-            full_where += f" AND {' AND '.join(conditions)}"
-        if body.stock_codes:
-            placeholders = ",".join(["%s"] * len(body.stock_codes))
-            full_where += f" AND f.stock_code IN ({placeholders})"
-            params.extend(body.stock_codes)
-
+        # 使用子查询确保每只股票只取各自最新的报告期数据
         select_str = ", ".join(select_fields)
         sql = f"""
             SELECT {select_str}
-            FROM trade_stock_financial f
+            FROM ({_LATEST_REPORT_SUBQUERY}) f
             LEFT JOIN trade_stock_master m ON f.stock_code = m.stock_code
-            WHERE {full_where}
-            ORDER BY f.stock_code
+            WHERE 1=1
         """
+        if conditions:
+            sql += f" AND {' AND '.join(conditions)}"
+        sql += " ORDER BY f.stock_code"
         rows = query_dict(conn, sql, tuple(params))
 
         if not rows:
@@ -623,3 +660,206 @@ def factor_score(body: FactorScoreRequest) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"因子评分计算失败: {str(e)}")
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 数据库迁移（创建索引）
+# ---------------------------------------------------------------------------
+
+def run_financial_indexes_migration():
+    """
+    执行财务数据表索引迁移。
+
+    读取迁移SQL文件并逐条执行，为 trade_stock_financial 表添加索引，
+    提升基本面选股查询性能。如果索引已存在则跳过（不报错）。
+    """
+    # 定位迁移SQL文件路径
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sql_file = os.path.join(current_dir, "..", "migrations", "011_add_financial_indexes.sql")
+
+    if not os.path.exists(sql_file):
+        logger.warning("迁移SQL文件不存在", extra={"path": sql_file})
+        return
+
+    try:
+        cfg = load_mysql_config()
+        conn = _create_direct_connection(cfg)
+        try:
+            with conn.cursor() as cur:
+                with open(sql_file, "r", encoding="utf-8") as f:
+                    sql_content = f.read()
+                statements = [s.strip() for s in sql_content.split(";") if s.strip()]
+                for stmt in statements:
+                    try:
+                        cur.execute(stmt)
+                        logger.info("迁移SQL执行成功", extra={"sql": stmt[:80]})
+                    except Exception as e:
+                        logger.warning("迁移SQL执行警告（可能索引已存在）",
+                                       extra={"sql": stmt[:80], "error": str(e)})
+        finally:
+            conn.close()
+        logger.info("财务数据索引迁移完成")
+    except Exception as e:
+        logger.error("财务数据索引迁移失败", extra={"error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# 数据补充：批量更新 pe_ttm / pb / market_cap / 行业分类
+# ---------------------------------------------------------------------------
+
+@router.post("/enrich")
+async def enrich_financial_data():
+    """
+    批量补充财务数据中缺失的 pe_ttm、pb、market_cap 以及行业分类。
+
+    数据来源：akshare stock_zh_a_spot_em（行情数据）+ stock_board_industry_cons_em（行业成分股）。
+    仅更新数据库中已有股票的缺失字段，不新增股票记录。
+    """
+    import akshare as ak
+
+    updated_market = 0
+    updated_industry = 0
+    errors: list[str] = []
+
+    # ---- 第一部分：补充 pe_ttm / pb / market_cap ----
+    try:
+        logger.info("开始补充行情数据（pe_ttm/pb/market_cap）...")
+        cfg = load_mysql_config()
+        conn = _create_direct_connection(cfg)
+        try:
+            with conn.cursor() as cur:
+                # 获取最新报告期
+                cur.execute("SELECT MAX(report_date) as max_date FROM trade_stock_financial")
+                row = cur.fetchone()
+                latest_date = row["max_date"] if row else None
+                if not latest_date:
+                    errors.append("trade_stock_financial 表无数据")
+                else:
+                    # 获取需要更新的股票代码（pe_ttm 或 market_cap 为空的）
+                    cur.execute(
+                        "SELECT DISTINCT stock_code FROM trade_stock_financial "
+                        "WHERE report_date = %s AND (pe_ttm IS NULL OR market_cap IS NULL)",
+                        (latest_date,)
+                    )
+                    codes_needing_update = [r["stock_code"] for r in cur.fetchall()]
+                    logger.info(f"需要补充行情数据的股票: {len(codes_needing_update)} 只")
+
+                    if codes_needing_update:
+                        # 从 akshare 获取全市场行情快照
+                        try:
+                            df = ak.stock_zh_a_spot_em()
+                            if df is not None and len(df) > 0:
+                                # 构建代码→行情映射
+                                market_map: dict[str, dict] = {}
+                                for _, r in df.iterrows():
+                                    code_num = str(r.get("代码") or "").strip()
+                                    if not code_num:
+                                        continue
+                                    pe_val = safe_float(r.get("市盈率（动态）"))
+                                    market_map[code_num] = {
+                                        "pe": pe_val if pe_val and pe_val > 0 else None,
+                                        "pb": safe_float(r.get("市净率")),
+                                        "market_cap": safe_float(r.get("总市值")),
+                                        "float_market_cap": safe_float(r.get("流通市值")),
+                                    }
+
+                                # 批量更新
+                                for code in codes_needing_update:
+                                    code_num = code.split(".")[0]
+                                    md = market_map.get(code_num)
+                                    if not md:
+                                        continue
+                                    pe_val = md["pe"]
+                                    pb_val = md["pb"]
+                                    mc_val = md["market_cap"]
+                                    fmc_val = md["float_market_cap"]
+                                    if pe_val is None and pb_val is None and mc_val is None:
+                                        continue
+                                    cur.execute(
+                                        "UPDATE trade_stock_financial "
+                                        "SET pe_ttm=COALESCE(pe_ttm, %s), "
+                                        "    pb=COALESCE(pb, %s), "
+                                        "    market_cap=COALESCE(market_cap, %s), "
+                                        "    float_market_cap=COALESCE(float_market_cap, %s) "
+                                        "WHERE stock_code=%s AND report_date=%s",
+                                        (pe_val, pb_val, mc_val, fmc_val, code, latest_date)
+                                    )
+                                    updated_market += 1
+                                conn.commit()
+                                logger.info(f"行情数据补充完成: 更新 {updated_market} 只")
+                        except Exception as e:
+                            errors.append(f"akshare行情数据获取失败: {e}")
+                            logger.error("akshare行情数据获取失败", extra={"error": str(e)})
+        finally:
+            conn.close()
+    except Exception as e:
+        errors.append(f"行情数据补充异常: {e}")
+        logger.error("行情数据补充异常", extra={"error": str(e)})
+
+    # ---- 第二部分：补充行业分类 ----
+    try:
+        logger.info("开始补充行业分类数据...")
+        cfg = load_mysql_config()
+        conn = _create_direct_connection(cfg)
+        try:
+            with conn.cursor() as cur:
+                # 检查当前行业数据覆盖率
+                cur.execute(
+                    "SELECT COUNT(*) as cnt FROM trade_stock_master "
+                    "WHERE (asset_type='stock' OR asset_type IS NULL) "
+                    "AND (sector_level1 IS NULL OR sector_level1='')"
+                )
+                missing_count = cur.fetchone()["cnt"]
+                logger.info(f"缺少行业数据的股票: {missing_count} 只")
+
+                if missing_count > 0:
+                    # 使用 akshare 获取各行业成分股
+                    industry_names = [
+                        '农林牧渔', '基础化工', '钢铁', '有色金属', '电子', '家用电器',
+                        '食品饮料', '纺织服饰', '轻工制造', '医药生物', '公用事业',
+                        '交通运输', '房地产', '商贸零售', '社会服务', '银行',
+                        '非银金融', '综合', '建筑材料', '建筑装饰', '电力设备',
+                        '机械设备', '国防军工', '计算机', '传媒', '通信',
+                        '煤炭', '石油石化', '环保', '美容护理', '汽车',
+                    ]
+                    for industry_name in industry_names:
+                        try:
+                            import time
+                            time.sleep(0.5)
+                            cons_df = ak.stock_board_industry_cons_em(symbol=industry_name)
+                            if cons_df is None or len(cons_df) == 0:
+                                continue
+                            code_col = "代码" if "代码" in cons_df.columns else cons_df.columns[0]
+                            for _, r in cons_df.iterrows():
+                                code_num = str(r.get(code_col) or "").strip()
+                                if not code_num:
+                                    continue
+                                exchange = "SH" if code_num.startswith("6") else "SZ"
+                                stock_code = f"{code_num}.{exchange}"
+                                cur.execute(
+                                    "UPDATE trade_stock_master "
+                                    "SET sector_level1=%s, updated_at=NOW() "
+                                    "WHERE stock_code=%s "
+                                    "AND (sector_level1 IS NULL OR sector_level1='')",
+                                    (industry_name, stock_code)
+                                )
+                                if cur.rowcount > 0:
+                                    updated_industry += 1
+                            conn.commit()
+                            logger.info(f"行业 [{industry_name}] 成分股更新完成")
+                        except Exception as e:
+                            logger.warning(f"行业 [{industry_name}] 获取失败",
+                                           extra={"error": str(e)})
+                            continue
+                    logger.info(f"行业分类补充完成: 更新 {updated_industry} 只")
+        finally:
+            conn.close()
+    except Exception as e:
+        errors.append(f"行业分类补充异常: {e}")
+        logger.error("行业分类补充异常", extra={"error": str(e)})
+
+    return {
+        "updated_market_data": updated_market,
+        "updated_industry": updated_industry,
+        "errors": errors[:10],
+    }

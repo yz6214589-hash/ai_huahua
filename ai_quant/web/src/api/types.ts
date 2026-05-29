@@ -38,6 +38,7 @@ export interface JobRunResult {
   fallbackChain: DataSource[]     // 数据源回退链
   rowsWritten: number        // 写入的数据行数
   itemsProcessed: number      // 处理的数据项总数
+  itemsTotal?: number | null  // 计划处理的数据项总数（用于进度显示）
   failedItems: string[]      // 处理失败的数据项列表
   message?: string           // 任务执行消息
   userMessage?: string       // 给用户的提示消息

@@ -55,6 +55,15 @@ def _p_object(label: str, help: str) -> dict[str, Any]:
     return {"type": "object", "label": label, "help": help}
 
 
+def _safe_float(val, default: float = 0.0) -> float:
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
 def _make_dual_ma():
     import backtrader as bt  # type: ignore
 
@@ -432,7 +441,7 @@ def _make_turtle_simple():
                 self.buy()
                 return
             if self.position and float(self.data.close[0]) < float(self.exit_low[-1]):
-                self.sell()
+                self.close()
 
     return SimpleTurtle
 
@@ -459,54 +468,60 @@ def _make_turtle_full():
             self.entry_price = None
             self.stop_price = None
             self.next_add = None
+            self.order = None
+
+        def notify_order(self, order):
+            if order.status in [order.Completed, order.Canceled, order.Margin]:
+                self.order = None
 
         def _unit_size(self, price: float, atr: float) -> int:
             if price <= 0 or atr <= 0:
                 return 0
             value = float(self.broker.getvalue())
             risk = value * float(self.p.risk_pct)
-            raw_shares = risk / (float(self.p.stop_n) * atr)
-            shares = int(raw_shares / price)
+            shares = int(risk / (_safe_float(self.p.stop_n) * atr))
             shares = (shares // 100) * 100
             return max(100, shares) if shares > 0 else 0
 
         def next(self) -> None:
-            close = float(self.data.close[0])
-            atr = float(self.atr[0])
+            if self.order:
+                return
+            close = _safe_float(self.data.close[0])
+            atr = _safe_float(self.atr[0])
 
             if self.position:
-                if self.stop_price is not None and close < float(self.stop_price):
+                if self.stop_price is not None and close < _safe_float(self.stop_price):
                     self.sell(size=int(self.position.size))
                     self.units = 0
                     self.entry_price = None
                     self.stop_price = None
                     self.next_add = None
                     return
-                if close < float(self.exit_low[-1]):
+                if close < _safe_float(self.exit_low[-1]):
                     self.sell(size=int(self.position.size))
                     self.units = 0
                     self.entry_price = None
                     self.stop_price = None
                     self.next_add = None
                     return
-                if self.units < int(self.p.max_units) and self.next_add is not None and close > float(self.next_add):
+                if self.units < int(self.p.max_units) and self.next_add is not None and close > _safe_float(self.next_add):
                     size = self._unit_size(close, atr)
                     if size > 0:
                         self.buy(size=size)
                         self.units += 1
                         self.entry_price = close
-                        self.stop_price = close - float(self.p.stop_n) * atr
-                        self.next_add = close + float(self.p.add_n) * atr
+                        self.stop_price = close - _safe_float(self.p.stop_n) * atr
+                        self.next_add = close + _safe_float(self.p.add_n) * atr
                 return
 
-            if close > float(self.entry_high[-1]):
+            if close > _safe_float(self.entry_high[-1]):
                 size = self._unit_size(close, atr)
                 if size > 0:
                     self.buy(size=size)
                     self.units = 1
                     self.entry_price = close
-                    self.stop_price = close - float(self.p.stop_n) * atr
-                    self.next_add = close + float(self.p.add_n) * atr
+                    self.stop_price = close - _safe_float(self.p.stop_n) * atr
+                    self.next_add = close + _safe_float(self.p.add_n) * atr
 
     return Turtle
 
@@ -536,57 +551,63 @@ def _make_turtle_adx():
             self.entry_price = None
             self.stop_price = None
             self.next_add = None
+            self.order = None
+
+        def notify_order(self, order):
+            if order.status in [order.Completed, order.Canceled, order.Margin]:
+                self.order = None
 
         def _unit_size(self, price: float, atr: float) -> int:
             if price <= 0 or atr <= 0:
                 return 0
             value = float(self.broker.getvalue())
             risk = value * float(self.p.risk_pct)
-            raw_shares = risk / (float(self.p.stop_n) * atr)
-            shares = int(raw_shares / price)
+            shares = int(risk / (_safe_float(self.p.stop_n) * atr))
             shares = (shares // 100) * 100
             return max(100, shares) if shares > 0 else 0
 
         def next(self) -> None:
-            close = float(self.data.close[0])
-            atr = float(self.atr[0])
+            if self.order:
+                return
+            close = _safe_float(self.data.close[0])
+            atr = _safe_float(self.atr[0])
 
             if self.position:
-                if self.stop_price is not None and close < float(self.stop_price):
+                if self.stop_price is not None and close < _safe_float(self.stop_price):
                     self.sell(size=int(self.position.size))
                     self.units = 0
                     self.entry_price = None
                     self.stop_price = None
                     self.next_add = None
                     return
-                if close < float(self.exit_low[-1]):
+                if close < _safe_float(self.exit_low[-1]):
                     self.sell(size=int(self.position.size))
                     self.units = 0
                     self.entry_price = None
                     self.stop_price = None
                     self.next_add = None
                     return
-                if self.units < int(self.p.max_units) and self.next_add is not None and close > float(self.next_add):
+                if self.units < int(self.p.max_units) and self.next_add is not None and close > _safe_float(self.next_add):
                     size = self._unit_size(close, atr)
                     if size > 0:
                         self.buy(size=size)
                         self.units += 1
                         self.entry_price = close
-                        self.stop_price = close - float(self.p.stop_n) * atr
-                        self.next_add = close + float(self.p.add_n) * atr
+                        self.stop_price = close - _safe_float(self.p.stop_n) * atr
+                        self.next_add = close + _safe_float(self.p.add_n) * atr
                 return
 
-            if float(self.adx[0]) < float(self.p.adx_threshold):
+            if _safe_float(self.adx[0]) < _safe_float(self.p.adx_threshold):
                 return
 
-            if close > float(self.entry_high[-1]):
+            if close > _safe_float(self.entry_high[-1]):
                 size = self._unit_size(close, atr)
                 if size > 0:
                     self.buy(size=size)
                     self.units = 1
                     self.entry_price = close
-                    self.stop_price = close - float(self.p.stop_n) * atr
-                    self.next_add = close + float(self.p.add_n) * atr
+                    self.stop_price = close - _safe_float(self.p.stop_n) * atr
+                    self.next_add = close + _safe_float(self.p.add_n) * atr
 
     return ADXTurtle
 
@@ -617,12 +638,17 @@ def _make_turtle_multi_tf():
             self.units = 0
             self.stop_price = None
             self.next_add = None
+            self.order = None
+
+        def notify_order(self, order):
+            if order.status in [order.Completed, order.Canceled, order.Margin]:
+                self.order = None
 
         def _weekly_trend(self) -> str:
-            wc = float(self.data1.close[0])
-            if wc > float(self.weekly_high[-1]):
+            wc = _safe_float(self.data1.close[0])
+            if wc > _safe_float(self.weekly_high[-1]):
                 return "up"
-            if wc < float(self.weekly_low[-1]):
+            if wc < _safe_float(self.weekly_low[-1]):
                 return "down"
             return "neutral"
 
@@ -631,14 +657,15 @@ def _make_turtle_multi_tf():
                 return 0
             value = float(self.broker.getvalue())
             risk = value * float(self.p.risk_pct)
-            raw_shares = risk / (float(self.p.stop_n) * atr)
-            shares = int(raw_shares / price)
+            shares = int(risk / (_safe_float(self.p.stop_n) * atr))
             shares = (shares // 100) * 100
             return max(100, shares) if shares > 0 else 0
 
         def next(self) -> None:
-            close = float(self.data0.close[0])
-            atr = float(self.atr[0])
+            if self.order:
+                return
+            close = _safe_float(self.data0.close[0])
+            atr = _safe_float(self.atr[0])
             trend = self._weekly_trend()
 
             if self.position:
@@ -648,37 +675,37 @@ def _make_turtle_multi_tf():
                     self.stop_price = None
                     self.next_add = None
                     return
-                if self.stop_price is not None and close < float(self.stop_price):
+                if self.stop_price is not None and close < _safe_float(self.stop_price):
                     self.sell(size=int(self.position.size))
                     self.units = 0
                     self.stop_price = None
                     self.next_add = None
                     return
-                if close < float(self.daily_exit_low[-1]):
+                if close < _safe_float(self.daily_exit_low[-1]):
                     self.sell(size=int(self.position.size))
                     self.units = 0
                     self.stop_price = None
                     self.next_add = None
                     return
-                if self.units < int(self.p.max_units) and self.next_add is not None and close > float(self.next_add):
+                if self.units < int(self.p.max_units) and self.next_add is not None and close > _safe_float(self.next_add):
                     size = self._unit_size(close, atr)
                     if size > 0:
                         self.buy(size=size)
                         self.units += 1
-                        self.stop_price = close - float(self.p.stop_n) * atr
-                        self.next_add = close + float(self.p.add_n) * atr
+                        self.stop_price = close - _safe_float(self.p.stop_n) * atr
+                        self.next_add = close + _safe_float(self.p.add_n) * atr
                 return
 
             if trend == "down":
                 return
 
-            if close > float(self.daily_entry_high[-1]):
+            if close > _safe_float(self.daily_entry_high[-1]):
                 size = self._unit_size(close, atr)
                 if size > 0:
                     self.buy(size=size)
                     self.units = 1
-                    self.stop_price = close - float(self.p.stop_n) * atr
-                    self.next_add = close + float(self.p.add_n) * atr
+                    self.stop_price = close - _safe_float(self.p.stop_n) * atr
+                    self.next_add = close + _safe_float(self.p.add_n) * atr
 
     return MultiTFTurtle
 
@@ -706,14 +733,18 @@ def _make_turtle_ml():
             self.units = 0
             self.stop_price = None
             self.next_add = None
+            self.order = None
+
+        def notify_order(self, order):
+            if order.status in [order.Completed, order.Canceled, order.Margin]:
+                self.order = None
 
         def _unit_size(self, price: float, atr: float) -> int:
             if price <= 0 or atr <= 0:
                 return 0
             value = float(self.broker.getvalue())
             risk = value * float(self.p.risk_pct)
-            raw_shares = risk / (float(self.p.stop_n) * atr)
-            shares = int(raw_shares / price)
+            shares = int(risk / (_safe_float(self.p.stop_n) * atr))
             shares = (shares // 100) * 100
             return max(100, shares) if shares > 0 else 0
 
@@ -727,41 +758,43 @@ def _make_turtle_ml():
                 return None
 
         def next(self) -> None:
-            close = float(self.data.close[0])
-            atr = float(self.atr[0])
+            if self.order:
+                return
+            close = _safe_float(self.data.close[0])
+            atr = _safe_float(self.atr[0])
 
             if self.position:
-                if self.stop_price is not None and close < float(self.stop_price):
+                if self.stop_price is not None and close < _safe_float(self.stop_price):
                     self.sell(size=int(self.position.size))
                     self.units = 0
                     self.stop_price = None
                     self.next_add = None
                     return
-                if close < float(self.exit_low[-1]):
+                if close < _safe_float(self.exit_low[-1]):
                     self.sell(size=int(self.position.size))
                     self.units = 0
                     self.stop_price = None
                     self.next_add = None
                     return
-                if self.units < int(self.p.max_units) and self.next_add is not None and close > float(self.next_add):
+                if self.units < int(self.p.max_units) and self.next_add is not None and close > _safe_float(self.next_add):
                     size = self._unit_size(close, atr)
                     if size > 0:
                         self.buy(size=size)
                         self.units += 1
-                        self.stop_price = close - float(self.p.stop_n) * atr
-                        self.next_add = close + float(self.p.add_n) * atr
+                        self.stop_price = close - _safe_float(self.p.stop_n) * atr
+                        self.next_add = close + _safe_float(self.p.add_n) * atr
                 return
 
-            if close > float(self.entry_high[-1]):
+            if close > _safe_float(self.entry_high[-1]):
                 prob = self._prob()
-                if prob is None or prob < float(self.p.ml_threshold):
+                if prob is None or prob < _safe_float(self.p.ml_threshold):
                     return
                 size = self._unit_size(close, atr)
                 if size > 0:
                     self.buy(size=size)
                     self.units = 1
-                    self.stop_price = close - float(self.p.stop_n) * atr
-                    self.next_add = close + float(self.p.add_n) * atr
+                    self.stop_price = close - _safe_float(self.p.stop_n) * atr
+                    self.next_add = close + _safe_float(self.p.add_n) * atr
 
     return MLTurtle
 
@@ -1526,9 +1559,8 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             params_schema={
                 "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场（如 0.15=15%）。", 0.0, 5.0, 0.01),
                 "use_chan_stop": _p_bool("使用中枢止损", "开启后优先用中枢上沿 ZG 作为止损线；否则使用固定比例兜底止损。"),
-                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
-            default_params={"take_profit_pct": 0.15, "use_chan_stop": True, "chan_backend": "chanpy"},
+            default_params={"take_profit_pct": 0.15, "use_chan_stop": True},
             bt_strategy_factory=_make_chan_third_buy,
             requires_chan=True,
         ),
@@ -1544,7 +1576,6 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
                 "breakeven_pct": _p_float("保本触发", "收益率达到该阈值后止损抬到成本价（如 0.05=5%）。", 0.0, 1.0, 0.01),
                 "lock_profit_pct": _p_float("锁利触发", "收益率达到该阈值后启动锁利止损（如 0.10=10%）。", 0.0, 2.0, 0.01),
                 "lock_amount_pct": _p_float("锁定利润", "锁利后至少锁定的利润比例（如 0.05=5%）。", 0.0, 2.0, 0.01),
-                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
             default_params={
                 "take_profit_pct": 0.15,
@@ -1554,7 +1585,6 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
                 "breakeven_pct": 0.05,
                 "lock_profit_pct": 0.10,
                 "lock_amount_pct": 0.05,
-                "chan_backend": "chanpy",
             },
             bt_strategy_factory=_make_chan_trailing_stop,
             requires_chan=True,
@@ -1566,9 +1596,8 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             params_schema={
                 "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场。", 0.0, 5.0, 0.01),
                 "weekly_ma_period": _p_int("周线MA周期", "周线趋势过滤的均线周期（默认 20）。周线收盘高于均线视为向上。", 2, 200),
-                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
-            default_params={"take_profit_pct": 0.15, "weekly_ma_period": 20, "chan_backend": "chanpy"},
+            default_params={"take_profit_pct": 0.15, "weekly_ma_period": 20},
             bt_strategy_factory=_make_chan_multi_tf,
             requires_chan=True,
             requires_weekly=True,
@@ -1581,9 +1610,8 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
                 "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场。", 0.0, 5.0, 0.01),
                 "ml_threshold": _p_float("放行阈值", "预测概率 >= 阈值时才允许入场。", 0.0, 1.0, 0.01),
                 "predictions": _p_object("预测字典", "格式：{ 'YYYY-MM-DD': 概率 }。用于过滤三买信号。"),
-                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
-            default_params={"take_profit_pct": 0.15, "ml_threshold": 0.5, "predictions": {}, "chan_backend": "chanpy"},
+            default_params={"take_profit_pct": 0.15, "ml_threshold": 0.5, "predictions": {}},
             bt_strategy_factory=_make_chan_ml,
             requires_chan=True,
             requires_predictions=True,
@@ -1610,9 +1638,8 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
                 "capital_ratio": _p_float("资金占比", "用于网格策略的资金占比（如 0.80=80%）。", 0.0, 1.0, 0.01),
                 "exit_on_breakout": _p_bool("突破即退出", "开启后，价格突破/跌破中枢一定比例时清仓并停用网格。"),
                 "breakout_pct": _p_float("突破确认(%)", "突破确认比例（如 0.005=0.5%）。用于避免噪声突破。", 0.0, 0.2, 0.0005),
-                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
-            default_params={"num_grids": 6, "capital_ratio": 0.80, "exit_on_breakout": True, "breakout_pct": 0.005, "chan_backend": "chanpy"},
+            default_params={"num_grids": 6, "capital_ratio": 0.80, "exit_on_breakout": True, "breakout_pct": 0.005},
             bt_strategy_factory=_make_chan_grid,
             requires_chan=True,
         ),
@@ -1626,9 +1653,8 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
                 "atr_period": _p_int("ATR周期", "趋势模式下 ATR 跟踪止损的周期（常用 14）。", 2, 200),
                 "atr_trail_mult": _p_float("ATR跟踪倍数", "趋势模式止损距离：最高价 - atr_trail_mult * ATR。", 0.1, 10.0, 0.1),
                 "breakout_confirm": _p_float("突破确认(%)", "突破确认比例（如 0.005=0.5%）。", 0.0, 0.2, 0.0005),
-                "chan_backend": _p_enum("缠论引擎", "选择缠论依赖库：chanpy=chan.py 封装；self=自研 ChanAnalyzer。", ["chanpy", "self"]),
             },
-            default_params={"num_grids": 6, "capital_ratio": 0.80, "atr_period": 14, "atr_trail_mult": 2.5, "breakout_confirm": 0.005, "chan_backend": "chanpy"},
+            default_params={"num_grids": 6, "capital_ratio": 0.80, "atr_period": 14, "atr_trail_mult": 2.5, "breakout_confirm": 0.005},
             bt_strategy_factory=_make_chan_grid_trend_linkage,
             requires_chan=True,
         ),

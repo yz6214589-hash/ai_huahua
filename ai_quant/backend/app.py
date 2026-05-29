@@ -313,6 +313,15 @@ def create_app() -> FastAPI:
                 "error": str(e)
             })
         
+        # 执行财务数据表索引迁移，提升基本面选股查询性能
+        try:
+            from .api.stock_select import run_financial_indexes_migration
+            run_financial_indexes_migration()
+        except Exception as e:
+            logger.warning("财务数据索引迁移失败", extra={
+                "error": str(e)
+            })
+        
         asyncio.create_task(cleanup_rate_limit_state())
         logger.info("速率限制状态清理任务已启动")
         

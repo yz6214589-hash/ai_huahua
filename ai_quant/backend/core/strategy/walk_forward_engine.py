@@ -52,19 +52,22 @@ def generate_windows(
     end_d = pd.to_datetime(end).date()
     windows: list[dict[str, Any]] = []
     current_start = start_d
+    anchored_step = 0
 
     while True:
-        train_start = current_start
-        train_end = train_start + timedelta(days=365 * train_years - 1)
+        if mode == "anchored":
+            train_start = start_d
+            train_end = start_d + timedelta(days=365 * (train_years + anchored_step * step_years) - 1)
+        else:
+            train_start = current_start
+            train_end = train_start + timedelta(days=365 * train_years - 1)
 
         test_start = train_end + timedelta(days=1)
         test_end = test_start + timedelta(days=365 * test_years - 1)
 
-        # 如果测试窗口超出总结束日期，终止
         if test_start > end_d:
             break
 
-        # 限制测试结束日期不超过总结束日期
         test_end = min(test_end, end_d)
 
         windows.append({
@@ -75,14 +78,8 @@ def generate_windows(
         })
 
         if mode == "anchored":
-            # 锚定模式：训练起点不变，只扩展训练窗口
-            current_start = start_d
-            # 步进的是测试窗口
-            next_test_start = test_start + timedelta(days=365 * step_years)
-            # 但为了简化，锚定模式下使用步进偏移
-            current_start = current_start + timedelta(days=365 * step_years)
+            anchored_step += 1
         else:
-            # 滚动模式：整体向前步进
             current_start = current_start + timedelta(days=365 * step_years)
 
     return windows

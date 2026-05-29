@@ -84,6 +84,29 @@ function calcScore(s: StockResult): number {
   return Math.min(100, Math.round(score))
 }
 
+/**
+ * 将后端返回的原始数据库列名映射为前端 StockResult 格式
+ * 后端SQL返回如 stock_code, stock_name, pe_ttm, revenue_growth_yoy 等列名
+ * 前端接口期望 code, name, pe, revenue_growth 等简化字段名
+ */
+function mapRow(row: Record<string, any>): StockResult {
+  return {
+    code: row.stock_code || '',
+    name: row.stock_name || '',
+    sector_level1: row.sector_level1 || '',
+    sector_level2: row.sector_level2 || '',
+    pe: row.pe_ttm ?? 0,
+    pb: row.pb ?? 0,
+    roe: row.roe ?? 0,
+    gross_margin: row.gross_margin ?? 0,
+    net_margin: row.net_margin ?? 0,
+    market_cap: row.market_cap ?? 0,
+    revenue_growth: row.revenue_growth_yoy ?? 0,
+    profit_growth: row.profit_growth_yoy ?? 0,
+    debt_ratio: row.debt_ratio ?? 0,
+  }
+}
+
 function RangeSlider({
   min, max, step,
   valueMin, valueMax,
@@ -192,11 +215,6 @@ export default function StockSelectFundamental() {
     return init
   })
 
-  useEffect(() => {
-    fetchDataStatus()
-    doQuery()
-  }, [])
-
   const fetchDataStatus = async () => {
     try {
       const data = await fetchJson<DataStatus>('/api/v1/data/status')
@@ -214,16 +232,42 @@ export default function StockSelectFundamental() {
         params.industries = selectedIndustries
       }
       for (const [key, val] of Object.entries(filterValues)) {
-        if (val.min !== undefined) params[key + '_min'] = val.min
-        if (val.max !== undefined) params[key + '_max'] = val.max
+        const cfg = FILTER_CONFIG.find(fc => fc.key === key)
+        if (!cfg) continue
+        if (val.min !== cfg.defaultMin) params[key + '_min'] = val.min
+        if (val.max !== cfg.defaultMax) params[key + '_max'] = val.max
       }
-      const data = await postJson<{ items: StockResult[]; total: number }>('/api/v1/stock-select/query', params)
-      setResults(data.items || [])
+      const data = await postJson<{ items: Record<string, any>[]; total: number }>('/api/v1/stock-select/query', params)
+      // 将后端原始列名映射为前端 StockResult 格式
+      setResults((data.items || []).map(mapRow))
     } catch {
       setResults([])
     } finally {
       setLoading(false)
     }
+  }, [selectedIndustries, filterValues])
+
+  // 标记是否首次渲染，用于防抖效果跳过首次触发
+  const isFirstRender = useRef(true)
+  // 使用ref保存最新的doQuery引用，避免useEffect因doQuery引用变化而重复触发
+  const doQueryRef = useRef(doQuery)
+  doQueryRef.current = doQuery
+
+  useEffect(() => {
+    fetchDataStatus()
+    doQuery()
+  }, [])
+
+  // 筛选条件变化时自动触发查询（带防抖，避免频繁请求）
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    const timer = setTimeout(() => {
+      doQueryRef.current()
+    }, 500)
+    return () => clearTimeout(timer)
   }, [selectedIndustries, filterValues])
 
   const handleUpdateData = async () => {

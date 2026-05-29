@@ -39,7 +39,7 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
         detail = ''
       }
     }
-    throw new Error(detail || `HTTP ${res.status}`)
+    throw new Error(translateApiError(detail) || `HTTP ${res.status}`)
   }
 
   // 解析响应 JSON 数据，检查业务层错误状态
@@ -82,4 +82,19 @@ export async function fetchText(url: string, init?: RequestInit): Promise<string
     throw new Error(detail || `HTTP ${res.status}`)
   }
   return res.text()
+}
+
+const errorCodeMap: Record<string, string> = {
+  'chan_data_unavailable': '缠论数据不可用，请先安装缠论分析库或选择其他策略',
+  'no_data': '没有获取到股票数据，请检查股票代码和日期范围是否正确',
+  'backtest_failed': '回测执行失败，请检查参数设置是否正确',
+  'invalid_params': '策略参数验证失败，请检查参数值是否在合法范围内',
+  'model_not_found': 'ML预测模型未找到，将以全放行模式运行回测',
+  'weekly_data_unavailable': '周线数据不可用，将以日线数据替代运行',
+  'prediction_unavailable': '预测数据不可用，将以全放行模式运行',
+  'save_failed': '回测结果保存失败，但仍可查看当前结果',
+}
+
+export function translateApiError(errCode: string): string {
+  return errorCodeMap[errCode] || errCode
 }

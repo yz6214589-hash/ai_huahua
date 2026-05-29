@@ -4,7 +4,7 @@ import { fetchJson, postJson } from '@/api/client'
 import type { JobDomain, JobDomainInfo, JobRunResult, JobSchedule } from '@/api/types'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { DataSourceBadge, JobStatusBadge } from '@/components/StatusBadge'
-import { Play, RefreshCcw, Save, Settings, X, Eye } from 'lucide-react'
+import { Play, RefreshCcw, Save, Settings, X, Eye, BarChart3 } from 'lucide-react'
 import StockScopeSelector from '@/components/StockScopeSelector'
 
 function formatDate(v: unknown) {
@@ -121,6 +121,10 @@ export default function Jobs() {
   }, [])
 
   const runJob = async (domain: JobDomain, mode?: string) => {
+    if (hasRunningTask) {
+      setErr('已经有任务在进行中，请等待完成以后再开始新的任务')
+      return
+    }
     setErr(null)
     try {
       const params: Record<string, unknown> = {}
@@ -181,6 +185,11 @@ export default function Jobs() {
       if (!map.has(r.domain)) map.set(r.domain, r)
     }
     return map
+  }, [runs])
+
+  // 检测是否有任何任务正在运行中
+  const hasRunningTask = useMemo(() => {
+    return runs.some((r) => r.status === 'running')
   }, [runs])
 
   const domainOrder = ['stock_daily', 'stock_financial', 'stock_news', 'sentiment_monitor', 'report_consensus', 'calendar', 'catalyst', 'macro_indicator', 'rate_daily']
@@ -251,6 +260,11 @@ export default function Jobs() {
             </button>
           </div>
           {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{err}</div> : null}
+          {hasRunningTask ? (
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              已经有任务在进行中，请等待完成以后再开始新的任务
+            </div>
+          ) : null}
           <div className="space-y-3">
             {sortedDomains.map((j) => {
               const last = runsByDomain.get(j.domain)
@@ -271,11 +285,47 @@ export default function Jobs() {
                         {last ? <DataSourceBadge source={last.dataSourceFinal} /> : null}
                         {last ? <span className="text-xs text-zinc-500">上次：{formatDate(last.startedAt)}</span> : null}
                       </div>
+                      {last && last.status === 'running' && last.itemsTotal ? (
+                        <div className="mt-3 w-full max-w-xs">
+                          <div className="flex items-center gap-1.5 text-xs text-zinc-600">
+                            <BarChart3 className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" />
+                            <span className="font-medium tabular-nums">
+                              {last.itemsProcessed.toLocaleString()}
+                            </span>
+                            <span className="text-zinc-300">-</span>
+                            <span className="tabular-nums text-zinc-500">
+                              {last.itemsTotal.toLocaleString()}
+                            </span>
+                            <span
+                              className="ml-0.5 font-semibold"
+                              style={{
+                                color: last.itemsTotal > 0
+                                  ? `hsl(${Math.round(Math.min(1, (last.itemsProcessed || 0) / last.itemsTotal) * 120)}, 65%, 40%)`
+                                  : '#a1a1aa',
+                              }}
+                            >
+                              （{Math.round(Math.min(100, ((last.itemsProcessed || 0) / last.itemsTotal) * 100))}%）
+                            </span>
+                          </div>
+                          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
+                            <div
+                              className="h-full rounded-full transition-all duration-700 ease-out"
+                              style={{
+                                width: `${last.itemsTotal > 0 ? Math.min(100, Math.round(((last.itemsProcessed || 0) / last.itemsTotal) * 100)) : 0}%`,
+                                backgroundColor: last.itemsTotal > 0
+                                  ? `hsl(${Math.round(Math.min(1, (last.itemsProcessed || 0) / last.itemsTotal) * 120)}, 55%, 45%)`
+                                  : '#d4d4d8',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="flex flex-col gap-2">
                       <button
                         onClick={() => runJob(j.domain, j.defaultMode)}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-800"
+                        disabled={hasRunningTask}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Play className="h-3.5 w-3.5" />
                         运行

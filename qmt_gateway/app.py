@@ -2,18 +2,20 @@
 QMT Gateway FastAPI 应用模块
 
 提供基于 FastAPI 的 RESTful API 接口，用于与 MiniQMT 交易终端进行交互。
-支持交易连接管理、账户查询、买卖下单、撤单、历史行情等核心功能。
+支持多账户配置，通过 X-Account-Type 请求头切换不同的 QMT 实例。
 所有接口均通过 X-API-Token 请求头进行身份验证。
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
+import sys
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from miniqmt_trader import MiniQMTTrader
@@ -43,18 +45,20 @@ class KLineRequest(BaseModel):
     fill_data: bool = True
 
 
+class KLineBatchRequest(BaseModel):
+    stock_codes: list[str]
+    period: str = "1d"
+    start_time: str = ""
+    end_time: str = ""
+    dividend_type: str = "front"
+    fill_data: bool = True
+
+
 class FinancialDataRequest(BaseModel):
     stock_code: str
     start_time: str = "20150101"
     end_time: str = "20261231"
     max_rows: int = 12
-
-
-def _must_env(name: str) -> str:
-    v = str(os.getenv(name, "")).strip()
-    if not v:
-        raise RuntimeError(f"missing env: {name}")
-    return v
 
 
 def _env_int(name: str, default: int) -> int:
@@ -81,120 +85,247 @@ def _check_token(x_api_token: str | None) -> None:
         raise HTTPException(status_code=401, detail="invalid token")
 
 
-_TRADER: MiniQMTTrader | None = None
+_ACCOUNT_CONFIGS: dict[str, dict] = {}
+_TRADERS: dict[str, MiniQMTTrader] = {}
+_LOADED = False
 
 
-def _get_trader() -> MiniQMTTrader:
-    global _TRADER
-    if _TRADER is not None:
-        return _TRADER
+def _load_account_configs() -> dict[str, dict]:
+    raw = os.getenv("QMT_ACCOUNTS", "").strip()
+    if raw:
+        try:
+            configs = json.loads(raw)
+            if isinstance(configs, dict):
+                return configs
+        except json.JSONDecodeError as e:
+            logger.error("QMT_ACCOUNTS 配置解析失败: %s", e)
 
-    qmt_path = _must_env("QMT_PATH")
-    account_id = _must_env("ACCOUNT_ID")
-    session_id = _env_int("QMT_SESSION_ID", 0) or None
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qmt_accounts.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                configs = json.load(f)
+                if isinstance(configs, dict):
+                    return configs
+        except Exception as e:
+            logger.error("qmt_accounts.json 配置加载失败: %s", e)
+
+    qmt_path = os.getenv("QMT_PATH", "").strip()
+    account_id = os.getenv("ACCOUNT_ID", "").strip()
+    if qmt_path and account_id:
+        return {account_id: {"qmt_path": qmt_path, "account_id": account_id}}
+
+    return {}
+
+
+def _ensure_configs() -> None:
+    global _ACCOUNT_CONFIGS, _LOADED
+    if _LOADED:
+        return
+    _LOADED = True
+    _ACCOUNT_CONFIGS = _load_account_configs()
+    if not _ACCOUNT_CONFIGS:
+        logger.warning("未配置任何 QMT 账户 (设置 QMT_ACCOUNTS 或 QMT_PATH/ACCOUNT_ID)")
+    else:
+        keys = list(_ACCOUNT_CONFIGS.keys())
+        logger.info("已加载 %d 个 QMT 账户: %s", len(keys), keys)
+
+
+def _get_default_account_type() -> str:
+    _ensure_configs()
+    if not _ACCOUNT_CONFIGS:
+        raise HTTPException(status_code=503, detail="未配置 QMT 账户")
+    return next(iter(_ACCOUNT_CONFIGS.keys()))
+
+
+def _resolve_account_type(x_account_type: str | None) -> str:
+    if x_account_type:
+        return x_account_type
+    return _get_default_account_type()
+
+
+def _get_or_create_trader(account_type: str) -> MiniQMTTrader:
+    _ensure_configs()
+    config = _ACCOUNT_CONFIGS.get(account_type)
+    if not config:
+        raise HTTPException(status_code=400, detail=f"未知的账户类型: {account_type}，可用: {list(_ACCOUNT_CONFIGS.keys())}")
+
+    if account_type in _TRADERS:
+        return _TRADERS[account_type]
+
     max_positions = _env_int("QMT_MAX_POSITIONS", 10)
     max_order_amount = _env_float("QMT_MAX_ORDER_AMOUNT", 500000.0)
-    _TRADER = MiniQMTTrader(
-        qmt_path=qmt_path,
-        account_id=account_id,
-        session_id=session_id,
+    trader = MiniQMTTrader(
+        qmt_path=config["qmt_path"],
+        account_id=config["account_id"],
         max_positions=max_positions,
         max_order_amount=max_order_amount,
     )
-    return _TRADER
+    _TRADERS[account_type] = trader
+    return trader
 
 
 def _ensure_connected(trader: MiniQMTTrader) -> None:
-    """确保交易者已连接，未连接时自动尝试重连"""
     if trader.connected:
         return
     try:
         trader.connect()
-        logger.info("自动重连成功")
+        logger.info("自动重连成功: account=%s", trader.account_id)
     except Exception as e:
-        logger.warning("自动重连失败: %s", e)
+        logger.warning("自动重连失败: account=%s error=%s", trader.account_id, e)
         raise HTTPException(status_code=503, detail=f"QMT 未连接且自动重连失败: {e}")
 
 
 def create_app() -> FastAPI:
-    api = FastAPI(title="AI Quant QMT Gateway", version="0.2.0")
+    api = FastAPI(title="AI Quant QMT Gateway", version="0.3.0")
+
+    @api.on_event("startup")
+    def startup() -> None:
+        _ensure_configs()
 
     @api.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @api.post("/api/trading/connect")
-    def trading_connect(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    @api.get("/api/trading/accounts")
+    def trading_accounts(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
         _check_token(x_api_token)
+        _ensure_configs()
+        result = {}
+        for key, config in _ACCOUNT_CONFIGS.items():
+            trader = _TRADERS.get(key)
+            result[key] = {
+                "qmt_path": config["qmt_path"],
+                "account_id": config["account_id"],
+                "connected": trader.connected if trader else False,
+            }
+        return {"accounts": result, "default": _get_default_account_type()}
+
+    @api.post("/api/trading/connect")
+    def trading_connect(
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        _check_token(x_api_token)
+        account_type = _resolve_account_type(account_type or x_account_type)
         try:
-            trader = _get_trader()
+            trader = _get_or_create_trader(account_type)
             ok = trader.connect()
-            logger.info("连接请求: connected=%s account=%s", trader.connected, trader.account_id)
-            return {"ok": bool(ok), "connected": trader.connected, "account_id": trader.account_id, "session_id": trader.session_id}
+            logger.info("连接请求: account_type=%s connected=%s account=%s", account_type, trader.connected, trader.account_id)
+            return {
+                "ok": bool(ok),
+                "connected": trader.connected,
+                "account_id": trader.account_id,
+                "account_type": account_type,
+                "session_id": trader.session_id,
+            }
         except Exception as exc:
-            logger.error("连接失败: %s", exc)
+            logger.error("连接失败: account_type=%s error=%s", account_type, exc)
             raise HTTPException(status_code=400, detail=str(exc))
 
     @api.post("/api/trading/disconnect")
-    def trading_disconnect(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_disconnect(
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
         trader.disconnect()
-        logger.info("断开连接")
-        return {"ok": True, "connected": trader.connected}
+        logger.info("断开连接: account_type=%s", account_type)
+        return {"ok": True, "connected": trader.connected, "account_type": account_type}
 
     @api.get("/api/trading/state")
-    def trading_state(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_state(
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
         events = trader.events
         last = events[-1] if events else None
         return {
             "connected": trader.connected,
             "account_id": trader.account_id,
+            "account_type": account_type,
             "session_id": trader.session_id,
             "events_count": len(events),
             "last_event": last,
         }
 
     @api.get("/api/trading/asset")
-    def trading_asset(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_asset(
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
         _ensure_connected(trader)
-        return {"asset": trader.query_asset()}
+        return {"asset": trader.query_asset(), "account_type": account_type}
 
     @api.get("/api/trading/positions")
-    def trading_positions(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_positions(
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
         _ensure_connected(trader)
-        return {"positions": trader.query_positions()}
+        return {"positions": trader.query_positions(), "account_type": account_type}
 
     @api.get("/api/trading/orders")
-    def trading_orders(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_orders(
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
         _ensure_connected(trader)
-        return {"orders": trader.query_orders()}
+        return {"orders": trader.query_orders(), "account_type": account_type}
 
     @api.get("/api/trading/trades")
-    def trading_trades(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_trades(
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
         _ensure_connected(trader)
-        return {"trades": trader.query_trades()}
+        return {"trades": trader.query_trades(), "account_type": account_type}
 
     @api.get("/api/trading/events")
-    def trading_events(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_events(
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
-        return {"events": trader.events[-200:]}
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
+        return {"events": trader.events[-200:], "account_type": account_type}
 
     @api.post("/api/trading/buy")
-    def trading_buy(body: BuySellRequest, x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_buy(
+        body: BuySellRequest,
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
         _ensure_connected(trader)
         order_id = trader.buy(
             stock_code=body.stock_code,
@@ -205,13 +336,19 @@ def create_app() -> FastAPI:
         )
         if order_id is None:
             raise HTTPException(status_code=400, detail="order rejected by risk check")
-        logger.info("买入委托: %s %d股 order_id=%s", body.stock_code, body.volume, order_id)
-        return {"order_id": int(order_id)}
+        logger.info("买入委托: account=%s %s %d股 order_id=%s", account_type, body.stock_code, body.volume, order_id)
+        return {"order_id": int(order_id), "account_type": account_type}
 
     @api.post("/api/trading/sell")
-    def trading_sell(body: BuySellRequest, x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_sell(
+        body: BuySellRequest,
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
         _ensure_connected(trader)
         order_id = trader.sell(
             stock_code=body.stock_code,
@@ -222,33 +359,44 @@ def create_app() -> FastAPI:
         )
         if order_id is None:
             raise HTTPException(status_code=400, detail="order rejected by risk check")
-        logger.info("卖出委托: %s %d股 order_id=%s", body.stock_code, body.volume, order_id)
-        return {"order_id": int(order_id)}
+        logger.info("卖出委托: account=%s %s %d股 order_id=%s", account_type, body.stock_code, body.volume, order_id)
+        return {"order_id": int(order_id), "account_type": account_type}
 
     @api.post("/api/trading/cancel")
-    def trading_cancel(body: CancelRequest, x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_cancel(
+        body: CancelRequest,
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
         _ensure_connected(trader)
         order_id = trader.cancel(int(body.order_id))
         if order_id is None:
             raise HTTPException(status_code=400, detail="cancel rejected")
-        logger.info("撤单: order_id=%s", order_id)
-        return {"order_id": int(order_id)}
+        logger.info("撤单: account=%s order_id=%s", account_type, order_id)
+        return {"order_id": int(order_id), "account_type": account_type}
 
     @api.post("/api/trading/cancel_all")
-    def trading_cancel_all(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+    def trading_cancel_all(
+        x_api_token: str | None = Header(default=None),
+        x_account_type: str | None = Header(default=None),
+        account_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        account_type = _resolve_account_type(account_type or x_account_type)
+        trader = _get_or_create_trader(account_type)
         _ensure_connected(trader)
         canceled = trader.cancel_all()
-        logger.info("全部撤单: count=%d ids=%s", len(canceled), canceled)
-        return {"canceled_count": len(canceled), "canceled_ids": canceled}
+        logger.info("全部撤单: account=%s count=%d", account_type, len(canceled))
+        return {"canceled_count": len(canceled), "canceled_ids": canceled, "account_type": account_type}
 
     @api.post("/api/historical/kline")
     def historical_kline(body: KLineRequest, x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        trader = _get_or_create_trader(_get_default_account_type())
         stock_code = str(body.stock_code or "").strip()
         period = str(body.period or "1d").strip()
         start_time = str(body.start_time or "").strip()
@@ -317,10 +465,88 @@ def create_app() -> FastAPI:
 
         return {"rows": out_rows, "columns": ["date", "open", "high", "low", "close", "volume", "amount"]}
 
+    @api.post("/api/historical/kline_batch")
+    def historical_kline_batch(body: KLineBatchRequest, x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
+        _check_token(x_api_token)
+        trader = _get_or_create_trader(_get_default_account_type())
+        stock_codes = [str(c).strip() for c in (body.stock_codes or []) if str(c).strip()]
+        period = str(body.period or "1d").strip()
+        start_time = str(body.start_time or "").strip()
+        end_time = str(body.end_time or "").strip()
+        dividend_type = str(body.dividend_type or "front").strip()
+        fill_data = bool(body.fill_data)
+
+        if not stock_codes:
+            return {"results": {}}
+
+        _log = logger.info
+        _log(f"[kline_batch] 批量获取 {len(stock_codes)} 只股票K线数据...")
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        download_count = 0
+        with ThreadPoolExecutor(max_workers=8) as exc:
+            futs = {exc.submit(trader.download_history_data, code, period, start_time, end_time): code for code in stock_codes}
+            for f in as_completed(futs):
+                if f.result():
+                    download_count += 1
+
+        _log(f"[kline_batch] 下载完成: {download_count}/{len(stock_codes)} 只")
+
+        time.sleep(1.5)
+
+        try:
+            raw = trader.get_market_data_ex(
+                stock_list=stock_codes,
+                period=period,
+                start_time=start_time,
+                end_time=end_time,
+                count=-1,
+                dividend_type=dividend_type,
+                fill_data=fill_data,
+            )
+        except Exception as e:
+            _log(f"[kline_batch] get_market_data_ex 失败: {e}")
+            return {"results": {}, "error": str(e)}
+
+        if not raw:
+            return {"results": {}}
+
+        import pandas as pd
+
+        results = {}
+        for code in stock_codes:
+            df = raw.get(code)
+            if df is None or df.empty:
+                results[code] = {"rows": []}
+                continue
+
+            if not isinstance(df.index, pd.DatetimeIndex):
+                try:
+                    df.index = pd.to_datetime(df.index)
+                except Exception:
+                    pass
+
+            out_rows = []
+            for idx, row in df.iterrows():
+                date_str = idx.strftime("%Y%m%d") if hasattr(idx, "strftime") else str(idx)
+                out_rows.append({
+                    "date": date_str,
+                    "open": float(row.get("open", 0) or 0),
+                    "high": float(row.get("high", 0) or 0),
+                    "low": float(row.get("low", 0) or 0),
+                    "close": float(row.get("close", 0) or 0),
+                    "volume": int(row.get("volume", 0) or 0),
+                    "amount": float(row.get("amount", 0) or 0),
+                })
+            results[code] = {"rows": out_rows}
+
+        _log(f"[kline_batch] 批量查询完成: {len(stock_codes)} 只股票, {sum(len(r['rows']) for r in results.values())} 行")
+        return {"results": results}
+
     @api.get("/api/historical/stock_list")
     def historical_stock_list(x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        trader = _get_or_create_trader(_get_default_account_type())
         try:
             codes = trader.get_stock_list()
             logger.info("获取股票列表成功: %d 只", len(codes))
@@ -332,7 +558,7 @@ def create_app() -> FastAPI:
     @api.post("/api/historical/financial_data")
     def historical_financial_data(body: FinancialDataRequest, x_api_token: str | None = Header(default=None)) -> dict[str, Any]:
         _check_token(x_api_token)
-        trader = _get_trader()
+        trader = _get_or_create_trader(_get_default_account_type())
         stock_code = str(body.stock_code or "").strip()
         start_time = str(body.start_time or "20150101").strip()
         end_time = str(body.end_time or "20261231").strip()
@@ -407,92 +633,34 @@ def create_app() -> FastAPI:
             list(income_map.keys()) + list(cashflow_map.keys())
         ))
 
-        def _get_field(record, field_names, default=None):
-            for name in field_names:
-                val = record.get(name)
-                if val is not None:
-                    return val
-            return default
+        rows = []
+        for period in all_periods[-max_rows:]:
+            pi = pershare_map.get(period, {})
+            bi = balance_map.get(period, {})
+            ii = income_map.get(period, {})
+            ci = cashflow_map.get(period, {})
+            cap = capital_map.get(period, {})
 
-        def _safe_div(a, b, pct=False):
-            if a is None or b is None:
-                return None
-            try:
-                a_v, b_v = float(a), float(b)
-                if b_v == 0:
-                    return None
-                result = a_v / b_v
-                return result * 100 if pct else result
-            except (ValueError, TypeError):
-                return None
+            n_oe = float(ii.get('operating_revenue', 0) or 0) if ii.get('operating_revenue') else bi.get('total_operating_income', 0) or 0
+            net_profit = float(ii.get('net_profit', 0) or 0)
 
-        def _pct_to_dec(v):
-            if v is None:
-                return None
-            try:
-                return float(v) / 100.0
-            except (ValueError, TypeError):
-                return None
-
-        records = []
-        for period in all_periods:
-            ps = pershare_map.get(period, {})
-            bal = balance_map.get(period, {})
-            inc = income_map.get(period, {})
-            cf = cashflow_map.get(period, {})
-
-            eps = _get_field(ps, ['s_fa_eps_basic'])
-            roe_raw = _get_field(ps, ['du_return_on_equity', 'equity_roe', 'net_roe'])
-            gp_raw = _get_field(ps, ['sales_gross_profit'])
-
-            revenue = _get_field(inc, ['revenue', 'operating_revenue', 'revenue_inc'])
-            net_profit = _get_field(inc, ['net_profit_incl_min_int_inc', 'net_profit_excl_min_int_inc'])
-            op_cost = _get_field(inc, ['cost_of_goods_sold', 'total_operating_cost', 'total_expense'])
-
-            gross_margin_raw = gp_raw
-            if gross_margin_raw is None and revenue and op_cost:
-                r_v, c_v = float(revenue), float(op_cost)
-                if r_v > 0:
-                    gross_margin_raw = round((r_v - c_v) / r_v * 100, 4)
-
-            net_margin_raw = _safe_div(net_profit, revenue, pct=True)
-
-            total_assets = _get_field(bal, ['tot_assets'])
-            total_liab = _get_field(bal, ['tot_liab'])
-            total_equity = _get_field(bal, ['total_equity', 'tot_shrhldr_eqy_incl_min_int'])
-            current_assets = _get_field(bal, ['total_current_assets'])
-            current_liab = _get_field(bal, ['total_current_liability'])
-
-            debt_ratio_raw = _safe_div(total_liab, total_assets, pct=True)
-            current_ratio_val = _safe_div(current_assets, current_liab)
-
-            roa_raw = _safe_div(net_profit, total_assets, pct=True)
-            if roe_raw is None and net_profit and total_equity:
-                roe_raw = _safe_div(net_profit, total_equity, pct=True)
-
-            operating_cashflow = _get_field(cf, ['net_cash_flows_oper_act'])
-
-            records.append({
-                "end_date": period[:4] + "-" + period[4:6] + "-" + period[6:8],
-                "eps": eps,
-                "roe": _pct_to_dec(roe_raw),
-                "roa": _pct_to_dec(roa_raw),
-                "gross_margin": _pct_to_dec(gross_margin_raw),
-                "net_margin": _pct_to_dec(net_margin_raw),
-                "debt_ratio": _pct_to_dec(debt_ratio_raw),
-                "current_ratio": current_ratio_val,
-                "revenue": revenue,
-                "net_profit": net_profit,
-                "operating_cashflow": operating_cashflow,
-                "total_assets": total_assets,
-                "total_equity": total_equity,
+            rows.append({
+                "报告期": period,
+                "基本每股收益": float(pi.get('eps', 0) or 0),
+                "每股净资产": float(pi.get('bps', 0) or 0),
+                "每股经营现金流": float(pi.get('ocfps', 0) or 0),
+                "营业收入": float(n_oe),
+                "净利润": float(net_profit),
+                "总资产": float(bi.get('total_assets', 0) or 0),
+                "净资产": float(bi.get('total_equity', 0) or bi.get('total_owner_equity', 0) or 0),
+                "ROE": float(pi.get('roe', 0) or 0),
+                "毛利率": float(ii.get('gross_profit_margin', 0) or 0) if ii.get('gross_profit_margin') else 0,
+                "净利率": float(ii.get('net_profit_margin', 0) or 0) if ii.get('net_profit_margin') else (net_profit / n_oe if n_oe else 0),
+                "总股本": float(cap.get('totalshares', 0) or 0),
+                "流通股本": float(cap.get('outstanding_shares', 0) or 0),
             })
 
-        records = records[-max_rows:] if max_rows > 0 else records
-        logger.info("财务数据: %s %d条 (范围: %s ~ %s)", stock_code, len(records),
-                     all_periods[0] if all_periods else "?",
-                     all_periods[-1] if all_periods else "?")
-        return {"rows": records}
+        return {"rows": rows}
 
     return api
 

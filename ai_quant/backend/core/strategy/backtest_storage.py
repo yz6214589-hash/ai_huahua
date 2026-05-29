@@ -240,7 +240,7 @@ def list_backtests(
         page_size: 每页数量
 
     Returns:
-        {"items": [...], "total": N, "page": page, "page_size": page_size}
+        {"records": [...], "total": N, "page": page, "page_size": page_size}
     """
     conditions = []
     params_list: list[Any] = []
@@ -257,7 +257,7 @@ def list_backtests(
         cfg = load_mysql_config()
         conn = connect(cfg)
     except Exception:
-        return {"items": [], "total": 0, "page": page, "page_size": page_size}
+        return {"records": [], "total": 0, "page": page, "page_size": page_size}
     try:
         # 总数
         count_rows = query_dict(conn, f"SELECT COUNT(*) as cnt FROM backtest_records{where_clause}", tuple(params_list))
@@ -279,10 +279,10 @@ def list_backtests(
                 item["created_at"] = item["created_at"].isoformat()
             items.append(item)
 
-        return {"items": items, "total": total, "page": page, "page_size": page_size}
+        return {"records": items, "total": total, "page": page, "page_size": page_size}
     except Exception as e:
         logger.error("查询回测列表失败", extra={"error": str(e)})
-        return {"items": [], "total": 0, "page": page, "page_size": page_size}
+        return {"records": [], "total": 0, "page": page, "page_size": page_size}
     finally:
         conn.close()
 

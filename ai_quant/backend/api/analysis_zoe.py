@@ -464,6 +464,11 @@ def _run_single_backtest(
             end=req.end,
             initial_cash=req.initial_cash,
         )
+        if not benchmark_nav_log:
+            logger.warning(
+                "基准数据加载失败",
+                extra={"benchmark_code": req.benchmark_code, "start": req.start, "end": req.end},
+            )
 
     # 使用 enhance_metrics 增强指标
     from core.strategy.metrics_calculator import enhance_metrics
@@ -675,7 +680,7 @@ def _run_interval_backtest(
             )
             continue
 
-        if meta.requires_chan:
+        if meta.requires_chan and "chan_signal" not in i_df.columns:
             from core.strategy.chan_engine import add_chan_fields
             chan_result = add_chan_fields(i_df, symbol=req.stock_code)
             i_df = chan_result.df
@@ -781,6 +786,8 @@ def _save_backtest_to_db(result: dict[str, Any], req: BacktestReq) -> None:
         result["backtest_id"] = backtest_id
     except Exception as e:
         logger.error("保存回测记录失败", extra={"error": str(e)})
+        result["backtest_id"] = None
+        result["save_warning"] = "回测结果保存失败，数据未持久化"
 
 
 def _save_batch_backtest_to_db(

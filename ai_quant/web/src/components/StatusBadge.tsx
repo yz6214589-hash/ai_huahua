@@ -2,10 +2,10 @@ import { Badge } from '@/components/Badge'
 import type { DataSource, JobStatus } from '@/api/types'
 
 export function JobStatusBadge({ status }: { status: JobStatus }) {
-  if (status === 'success') return <Badge tone="green">success</Badge>
-  if (status === 'partial') return <Badge tone="amber">partial</Badge>
-  if (status === 'failed') return <Badge tone="red">failed</Badge>
-  return <Badge tone="blue">running</Badge>
+  if (status === 'success') return <Badge tone="green">成功</Badge>
+  if (status === 'partial') return <Badge tone="amber">部分完成</Badge>
+  if (status === 'failed') return <Badge tone="red">失败</Badge>
+  return <Badge tone="blue">运行中</Badge>
 }
 
 export function DataSourceBadge({ source }: { source: DataSource }) {

@@ -108,7 +108,7 @@ export default function JobDetail() {
                   <div className="mt-1 break-all text-xs text-zinc-900">{selected.runId}</div>
                 </div>
                 <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
-                  <div className="text-xs text-zinc-500">status</div>
+                  <div className="text-xs text-zinc-500">状态</div>
                   <div className="mt-1"><JobStatusBadge status={selected.status} /></div>
                 </div>
                 <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">

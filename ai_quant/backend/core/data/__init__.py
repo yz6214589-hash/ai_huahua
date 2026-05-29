@@ -139,6 +139,7 @@ def write_job_run(domain: str, payload: dict[str, Any]) -> dict[str, Any]:
         "fallbackChain": payload.get("fallbackChain") if isinstance(payload.get("fallbackChain"), list) else [],
         "rowsWritten": int(payload.get("rowsWritten") or 0),
         "itemsProcessed": int(payload.get("itemsProcessed") or 0),
+        "itemsTotal": int(payload.get("itemsTotal") or 0) if payload.get("itemsTotal") is not None else None,
         "failedItems": payload.get("failedItems") if isinstance(payload.get("failedItems"), list) else [],
         "message": raw_message,
         "userMessage": user_message,

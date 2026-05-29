@@ -73,7 +73,7 @@ export default function App() {
           <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/stock/:code" element={<StockDetail />} />
           <Route path="/execution" element={<Execution />}>
-            <Route index element={<Navigate to="tasks" replace />} />
+            <Route index element={<Navigate to="positions" replace />} />
             <Route path="tasks" element={<ExecutionTasks />} />
             <Route path="positions" element={<ExecutionPositions />} />
             <Route path="records" element={<ExecutionRecords />} />

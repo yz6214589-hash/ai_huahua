@@ -58,11 +58,12 @@ except ImportError:
     ASYNC_AVAILABLE = False
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+if not logging.getLogger().hasHandlers():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 logger = logging.getLogger("web-search-universal")
 
 SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

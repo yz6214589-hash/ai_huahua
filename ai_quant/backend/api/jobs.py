@@ -338,24 +338,29 @@ def _run_job_impl(*, run_id: str, started_at: str, domain: str, mode: str | None
     })
 
     # 构建进度回调函数，定期更新 itemsProcessed
-    def _progress_callback(items_processed: int) -> None:
+    def _progress_callback(items_processed: int, **extra: Any) -> None:
         try:
-            write_job_run(
-                domain=domain,
-                payload={
-                    "runId": run_id,
-                    "domain": domain,
-                    "startedAt": started_at,
-                    "status": "running",
-                    "itemsProcessed": items_processed,
-                    "params": params,
-                },
-            )
+            payload: dict[str, Any] = {
+                "runId": run_id,
+                "domain": domain,
+                "startedAt": started_at,
+                "status": "running",
+                "itemsProcessed": items_processed,
+                "params": params,
+            }
+            # 支持传递 itemsTotal 等额外进度信息
+            if "itemsTotal" in extra:
+                payload["itemsTotal"] = extra["itemsTotal"]
+            write_job_run(domain=domain, payload=payload)
         except Exception:
             pass  # 进度更新失败不影响主流程
 
     try:
-        stats = run_domain(domain, mode, params, progress_callback=_progress_callback)
+        # 注入 run_id 到参数中，供下游函数用于日志追踪
+        job_params = dict(params or {})
+        job_params["_run_id"] = run_id
+
+        stats = run_domain(domain, mode, job_params, progress_callback=_progress_callback)
         status = "success" if not stats.failed_items else "partial"
         write_job_run(
             domain=domain,
@@ -369,6 +374,7 @@ def _run_job_impl(*, run_id: str, started_at: str, domain: str, mode: str | None
                 "fallbackChain": list(stats.fallback_chain),
                 "rowsWritten": int(stats.rows_written or 0),
                 "itemsProcessed": int(stats.items_processed or 0),
+                "itemsTotal": int(stats.items_processed or 0),
                 "failedItems": list(stats.failed_items or []),
                 "message": stats.message,
                 "params": params,

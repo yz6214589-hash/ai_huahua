@@ -14,7 +14,7 @@ export default function StockSelect() {
 
   return (
     <div>
-      <div className="mb-4 border-b border-zinc-200">
+      <div className="sticky top-0 z-10 mb-4 border-b border-zinc-200 bg-white">
         <div className="flex gap-1">
           {TABS.map((tab) => (
             <button
