@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useEffect, useState } from 'react'
 import { fetchJson } from '@/api/client'
 import type { MacroLatest } from '@/api/types'
@@ -373,19 +374,7 @@ export default function MacroData() {
 
       {/* 初始加载骨架屏 */}
       {loading && !macro ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i}>
-              <CardBody>
-                <div className="animate-pulse">
-                  <div className="h-8 w-24 rounded bg-zinc-200" />
-                  <div className="mt-2 h-4 w-40 rounded bg-zinc-100" />
-                  <div className="mt-2 h-3 w-28 rounded bg-zinc-100" />
-                </div>
-              </CardBody>
-            </Card>
-          ))}
-        </div>
+        <Loading className="py-24" />
       ) : macro?.indicators && macro.indicators.length > 0 ? (
         <>
           {/* 中国市场指标分组 */}
@@ -482,7 +471,7 @@ export default function MacroData() {
                 {/* 弹窗内容 */}
                 <div className="mt-4">
                   {historyLoading ? (
-                    <div className="py-12 text-center text-sm text-zinc-500">加载中...</div>
+                    <Loading className="py-12" />
                   ) : (
                     <TrendChart data={historyData} indicator={selectedIndicator} />
                   )}

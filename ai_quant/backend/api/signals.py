@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -60,47 +60,6 @@ def _get_conn():
     """获取数据库连接"""
     cfg = load_mysql_config()
     return connect(cfg)
-
-
-def generate_mock_signals() -> list[dict[str, Any]]:
-    """生成模拟信号数据"""
-    import random
-    signals = []
-    signal_types = ["BUY", "SELL"]
-    reasons_buy = ["价格上穿MA20，RSI超卖", "MACD金叉", "价格站稳MA20上方"]
-    reasons_sell = ["RSI超买，价格下穿MA20", "价格跌破布林中轨", "MACD死叉"]
-
-    stock_pool = [
-        ("600519.SH", "贵州茅台"), ("300750.SZ", "宁德时代"), ("002594.SZ", "比亚迪"),
-        ("688041.SH", "寒武纪"), ("601318.SH", "中国平安"), ("000001.SZ", "平安银行"),
-    ]
-
-    for stock_code, stock_name in stock_pool:
-        signal_type = random.choice(signal_types)
-        strength = random.randint(3, 5)
-        score = random.randint(65, 88)
-        macd = round(random.uniform(-3, 3), 2)
-        rsi = round(random.uniform(20, 85), 1)
-        ma20 = round(random.uniform(10, 2000), 2)
-        close = round(ma20 * random.uniform(0.95, 1.1), 2)
-        reasons = reasons_buy if signal_type == "BUY" else reasons_sell
-        signal = {
-            "id": str(uuid4()),
-            "stock_code": stock_code,
-            "stock_name": stock_name,
-            "signal_type": signal_type,
-            "strength": strength,
-            "score": score,
-            "macd": macd,
-            "rsi": rsi,
-            "ma20": ma20,
-            "close": close,
-            "reason": random.choice(reasons),
-            "trade_date": (datetime.now() - timedelta(minutes=random.randint(0, 120))).strftime("%Y-%m-%d"),
-            "created_at": (datetime.now() - timedelta(minutes=random.randint(0, 120))).strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        signals.append(signal)
-    return sorted(signals, key=lambda x: x["created_at"], reverse=True)
 
 
 @router.get("", response_model=dict)
@@ -199,19 +158,7 @@ async def get_signals(
         }
     except Exception as e:
         logger.error("获取信号列表失败", extra={"error": str(e)})
-        mock_signals = generate_mock_signals()
-        if signal_type:
-            mock_signals = [s for s in mock_signals if s["signal_type"] == signal_type]
-        if strength_min > 0:
-            mock_signals = [s for s in mock_signals if s["strength"] >= strength_min]
-        total = len(mock_signals)
-        logger.info("使用模拟数据返回", extra={"mock_count": len(mock_signals)})
-        return {
-            "items": mock_signals[:page_size],
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-        }
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}
     finally:
         conn.close()
         logger.debug("数据库连接已关闭")

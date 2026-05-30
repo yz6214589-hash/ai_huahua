@@ -5,6 +5,7 @@ import { toast } from '@/components/Toast'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
 import { Play, RefreshCcw, TrendingUp, TrendingDown, XCircle, CheckCircle2, ChevronDown, ChevronRight, History, BarChart3 } from 'lucide-react'
+import ReactECharts from 'echarts-for-react'
 import BacktestCharts from '@/components/BacktestCharts'
 import { StockPicker } from '@/components/StockPicker'
 import type { StockSearchItem } from '@/api/types'
@@ -13,15 +14,18 @@ interface StrategyDef {
   strategy_id: string
   name: string
   params_schema: Record<string, {
-    type: 'int' | 'float' | 'bool' | 'enum' | 'object'
+    type: 'int' | 'float' | 'bool' | 'enum' | 'select' | 'object'
     label: string; help: string
     min?: number; max?: number; step?: number
     default?: number | string | boolean
     values?: string[]
+    options?: Array<{ value: string; label: string }>
+    section?: string  // 参数所属区域
   }>
   default_params: Record<string, unknown>
   requires_chan?: boolean
   requires_predictions?: boolean
+  group?: string  // 策略分组 "basic" | "optimized" | "combo"
 }
 
 interface StrategyInstance {
@@ -57,20 +61,53 @@ interface EnhancedMetrics {
   profit_factor?: number
   tracking_error?: number
   sharpe?: number
+  avg_profit_loss?: number
 }
 
 interface SingleBacktestResult {
   metrics: EnhancedMetrics
-  trades: Array<{ date: string; action: string; price: number; qty: number; cost?: number; proceeds?: number; note?: string }>
+  trades: Array<{ date: string; action: string; price: number; qty: number; cost?: number; proceeds?: number; note?: string; fee_detail?: string }>
   nav_log: Array<{ date: string; nav: number }>
   benchmark_nav_log?: Array<{ date: string; nav: number }>
   drawdown_log?: Array<{ date: string; nav: number; peak: number; drawdown: number }>
+  kline?: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>
   monthly_returns?: Array<{ month: string; return: number }>
+  indicator_data?: {
+    bollinger?: { values: Array<{ mid: number; top: number; bot: number } | null> }
+    rsi?: { values: Array<number | null> }
+  }
   strategy_id: string
   stock_code: string
   start_date: string
   end_date: string
   interval_results?: IntervalResult[]
+  backtest_id?: string
+  chan_vis?: {
+    bi_list: Array<{
+      start_date?: string
+      end_date?: string
+      start_idx?: number
+      end_idx?: number
+      start_price: number
+      end_price: number
+      direction: 'up' | 'down'
+    }>
+    seg_list: Array<{
+      start_date?: string
+      end_date?: string
+      direction: 'up' | 'down'
+    }>
+    zs_list: Array<{
+      ZG?: number
+      ZD?: number
+      zg?: number
+      zd?: number
+      start_date?: string
+      end_date?: string
+      start_idx?: number
+      end_idx?: number
+    }>
+  }
 }
 
 interface IntervalResult {
@@ -80,7 +117,7 @@ interface IntervalResult {
   error?: string
   result?: {
     metrics: EnhancedMetrics
-    trades: Array<{ date: string; action: string; price: number; qty: number; cost?: number; proceeds?: number; note?: string }>
+    trades: Array<{ date: string; action: string; price: number; qty: number; cost?: number; proceeds?: number; note?: string; fee_detail?: string }>
     nav_log: Array<{ date: string; nav: number }>
     benchmark_nav_log?: Array<{ date: string; nav: number }>
     drawdown_log?: Array<{ date: string; nav: number; peak: number; drawdown: number }>
@@ -120,12 +157,42 @@ interface BacktestMode {
 
 /* ---------- 指标卡片组件 ---------- */
 
+const METRIC_TOOLTIPS: Record<string, string> = {
+  'Sortino': '只考虑下行风险的夏普比率改进版，衡量单位下行波动带来的超额收益，越高越好',
+  'Calmar': '年化收益率与最大回撤的比值，衡量策略每承受1%回撤能换取多少年化收益，越高越好',
+  '信息比率': '超额收益与跟踪误差的比值，衡量相对于基准的主动管理能力，越高越好',
+  '盈亏比': '平均盈利与平均亏损的比值，>1 表示盈亏质量好',
+  '平均盈亏': '每笔交易的平均盈亏金额，正数表示平均每笔盈利，负数表示平均每笔亏损',
+  'Alpha': '超越市场基准的超额收益，衡量选股/择时能力，>0 表示跑赢市场',
+  'Beta': '策略相对于市场基准的波动敏感度，β=1 同步波动，β>1 波动更大',
+  '波动率': '收益率的年化标准差，衡量策略的整体风险水平，越低越稳定',
+  '夏普比率': '单位总风险带来的超额收益，衡量风险调整后收益，>1 较好',
+}
+
+function MetricLabel({ label }: { label: string }) {
+  const desc = METRIC_TOOLTIPS[label]
+  return (
+    <span className="inline-flex items-center gap-1">
+      {label}
+      {desc && (
+        <span className="group relative inline-flex items-center">
+          <span className="inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full bg-zinc-200 text-[10px] font-bold text-zinc-500 hover:bg-zinc-300">?</span>
+          <span className="invisible group-hover:visible absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-56 whitespace-normal rounded-md bg-zinc-800 px-2.5 py-1.5 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-all z-50 pointer-events-none">
+            {desc}
+            <span className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-zinc-800" />
+          </span>
+        </span>
+      )}
+    </span>
+  )
+}
+
 function MetricCard({ label, value, unit = '', tone }: { label: string; value: string | number; unit?: string; tone?: 'up' | 'down' | 'neutral' }) {
   const cls = tone === 'up' ? 'text-red-600' : tone === 'down' ? 'text-green-600' : 'text-zinc-900'
   return (
     <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-center">
       <div className={`text-2xl font-bold ${cls}`}>{value}{unit}</div>
-      <div className="mt-1 text-xs text-zinc-500">{label}</div>
+      <div className="mt-1 text-xs text-zinc-500"><MetricLabel label={label} /></div>
     </div>
   )
 }
@@ -141,7 +208,7 @@ function MetricsDisplay({ metrics }: { metrics: EnhancedMetrics }) {
       {/* 第一行：基础指标 */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
         <MetricCard label="初始资金" value={metrics.initial_nav.toLocaleString()} unit="元" />
-        <MetricCard label="最终资金" value={metrics.final_nav.toLocaleString()} unit="元" />
+        <MetricCard label="最终资金" value={Math.round(metrics.final_nav).toLocaleString()} unit="元" />
         <MetricCard label="总收益率" value={`${totalReturn > 0 ? '+' : ''}${(totalReturn * 100).toFixed(2)}`} unit="%" tone={returnTone} />
         <MetricCard label="交易次数" value={metrics.num_trades} />
         <MetricCard label="胜率" value={`${(metrics.win_rate * 100).toFixed(1)}`} unit="%" />
@@ -149,14 +216,16 @@ function MetricsDisplay({ metrics }: { metrics: EnhancedMetrics }) {
         <MetricCard label="最大回撤" value={`${((metrics.max_drawdown ?? 0) * 100).toFixed(2)}`} unit="%" tone="down" />
       </div>
       {/* 第二行：增强指标 */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-9">
         <MetricCard label="波动率" value={`${((metrics.volatility ?? 0) * 100).toFixed(2)}`} unit="%" />
+        <MetricCard label="夏普比率" value={(metrics.sharpe ?? 0).toFixed(3)} />
         <MetricCard label="Sortino" value={(metrics.sortino ?? 0).toFixed(3)} />
         <MetricCard label="Calmar" value={(metrics.calmar ?? 0).toFixed(3)} />
         <MetricCard label="Alpha" value={`${((metrics.alpha ?? 0) * 100).toFixed(2)}`} unit="%" tone={(metrics.alpha ?? 0) > 0 ? 'up' : 'down'} />
         <MetricCard label="Beta" value={(metrics.beta ?? 0).toFixed(3)} />
         <MetricCard label="信息比率" value={(metrics.information_ratio ?? 0).toFixed(3)} />
         <MetricCard label="盈亏比" value={(metrics.profit_factor ?? 0).toFixed(2)} />
+        <MetricCard label="平均盈亏" value={(metrics.avg_profit_loss ?? 0).toFixed(2)} unit="元" />
       </div>
     </div>
   )
@@ -304,6 +373,7 @@ export default function StrategyBacktest() {
   const [pageReady, setPageReady] = useState(false)
 
   const [mode, setMode] = useState<'instance' | 'strategy'>('instance')
+  const [strategyGroup, setStrategyGroup] = useState<string>('all')
   const [selectedInstanceId, setSelectedInstanceId] = useState('')
   const [selectedStrategyId, setSelectedStrategyId] = useState('')
   const [overrideParams, setOverrideParams] = useState<Record<string, string>>({})
@@ -317,8 +387,8 @@ export default function StrategyBacktest() {
   const [groupAddVisible, setGroupAddVisible] = useState(false)
   const [groupAddStocks, setGroupAddStocks] = useState<StockSearchItem[]>([])
   const [backtestType, setBacktestType] = useState<'single' | 'batch'>('single')
-  const [startDate, setStartDate] = useState('2023-01-01')
-  const [endDate, setEndDate] = useState('2024-12-31')
+  const [startDate, setStartDate] = useState('2025-01-01')
+  const [endDate, setEndDate] = useState('2025-12-31')
 
   // 区间模式配置
   const [intervalMode, setIntervalMode] = useState<'full' | 'train_val_test'>('full')
@@ -328,11 +398,17 @@ export default function StrategyBacktest() {
 
   // 交易成本配置
   const [costExpanded, setCostExpanded] = useState(false)
-  const [commissionBuy, setCommissionBuy] = useState(0.0003)
-  const [commissionSell, setCommissionSell] = useState(0.0013)
+  const [klineExpanded, setKlineExpanded] = useState(false)
+  const [commissionBuy, setCommissionBuy] = useState(0.00015)
+  const [commissionSell, setCommissionSell] = useState(0.00015)
   const [slippagePct, setSlippagePct] = useState(0)
   const [slippageFixed, setSlippageFixed] = useState(0)
   const [minCommission, setMinCommission] = useState(5)
+  const [positionPct, setPositionPct] = useState(0.95)
+  const [initialCash, setInitialCash] = useState(1000000)
+  const [stampDuty, setStampDuty] = useState(0.001)
+  const [transferFeeBuy, setTransferFeeBuy] = useState(0.00001)
+  const [transferFeeSell, setTransferFeeSell] = useState(0.00001)
 
   // 基准选择
   const [benchmarkCode, setBenchmarkCode] = useState('000300.SH')
@@ -340,16 +416,38 @@ export default function StrategyBacktest() {
   const navigate = useNavigate()
 
   /** 生成绩效报告并跳转到绩效报告页面 */
-  const handlePerformanceAnalysis = async (stockCode: string, metrics: EnhancedMetrics) => {
+  const handlePerformanceAnalysis = async (
+    stockCode: string,
+    metrics: EnhancedMetrics,
+    extra?: {
+      trades?: SingleBacktestResult['trades']
+      nav_log?: SingleBacktestResult['nav_log']
+      drawdown_log?: SingleBacktestResult['drawdown_log']
+      monthly_returns?: SingleBacktestResult['monthly_returns']
+      backtest_id?: string
+    },
+  ) => {
     try {
       const strategyName = currentStrategy?.name || currentInstance?.name || selectedStrategyId
-      const payload = {
+      const payload: Record<string, unknown> = {
         report_type: 'common',
         strategy_name: `${strategyName}_${stockCode}`,
         strategy_params: JSON.stringify(parseParams()),
         initial_cash: metrics.initial_nav,
         start_date: startDate,
         end_date: endDate,
+        metrics,
+        trades: extra?.trades || [],
+        nav_log: extra?.nav_log || [],
+      }
+      if (extra?.drawdown_log) {
+        payload.drawdown_log = extra.drawdown_log
+      }
+      if (extra?.monthly_returns) {
+        payload.monthly_returns = extra.monthly_returns
+      }
+      if (extra?.backtest_id) {
+        payload.backtest_id = extra.backtest_id
       }
       await postJson('/api/v1/performance/generate', payload)
       toast('success', `绩效报告已生成：${stockCode}`)
@@ -381,6 +479,14 @@ export default function StrategyBacktest() {
 
   const currentInstance = instances.find((x) => x.instance_id === selectedInstanceId)
   const currentStrategy = strategies.find((s) => s.strategy_id === (currentInstance?.strategy_id || selectedStrategyId))
+  // 按分组过滤策略
+  const filteredStrategies = strategyGroup === 'all'
+    ? strategies
+    : strategies.filter(s => s.group === strategyGroup)
+  // 按分组过滤实例（只显示属于过滤后策略的实例）
+  const filteredInstances = strategyGroup === 'all'
+    ? instances
+    : instances.filter(inst => filteredStrategies.some(s => s.strategy_id === inst.strategy_id))
 
   useEffect(() => {
     if (currentInstance) {
@@ -412,6 +518,7 @@ export default function StrategyBacktest() {
       else if (meta.type === 'float') params[k] = parseFloat(String(v))
       else if (meta.type === 'bool') params[k] = v === 'true'
       else if (meta.type === 'enum') params[k] = String(v)
+      else if (meta.type === 'select') params[k] = String(v)
       else if (meta.type === 'object') {
         try { params[k] = JSON.parse(String(v)) }
         catch { params[k] = {} }
@@ -491,25 +598,25 @@ export default function StrategyBacktest() {
         if (meta.type === 'int') {
           const parsed = parseInt(String(value), 10)
           if (isNaN(parsed)) {
-            errors.push({ field: `参数「${meta.label}」`, message: `"${value}" 不是有效的整数` })
+            errors.push({ field: `参数「${meta.label} (${key})」`, message: `"${value}" 不是有效的整数` })
           } else {
             if (meta.min !== undefined && parsed < meta.min) {
-              errors.push({ field: `参数「${meta.label}」`, message: `最小值 ${meta.min}，当前值 ${parsed}` })
+              errors.push({ field: `参数「${meta.label} (${key})」`, message: `最小值 ${meta.min}，当前值 ${parsed}` })
             }
             if (meta.max !== undefined && parsed > meta.max) {
-              errors.push({ field: `参数「${meta.label}」`, message: `最大值 ${meta.max}，当前值 ${parsed}` })
+              errors.push({ field: `参数「${meta.label} (${key})」`, message: `最大值 ${meta.max}，当前值 ${parsed}` })
             }
           }
         } else if (meta.type === 'float') {
           const parsed = parseFloat(String(value))
           if (isNaN(parsed)) {
-            errors.push({ field: `参数「${meta.label}」`, message: `"${value}" 不是有效的浮点数` })
+            errors.push({ field: `参数「${meta.label} (${key})」`, message: `"${value}" 不是有效的浮点数` })
           } else {
             if (meta.min !== undefined && parsed < meta.min) {
-              errors.push({ field: `参数「${meta.label}」`, message: `最小值 ${meta.min}，当前值 ${parsed}` })
+              errors.push({ field: `参数「${meta.label} (${key})」`, message: `最小值 ${meta.min}，当前值 ${parsed}` })
             }
             if (meta.max !== undefined && parsed > meta.max) {
-              errors.push({ field: `参数「${meta.label}」`, message: `最大值 ${meta.max}，当前值 ${parsed}` })
+              errors.push({ field: `参数「${meta.label} (${key})」`, message: `最大值 ${meta.max}，当前值 ${parsed}` })
             }
           }
         }
@@ -537,6 +644,7 @@ export default function StrategyBacktest() {
       params,
       interval_mode: intervalMode,
       benchmark_code: benchmarkCode,
+      initial_cash: initialCash,
     }
 
     // 区间模式参数
@@ -552,6 +660,14 @@ export default function StrategyBacktest() {
     payload.slippage_pct = slippagePct
     payload.slippage_fixed = slippageFixed
     payload.min_commission = minCommission
+
+    // 仓位比例参数
+    payload.position_pct = positionPct
+
+    // 印花税和过户费参数
+    payload.stamp_duty = stampDuty
+    payload.transfer_fee_buy = transferFeeBuy
+    payload.transfer_fee_sell = transferFeeSell
 
     return payload
   }
@@ -708,6 +824,44 @@ export default function StrategyBacktest() {
 
             {/* 策略和股票选择 */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {/* 策略分组标签 */}
+              <div className="md:col-span-2">
+                <div className="flex gap-1 mb-1">
+                  {[
+                    { key: 'all', label: '全部' },
+                    { key: 'basic', label: '基础策略' },
+                    { key: 'optimized', label: '优化策略' },
+                    { key: 'combo', label: '策略组合' },
+                  ].map(g => (
+                    <button
+                      key={g.key}
+                      onClick={() => {
+                        setStrategyGroup(g.key)
+                        // 如果当前选中的策略不在过滤后的列表中，自动选择第一个
+                        if (g.key !== 'all') {
+                          const filtered = strategies.filter(s => s.group === g.key)
+                          if (filtered.length > 0 && !filtered.find(s => s.strategy_id === selectedStrategyId)) {
+                            setSelectedStrategyId(filtered[0].strategy_id)
+                          }
+                          // 实例模式下，如果当前实例不在过滤后的列表中，自动选择第一个
+                          const filteredInsts = instances.filter(inst => filtered.some(s => s.strategy_id === inst.strategy_id))
+                          if (filteredInsts.length > 0 && !filteredInsts.find(inst => inst.instance_id === selectedInstanceId)) {
+                            setSelectedInstanceId(filteredInsts[0].instance_id)
+                          }
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                        strategyGroup === g.key
+                          ? 'bg-zinc-900 text-white'
+                          : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {mode === 'instance' ? (
                 <div>
                   <div className="mb-1 text-xs text-zinc-500">策略实例</div>
@@ -717,7 +871,7 @@ export default function StrategyBacktest() {
                     className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                   >
                     <option value="">— 请选择实例 —</option>
-                    {instances.map((inst) => (
+                    {filteredInstances.map((inst) => (
                       <option key={inst.instance_id} value={inst.instance_id}>
                         {inst.name}（{strategies.find((s) => s.strategy_id === inst.strategy_id)?.name || inst.strategy_id}）
                       </option>
@@ -732,7 +886,7 @@ export default function StrategyBacktest() {
                     onChange={(e) => setSelectedStrategyId(e.target.value)}
                     className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                   >
-                    {strategies.map((s) => (
+                    {filteredStrategies.map((s) => (
                       <option key={s.strategy_id} value={s.strategy_id}>{s.name}</option>
                     ))}
                   </select>
@@ -941,58 +1095,103 @@ export default function StrategyBacktest() {
                     <span className="text-xs text-zinc-400">参数来自实例，不可修改</span>
                   )}
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  {Object.entries(currentStrategy.params_schema).map(([key, meta]) => (
-                    <div key={key}>
-                      <div className="mb-1 text-xs text-zinc-500">{meta.label}</div>
-                      {meta.type === 'bool' ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={overrideParams[key] === 'true'}
-                            onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: String(e.target.checked) }))}
-                            disabled={mode === 'instance'}
-                            className="h-4 w-4 accent-zinc-900"
-                          />
-                          <span className={`text-xs ${mode === 'instance' ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                            {overrideParams[key] === 'true' ? '开启' : '关闭'}
-                          </span>
+                {(() => {
+                  // 按 section 分组
+                  const sections: Record<string, Array<[string, typeof currentStrategy.params_schema[string]]>> = {}
+                  const noSection: Array<[string, typeof currentStrategy.params_schema[string]]> = []
+
+                  for (const [key, meta] of Object.entries(currentStrategy.params_schema)) {
+                    if (meta.section) {
+                      if (!sections[meta.section]) sections[meta.section] = []
+                      sections[meta.section].push([key, meta])
+                    } else {
+                      noSection.push([key, meta])
+                    }
+                  }
+
+                  const renderParams = (params: Array<[string, typeof currentStrategy.params_schema[string]]>) => (
+                    <div className="grid grid-cols-3 gap-3">
+                      {params.map(([key, meta]) => (
+                        <div key={key}>
+                          <div className="mb-1 text-xs text-zinc-500">{meta.label} <span className="text-zinc-400">({key})</span></div>
+                          {meta.type === 'bool' ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={overrideParams[key] === 'true'}
+                                onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: String(e.target.checked) }))}
+                                disabled={mode === 'instance'}
+                                className="h-4 w-4 accent-zinc-900"
+                              />
+                              <span className={`text-xs ${mode === 'instance' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                                {overrideParams[key] === 'true' ? '开启' : '关闭'}
+                              </span>
+                            </div>
+                          ) : meta.type === 'select' ? (
+                            <select
+                              value={String(overrideParams[key] ?? meta.options?.[0]?.value ?? '')}
+                              onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
+                              disabled={mode === 'instance'}
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400"
+                            >
+                              {(meta.options || []).map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          ) : meta.type === 'enum' ? (
+                            <select
+                              value={overrideParams[key] ?? ''}
+                              onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
+                              disabled={mode === 'instance'}
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400"
+                            >
+                              {meta.values?.map((v) => (
+                                <option key={v} value={v}>{v}</option>
+                              ))}
+                            </select>
+                          ) : meta.type === 'object' ? (
+                            <textarea
+                              value={overrideParams[key] ?? '{}'}
+                              onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
+                              disabled={mode === 'instance'}
+                              rows={2}
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-mono outline-none focus:border-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400"
+                              placeholder='{"key": "value"}'
+                            />
+                          ) : (
+                            <input
+                              type="number"
+                              value={overrideParams[key] ?? String(meta.default ?? '')}
+                              onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
+                              disabled={mode === 'instance'}
+                              min={meta.min}
+                              max={meta.max}
+                              step={meta.step}
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400"
+                            />
+                          )}
                         </div>
-                      ) : meta.type === 'enum' ? (
-                        <select
-                          value={overrideParams[key] ?? ''}
-                          onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
-                          disabled={mode === 'instance'}
-                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400"
-                        >
-                          {meta.values?.map((v) => (
-                            <option key={v} value={v}>{v}</option>
-                          ))}
-                        </select>
-                      ) : meta.type === 'object' ? (
-                        <textarea
-                          value={overrideParams[key] ?? '{}'}
-                          onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
-                          disabled={mode === 'instance'}
-                          rows={2}
-                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-mono outline-none focus:border-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400"
-                          placeholder='{"key": "value"}'
-                        />
-                      ) : (
-                        <input
-                          type="number"
-                          value={overrideParams[key] ?? String(meta.default ?? '')}
-                          onChange={(e) => setOverrideParams((p) => ({ ...p, [key]: e.target.value }))}
-                          disabled={mode === 'instance'}
-                          min={meta.min}
-                          max={meta.max}
-                          step={meta.step}
-                          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400"
-                        />
-                      )}
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  )
+
+                  return (
+                    <div className="space-y-3">
+                      {/* 无分组的参数 */}
+                      {noSection.length > 0 && renderParams(noSection)}
+
+                      {/* 有分组的参数 */}
+                      {Object.entries(sections).map(([sectionName, params]) => (
+                        <div key={sectionName}>
+                          <div className="flex items-center gap-2 mb-2 mt-1">
+                            <span className="text-xs font-semibold text-zinc-700 bg-zinc-100 px-2 py-0.5 rounded">{sectionName}</span>
+                          </div>
+                          {renderParams(params)}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
@@ -1093,7 +1292,7 @@ export default function StrategyBacktest() {
                       />
                     </div>
                     <div>
-                      <div className="mb-1 text-xs text-zinc-500">卖出佣金率（含印花税）</div>
+                      <div className="mb-1 text-xs text-zinc-500">卖出佣金率</div>
                       <input
                         type="number"
                         value={commissionSell}
@@ -1123,12 +1322,67 @@ export default function StrategyBacktest() {
                       />
                     </div>
                     <div>
-                      <div className="mb-1 text-xs text-zinc-500">最低手续费</div>
+                      <div className="mb-1 text-xs text-zinc-500">最低佣金</div>
                       <input
                         type="number"
                         value={minCommission}
                         onChange={(e) => setMinCommission(parseFloat(e.target.value) || 0)}
                         step={1}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">仓位比例</div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={1}
+                          max={100}
+                          value={Math.round(positionPct * 100)}
+                          onChange={(e) => setPositionPct(parseInt(e.target.value) / 100)}
+                          className="flex-1 accent-zinc-900"
+                        />
+                        <span className="w-10 text-right text-sm text-zinc-700">{Math.round(positionPct * 100)}%</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">初始资金</div>
+                      <input
+                        type="number"
+                        value={initialCash}
+                        onChange={(e) => setInitialCash(parseInt(e.target.value) || 1000000)}
+                        step={100000}
+                        min={10000}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">印花税费率（卖出）</div>
+                      <input
+                        type="number"
+                        value={stampDuty}
+                        onChange={(e) => setStampDuty(parseFloat(e.target.value) || 0)}
+                        step={0.0001}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">买入过户费率</div>
+                      <input
+                        type="number"
+                        value={transferFeeBuy}
+                        onChange={(e) => setTransferFeeBuy(parseFloat(e.target.value) || 0)}
+                        step={0.00001}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs text-zinc-500">卖出过户费率</div>
+                      <input
+                        type="number"
+                        value={transferFeeSell}
+                        onChange={(e) => setTransferFeeSell(parseFloat(e.target.value) || 0)}
+                        step={0.00001}
                         className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400"
                       />
                     </div>
@@ -1195,7 +1449,13 @@ export default function StrategyBacktest() {
               {/* 绩效分析按钮 */}
               <div className="flex justify-end">
                 <button
-                  onClick={() => handlePerformanceAnalysis(singleResult.stock_code, singleResult.metrics!)}
+                  onClick={() => handlePerformanceAnalysis(singleResult.stock_code, singleResult.metrics!, {
+                    trades: singleResult.trades,
+                    nav_log: singleResult.nav_log,
+                    drawdown_log: singleResult.drawdown_log,
+                    monthly_returns: singleResult.monthly_returns,
+                    backtest_id: singleResult.backtest_id,
+                  })}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
                 >
                   <BarChart3 className="h-4 w-4" />
@@ -1236,42 +1496,325 @@ export default function StrategyBacktest() {
                 {singleResult.trades.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-zinc-500">无交易记录</div>
                 ) : (
-                  <div className="max-h-80 overflow-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-zinc-50 text-xs text-zinc-500">
-                        <tr>
-                          <th className="px-4 py-2">日期</th>
-                          <th className="px-4 py-2">方向</th>
-                          <th className="px-4 py-2">价格</th>
-                          <th className="px-4 py-2">数量</th>
-                          <th className="px-4 py-2">金额</th>
-                          <th className="px-4 py-2">备注</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {singleResult.trades.map((t, i) => (
-                          <tr key={i} className="border-t border-zinc-100">
-                            <td className="px-4 py-2 text-xs text-zinc-700">{t.date}</td>
-                            <td className="px-4 py-2">
-                              <Badge tone={t.action === 'buy' ? 'green' : 'red'}>
-                                {t.action === 'buy' ? '买入' : '卖出'}
-                              </Badge>
-                            </td>
-                            <td className="px-4 py-2 text-zinc-900">{t.price}</td>
-                            <td className="px-4 py-2 text-zinc-700">{t.qty}</td>
-                            <td className="px-4 py-2 text-zinc-700">
-                              {t.action === 'buy' ? `-${
-                                t.cost != null ? t.cost.toLocaleString() : '—'
-                              }` : `+${
-                                t.proceeds != null ? t.proceeds.toLocaleString() : '—'
-                              }`}
-                            </td>
-                            <td className="px-4 py-2 text-xs text-zinc-400">{t.note || '—'}</td>
+                  <>
+                    <div className="max-h-80 overflow-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-zinc-50 text-xs text-zinc-500">
+                          <tr>
+                            <th className="px-4 py-2">日期</th>
+                            <th className="px-4 py-2">方向</th>
+                            <th className="px-4 py-2">价格</th>
+                            <th className="px-4 py-2">数量</th>
+                            <th className="px-4 py-2">金额</th>
+                            <th className="px-4 py-2">备注</th>
+                            <th className="px-4 py-2">交易手续费</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {singleResult.trades.map((t, i) => (
+                            <tr key={i} className="border-t border-zinc-100">
+                              <td className="px-4 py-2 text-xs text-zinc-700">{t.date}</td>
+                              <td className="px-4 py-2">
+                                <Badge tone={t.action === 'buy' ? 'green' : t.action === 'pending_sell' ? 'amber' : 'red'}>
+                                  {t.action === 'buy' ? '买入' : t.action === 'pending_sell' ? '待卖' : '卖出'}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-2 text-zinc-900">{t.price}</td>
+                              <td className="px-4 py-2 text-zinc-700">{t.qty}</td>
+                              <td className="px-4 py-2 text-zinc-700">
+                                {t.action === 'buy' ? `-${
+                                  t.cost != null ? t.cost.toLocaleString() : '—'
+                                }` : t.action === 'pending_sell' ? `≈${
+                                  t.proceeds != null ? t.proceeds.toLocaleString() : '—'
+                                }` : `+${
+                                  t.proceeds != null ? t.proceeds.toLocaleString() : '—'
+                                }`}
+                              </td>
+                              <td className="px-4 py-2 text-xs text-zinc-400">{t.note || '—'}</td>
+                              <td className="px-4 py-2 text-xs text-zinc-500 max-w-[260px] break-all">{t.fee_detail || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {singleResult.kline && singleResult.kline.length > 0 && (
+                      <div className="border-t border-zinc-200">
+                        <button
+                          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+                          onClick={() => setKlineExpanded(!klineExpanded)}
+                        >
+                          <span>K线图与交易信号</span>
+                          {klineExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        </button>
+                        {klineExpanded && (
+                          <div className="px-4 pb-4">
+                            {(() => {
+                              const ind = singleResult.indicator_data
+                              const hasBB = !!ind?.bollinger?.values?.length
+                              const hasRSI = !!ind?.rsi?.values?.length
+                              const chartDates = singleResult.kline!.map(k => k.date)
+
+                              const legendData = ['收盘价', '买入', '卖出', '待卖']
+                              if (hasBB) legendData.push('布林上轨', '布林中轨', '布林下轨')
+                              // 缠论可视化图例
+                              const hasChanVis = !!singleResult.chan_vis
+                              if (hasChanVis) {
+                                if (singleResult.chan_vis!.bi_list?.length) legendData.push('笔')
+                                if (singleResult.chan_vis!.zs_list?.length) legendData.push('中枢')
+                              }
+
+                              const grids: any[] = []
+                              const xAxes: any[] = []
+                              const yAxes: any[] = []
+
+                              if (hasRSI) {
+                                grids.push({ left: '8%', right: '3%', top: '8%', height: '43%' })
+                                grids.push({ left: '8%', right: '3%', top: '56%', height: '13%' })
+                                grids.push({ left: '8%', right: '3%', top: '73%', height: '18%' })
+                                xAxes.push(
+                                  { type: 'category', data: chartDates, axisLabel: { fontSize: 10, rotate: 45 }, gridIndex: 0, boundaryGap: true, axisTick: { show: false } },
+                                  { type: 'category', data: chartDates, gridIndex: 1, boundaryGap: true, axisTick: { show: false }, axisLabel: { show: false } },
+                                  { type: 'category', data: chartDates, gridIndex: 2, boundaryGap: true, axisTick: { show: false }, axisLabel: { show: false } },
+                                )
+                                yAxes.push(
+                                  { scale: true, gridIndex: 0, splitLine: { lineStyle: { color: '#f4f4f5' } } },
+                                  { scale: true, gridIndex: 1, splitLine: { show: false } },
+                                  { scale: true, gridIndex: 2, min: 0, max: 100, splitLine: { show: true }, axisLabel: { fontSize: 10, formatter: '{value}' } },
+                                )
+                              } else {
+                                grids.push({ left: '8%', right: '3%', top: '12%', height: '55%' })
+                                grids.push({ left: '8%', right: '3%', top: '72%', height: '18%' })
+                                xAxes.push(
+                                  { type: 'category', data: chartDates, axisLabel: { fontSize: 10, rotate: 45 }, gridIndex: 0, boundaryGap: true, axisTick: { show: false } },
+                                  { type: 'category', data: chartDates, gridIndex: 1, boundaryGap: true, axisTick: { show: false }, axisLabel: { show: false } },
+                                )
+                                yAxes.push(
+                                  { scale: true, gridIndex: 0, splitLine: { lineStyle: { color: '#f4f4f5' } } },
+                                  { scale: true, gridIndex: 1, splitLine: { show: false } },
+                                )
+                              }
+
+                              const seriesList: any[] = []
+
+                              seriesList.push({
+                                name: '收盘价',
+                                type: 'line',
+                                data: singleResult.kline!.map(k => k.close),
+                                xAxisIndex: 0,
+                                yAxisIndex: 0,
+                                smooth: true,
+                                symbol: 'circle',
+                                symbolSize: 3,
+                                lineStyle: { color: '#3b82f6', width: 2 },
+                                areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(59,130,246,0.2)' }, { offset: 1, color: 'rgba(59,130,246,0.02)' }] } },
+                                z: 5,
+                              })
+
+                              if (hasBB) {
+                                const bbVals = ind!.bollinger!.values
+                                seriesList.push(
+                                  {
+                                    name: '布林上轨',
+                                    type: 'line',
+                                    data: bbVals.map(v => v ? v.top : null),
+                                    xAxisIndex: 0,
+                                    yAxisIndex: 0,
+                                    smooth: true,
+                                    symbol: 'none',
+                                    lineStyle: { color: '#f97316', width: 1.5, type: 'dashed' },
+                                    z: 3,
+                                  },
+                                  {
+                                    name: '布林中轨',
+                                    type: 'line',
+                                    data: bbVals.map(v => v ? v.mid : null),
+                                    xAxisIndex: 0,
+                                    yAxisIndex: 0,
+                                    smooth: true,
+                                    symbol: 'none',
+                                    lineStyle: { color: '#eab308', width: 1.5 },
+                                    z: 3,
+                                  },
+                                  {
+                                    name: '布林下轨',
+                                    type: 'line',
+                                    data: bbVals.map(v => v ? v.bot : null),
+                                    xAxisIndex: 0,
+                                    yAxisIndex: 0,
+                                    smooth: true,
+                                    symbol: 'none',
+                                    lineStyle: { color: '#f97316', width: 1.5, type: 'dashed' },
+                                    z: 3,
+                                  },
+                                )
+                              }
+
+                              seriesList.push({
+                                name: '成交量',
+                                type: 'bar',
+                                data: singleResult.kline!.map(k => ({ value: k.volume, itemStyle: { color: k.close >= k.open ? '#ef4444' : '#22c55e' } })),
+                                xAxisIndex: hasRSI ? 1 : 1,
+                                yAxisIndex: hasRSI ? 1 : 1,
+                                barMaxWidth: 8,
+                              })
+
+                              seriesList.push(...[
+                                {
+                                  name: '买入',
+                                  type: 'scatter',
+                                  data: singleResult.trades.filter(t => t.action === 'buy').map(t => { const idx = singleResult.kline!.findIndex(k => k.date === t.date); return idx >= 0 ? { value: [idx, t.price], symbolSize: 18 } : null }).filter(Boolean),
+                                  xAxisIndex: 0,
+                                  yAxisIndex: 0,
+                                  symbol: 'pin',
+                                  itemStyle: { color: '#22c55e' },
+                                  label: { show: true, formatter: '买入', color: '#22c55e', fontSize: 11, fontWeight: 'bold', position: 'top' },
+                                  z: 10,
+                                },
+                                {
+                                  name: '卖出',
+                                  type: 'scatter',
+                                  data: singleResult.trades.filter(t => t.action === 'sell').map(t => { const idx = singleResult.kline!.findIndex(k => k.date === t.date); return idx >= 0 ? { value: [idx, t.price], symbolSize: 18 } : null }).filter(Boolean),
+                                  xAxisIndex: 0,
+                                  yAxisIndex: 0,
+                                  symbol: 'pin',
+                                  itemStyle: { color: '#ef4444' },
+                                  label: { show: true, formatter: '卖出', color: '#ef4444', fontSize: 11, fontWeight: 'bold', position: 'bottom' },
+                                  z: 10,
+                                },
+                                {
+                                  name: '待卖',
+                                  type: 'scatter',
+                                  data: singleResult.trades.filter(t => t.action === 'pending_sell').map(t => { const idx = singleResult.kline!.findIndex(k => k.date === t.date); return idx >= 0 ? { value: [idx, t.price], symbolSize: 20 } : null }).filter(Boolean),
+                                  xAxisIndex: 0,
+                                  yAxisIndex: 0,
+                                  symbol: 'pin',
+                                  itemStyle: { color: '#f59e0b', borderColor: '#d97706', borderWidth: 2 },
+                                  label: { show: true, formatter: '待卖', color: '#f59e0b', fontSize: 11, fontWeight: 'bold', position: 'top' },
+                                  z: 10,
+                                },
+                              ])
+
+                              if (hasRSI) {
+                                const rsiVals = ind!.rsi!.values
+                                seriesList.push(
+                                  {
+                                    name: 'RSI',
+                                    type: 'line',
+                                    data: rsiVals,
+                                    xAxisIndex: 2,
+                                    yAxisIndex: 2,
+                                    smooth: true,
+                                    symbol: 'none',
+                                    lineStyle: { color: '#8b5cf6', width: 2 },
+                                    z: 5,
+                                  },
+                                  {
+                                    name: '超买线(70)',
+                                    type: 'line',
+                                    data: [],
+                                    xAxisIndex: 2,
+                                    yAxisIndex: 2,
+                                    symbol: 'none',
+                                    lineStyle: { color: '#ef4444', width: 1, type: 'dashed' },
+                                    markLine: {
+                                      silent: true,
+                                      data: [{ yAxis: 70, label: { formatter: '超买 70', fontSize: 10 } }],
+                                      lineStyle: { color: '#ef4444', width: 1, type: 'dashed' },
+                                    },
+                                    z: 1,
+                                  },
+                                  {
+                                    name: '超卖线(30)',
+                                    type: 'line',
+                                    data: [],
+                                    xAxisIndex: 2,
+                                    yAxisIndex: 2,
+                                    symbol: 'none',
+                                    lineStyle: { color: '#22c55e', width: 1, type: 'dashed' },
+                                    markLine: {
+                                      silent: true,
+                                      data: [{ yAxis: 30, label: { formatter: '超卖 30', fontSize: 10 } }],
+                                      lineStyle: { color: '#22c55e', width: 1, type: 'dashed' },
+                                    },
+                                    z: 1,
+                                  },
+                                )
+                              }
+
+                              // 缠论可视化：笔（bi_list）- 折线段
+                              if (singleResult.chan_vis?.bi_list?.length) {
+                                singleResult.chan_vis.bi_list.forEach((bi, i) => {
+                                  const startIdx = bi.start_date ? chartDates.indexOf(bi.start_date) : bi.start_idx
+                                  const endIdx = bi.end_date ? chartDates.indexOf(bi.end_date) : bi.end_idx
+                                  if (startIdx != null && endIdx != null && startIdx >= 0 && endIdx >= 0) {
+                                    seriesList.push({
+                                      name: i === 0 ? '笔' : '',
+                                      type: 'line',
+                                      data: chartDates.map((_: string, j: number) =>
+                                        j === startIdx ? bi.start_price :
+                                        j === endIdx ? bi.end_price : null
+                                      ),
+                                      xAxisIndex: 0,
+                                      yAxisIndex: 0,
+                                      smooth: false,
+                                      symbol: 'none',
+                                      lineStyle: {
+                                        color: bi.direction === 'up' ? '#ef4444' : '#22c55e',
+                                        width: 2,
+                                      },
+                                      connectNulls: true,
+                                      z: 4,
+                                    })
+                                  }
+                                })
+                              }
+
+                              // 缠论可视化：中枢（zs_list）- 矩形区域
+                              if (singleResult.chan_vis?.zs_list?.length) {
+                                const closeSeriesIdx = seriesList.findIndex(s => s.name === '收盘价')
+                                if (closeSeriesIdx >= 0) {
+                                  const markAreas = singleResult.chan_vis.zs_list.map(zs => {
+                                    const startIdx = zs.start_date ? chartDates.indexOf(zs.start_date) : zs.start_idx
+                                    const endIdx = zs.end_date ? chartDates.indexOf(zs.end_date) : zs.end_idx
+                                    const zg = zs.ZG ?? zs.zg ?? 0
+                                    const zd = zs.ZD ?? zs.zd ?? 0
+                                    if (startIdx != null && endIdx != null && startIdx >= 0 && endIdx >= 0) {
+                                      return [
+                                        { xAxis: startIdx, yAxis: zd, itemStyle: { color: 'rgba(59,130,246,0.08)' } },
+                                        { xAxis: endIdx, yAxis: zg },
+                                      ]
+                                    }
+                                    return null
+                                  }).filter(Boolean)
+
+                                  if (markAreas.length > 0) {
+                                    seriesList[closeSeriesIdx].markArea = { data: markAreas, silent: true }
+                                  }
+                                }
+                              }
+
+                              return (
+                                <ReactECharts
+                                  option={{
+                                    animation: false,
+                                    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, backgroundColor: 'rgba(255,255,255,0.95)', borderColor: '#e4e4e7', textStyle: { color: '#27272a', fontSize: 12 } },
+                                    legend: { data: legendData, top: 0, textStyle: { fontSize: 11 } },
+                                    grid: grids,
+                                    xAxis: xAxes,
+                                    yAxis: yAxes,
+                                    series: seriesList,
+                                  }}
+                                  style={{ height: hasRSI ? '520px' : '420px' }}
+                                  opts={{ renderer: 'canvas' }}
+                                />
+                              )
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </CardBody>
             </Card>

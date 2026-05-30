@@ -5,6 +5,7 @@ import type { JobDomain, JobDomainInfo, JobRunResult, JobSchedule } from '@/api/
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { DataSourceBadge, JobStatusBadge } from '@/components/StatusBadge'
 import { Play, RefreshCcw, Save, Settings, X, Eye, BarChart3 } from 'lucide-react'
+import { Loading } from '@/components/Loading'
 import StockScopeSelector from '@/components/StockScopeSelector'
 
 function formatDate(v: unknown) {
@@ -266,7 +267,12 @@ export default function Jobs() {
             </div>
           ) : null}
           <div className="space-y-3">
-            {sortedDomains.map((j) => {
+            {loading && domains.length === 0 ? (
+              <Loading className="py-16" />
+            ) : sortedDomains.length === 0 ? (
+              <div className="py-8 text-center text-xs text-zinc-400">暂无任务类型</div>
+            ) : (
+              sortedDomains.map((j) => {
               const last = runsByDomain.get(j.domain)
               const sch = schedules[j.domain]
               const isEditing = editingDomain === j.domain
@@ -475,7 +481,7 @@ export default function Jobs() {
                   ) : null}
                 </div>
               )
-            })}
+            }))}
           </div>
         </CardBody>
       </Card>
@@ -491,7 +497,7 @@ export default function Jobs() {
               </button>
             </div>
             {previewLoading ? (
-              <div className="py-8 text-center text-xs text-zinc-400">加载中...</div>
+              <Loading className="py-8" size="sm" />
             ) : previewTotalCount !== null ? (
               <div className="py-8 text-center text-xs text-zinc-500">
                 全市场模式已选中约 {previewTotalCount} 只股票

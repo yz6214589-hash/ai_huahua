@@ -714,3 +714,138 @@ def get_sector_rotation(
         raise HTTPException(status_code=500, detail=f"板块轮动数据查询失败: {str(e)}")
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 涨停数据
+# ---------------------------------------------------------------------------
+
+_LIMIT_UP_DDL = """CREATE TABLE IF NOT EXISTS trade_limit_up (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    stock_code VARCHAR(20) NOT NULL COMMENT '股票代码',
+    stock_name VARCHAR(100) NOT NULL COMMENT '股票名称',
+    trade_date DATE NOT NULL COMMENT '交易日期',
+    board_time VARCHAR(10) DEFAULT NULL COMMENT '涨停时间 HH:MM',
+    seal_amount BIGINT DEFAULT NULL COMMENT '封单量（股）',
+    seal_amount_y DECIMAL(18,4) DEFAULT NULL COMMENT '封单金额（亿）',
+    consecutive_boards INT DEFAULT 1 COMMENT '连板数',
+    float_cap DECIMAL(18,4) DEFAULT NULL COMMENT '流通市值（亿）',
+    sector VARCHAR(50) DEFAULT NULL COMMENT '所属板块',
+    status VARCHAR(20) DEFAULT 'limit_up' COMMENT '状态: limit_up(涨停) limit_down(跌停) break_limit_up(炸板) break_limit_down(开板跌)',
+    first_board_time VARCHAR(10) DEFAULT NULL COMMENT '首次涨停时间 HH:MM',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_stock_date (stock_code, trade_date),
+    INDEX idx_trade_date (trade_date),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='涨停数据表'"""
+
+
+def _ensure_limit_up_table():
+    """确保涨停数据表存在，在模块加载时自动执行"""
+    conn = None
+    try:
+        conn, _ = _get_conn_qd()
+        if conn:
+            with conn.cursor() as cur:
+                cur.execute(_LIMIT_UP_DDL)
+            logger.info("涨停数据表已就绪")
+    except Exception as e:
+        logger.warning("涨停数据表创建失败", extra={"error": str(e)})
+    finally:
+        if conn:
+            conn.close()
+
+
+_ensure_limit_up_table()
+
+
+@router.get("/intraday/limit-up")
+def get_limit_up(
+    date_param: str = Query(default="", alias="date"),
+) -> dict[str, Any]:
+    """
+    获取涨停数据。
+
+    从 trade_limit_up 表查询指定日期的涨停股票数据，
+    支持按日期筛选，不传日期则查询最新交易日数据。
+
+    Args:
+        date_param: 交易日期（YYYY-MM-DD），不传则查询最新交易日
+
+    Returns:
+        dict: 包含 items（涨停股票列表）和 total（总数）
+    """
+    logger.info("涨停数据请求", extra={"date": date_param or "auto"})
+    conn, qd = _get_conn_qd()
+    if conn is None or qd is None:
+        raise HTTPException(status_code=503, detail="数据库不可用")
+
+    try:
+        # 确定目标日期
+        if date_param:
+            try:
+                target_date = date_param
+                datetime.strptime(target_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="日期格式错误，请使用 YYYY-MM-DD 格式")
+        else:
+            # 查询 trade_limit_up 中最新的交易日期
+            latest_rows = qd(conn, "SELECT MAX(trade_date) as max_date FROM trade_limit_up", ())
+            if not latest_rows or not latest_rows[0].get("max_date"):
+                return {"items": [], "total": 0}
+            max_dt = latest_rows[0]["max_date"]
+            if hasattr(max_dt, "strftime"):
+                target_date = max_dt.strftime("%Y-%m-%d")
+            else:
+                target_date = str(max_dt)
+
+        # 查询涨停数据
+        sql = """
+            SELECT
+                stock_code,
+                stock_name,
+                trade_date,
+                board_time,
+                seal_amount,
+                seal_amount_y,
+                consecutive_boards,
+                float_cap,
+                sector,
+                status,
+                first_board_time
+            FROM trade_limit_up
+            WHERE trade_date = %s
+            ORDER BY board_time ASC, consecutive_boards DESC
+        """
+        rows = qd(conn, sql, (target_date,))
+
+        # 转换为前端需要的格式
+        items = []
+        for row in rows:
+            items.append({
+                "code": row.get("stock_code", ""),
+                "name": row.get("stock_name", ""),
+                "boardTime": row.get("board_time") or "",
+                "sealAmount": _to_int(row.get("seal_amount")) or 0,
+                "sealAmountY": _to_float(row.get("seal_amount_y")) or 0,
+                "consecutiveBoards": _to_int(row.get("consecutive_boards")) or 1,
+                "floatCap": _to_float(row.get("float_cap")) or 0,
+                "sector": row.get("sector") or "",
+                "status": row.get("status") or "limit_up",
+                "firstBoardTime": row.get("first_board_time") or "",
+            })
+
+        logger.info("涨停数据查询完成",
+                    extra={"date": target_date, "count": len(items)})
+
+        return {
+            "items": items,
+            "total": len(items),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("涨停数据查询失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"涨停数据查询失败: {str(e)}")
+    finally:
+        conn.close()

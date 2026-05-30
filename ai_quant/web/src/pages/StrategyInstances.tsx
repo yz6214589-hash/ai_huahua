@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { fetchJson, postJson } from '@/api/client'
@@ -225,7 +226,7 @@ export default function StrategyInstances() {
                   <div className="grid grid-cols-2 gap-3">
                     {Object.entries(currentStrategy.params_schema).map(([key, meta]) => (
                       <div key={key}>
-                        <div className="mb-1 text-xs text-zinc-500">{meta.label}</div>
+                        <div className="mb-1 text-xs text-zinc-500">{meta.label} <span className="text-zinc-400">({key})</span></div>
                         {meta.type === 'bool' ? (
                           <div className="flex items-center gap-2">
                             <input
@@ -337,6 +338,8 @@ export default function StrategyInstances() {
           </div>
         )
       })}
+
+      {loading ? <Loading className="py-12" /> : null}
 
       {!loading && instances.length === 0 && !showForm && (
         <div className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center text-sm text-zinc-500">

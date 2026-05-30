@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Loading } from '@/components/Loading'
 import ReactECharts from 'echarts-for-react'
 import { 
   Shield, 
@@ -492,7 +493,7 @@ export default function MainForceIdentification() {
               <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
                 <Shield className="w-8 h-8 text-blue-600" />
                 主力识别
-                {loading && <span className="text-sm text-gray-500">(加载中...)</span>}
+                {loading && <Loading size="sm" className="inline-flex" />}
               </h1>
               <p className="text-gray-600 mt-1">识别主力资金动向，辅助风控决策</p>
             </div>

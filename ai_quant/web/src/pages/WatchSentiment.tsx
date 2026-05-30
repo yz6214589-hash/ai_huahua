@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { fetchJson, postJson } from '@/api/client'
 import type { SentimentEvent, SentimentRun, StockSearchItem } from '@/api/types'
 import { Badge } from '@/components/Badge'
@@ -208,8 +209,13 @@ export default function WatchSentiment() {
     })
   }
 
-  const removeCustomStock = (code: string) => {
-    setWatchlist(prev => prev.filter(s => s.code !== code))
+  const removeCustomStock = async (code: string) => {
+    try {
+      await fetchJson(`/api/v1/sentiment/stock-list/${encodeURIComponent(code)}`, { method: 'DELETE' })
+      setWatchlist(prev => prev.filter(s => s.code !== code))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
   }
 
   const clearManual = () => setManualSelected([])
@@ -482,7 +488,7 @@ export default function WatchSentiment() {
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
                       {loading ? (
-                        <tr><td className="px-2 py-4 text-center text-zinc-500" colSpan={8}>加载中...</td></tr>
+                        <tr><td className="px-2 py-4 text-center" colSpan={8}><Loading className="mx-auto" size="sm" /></td></tr>
                       ) : filteredEvents.length === 0 ? (
                         <tr><td className="px-2 py-4 text-center text-zinc-500" colSpan={8}>暂无舆情数据</td></tr>
                       ) : filteredEvents.map(e => (

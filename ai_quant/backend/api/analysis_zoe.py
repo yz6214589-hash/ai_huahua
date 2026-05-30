@@ -62,6 +62,7 @@ for _sid, _meta in _REGISTRY.items():
         "requires_weekly": _meta.requires_weekly,
         "requires_chan": _meta.requires_chan,
         "requires_predictions": _meta.requires_predictions,
+        "group": _meta.group,
     })
 
 
@@ -151,6 +152,12 @@ class BacktestReq(BaseModel):
     slippage_pct: float = Field(default=0.0, description="滑点百分比")
     slippage_fixed: float = Field(default=0.0, description="固定滑点")
     min_commission: float = Field(default=5.0, description="最低手续费")
+    # 新增：仓位比例
+    position_pct: float = Field(default=0.95, ge=0.01, le=1.0, description="仓位比例")
+    # 新增：印花税和过户费
+    stamp_duty: float = Field(default=0.001, ge=0.0, le=0.01, description="印花税费率，卖出时收取，默认千分之一")
+    transfer_fee_buy: float = Field(default=0.00001, ge=0.0, le=0.001, description="买入过户费率，默认十万分之一")
+    transfer_fee_sell: float = Field(default=0.00001, ge=0.0, le=0.001, description="卖出过户费率，默认十万分之一")
     # 新增：基准代码
     benchmark_code: str | None = Field(default=None, description="基准指数代码，如 000300.SH")
     # 新增：区间模式
@@ -177,6 +184,12 @@ class BatchBacktestReq(BaseModel):
     slippage_pct: float = Field(default=0.0, description="滑点百分比")
     slippage_fixed: float = Field(default=0.0, description="固定滑点")
     min_commission: float = Field(default=5.0, description="最低手续费")
+    # 新增：仓位比例
+    position_pct: float = Field(default=0.95, ge=0.01, le=1.0, description="仓位比例")
+    # 新增：印花税和过户费
+    stamp_duty: float = Field(default=0.001, ge=0.0, le=0.01, description="印花税费率，卖出时收取，默认千分之一")
+    transfer_fee_buy: float = Field(default=0.00001, ge=0.0, le=0.001, description="买入过户费率，默认十万分之一")
+    transfer_fee_sell: float = Field(default=0.00001, ge=0.0, le=0.001, description="卖出过户费率，默认十万分之一")
 
 
 class WalkForwardReq(BaseModel):
@@ -196,6 +209,10 @@ class WalkForwardReq(BaseModel):
     slippage_pct: float = Field(default=0.0, description="滑点百分比")
     slippage_fixed: float = Field(default=0.0, description="固定滑点")
     min_commission: float = Field(default=5.0, description="最低手续费")
+    # 印花税和过户费
+    stamp_duty: float = Field(default=0.001, ge=0.0, le=0.01, description="印花税费率，卖出时收取，默认千分之一")
+    transfer_fee_buy: float = Field(default=0.00001, ge=0.0, le=0.001, description="买入过户费率，默认十万分之一")
+    transfer_fee_sell: float = Field(default=0.00001, ge=0.0, le=0.001, description="卖出过户费率，默认十万分之一")
 
 
 class ParamSearchReq(BaseModel):
@@ -211,6 +228,10 @@ class ParamSearchReq(BaseModel):
     slippage_pct: float = Field(default=0.0, description="滑点百分比")
     slippage_fixed: float = Field(default=0.0, description="固定滑点")
     min_commission: float = Field(default=5.0, description="最低手续费")
+    # 印花税和过户费
+    stamp_duty: float = Field(default=0.001, ge=0.0, le=0.01, description="印花税费率，卖出时收取，默认千分之一")
+    transfer_fee_buy: float = Field(default=0.00001, ge=0.0, le=0.001, description="买入过户费率，默认十万分之一")
+    transfer_fee_sell: float = Field(default=0.00001, ge=0.0, le=0.001, description="卖出过户费率，默认十万分之一")
 
 
 class CompareReq(BaseModel):
@@ -277,7 +298,7 @@ def delete_instance(instance_id: str) -> dict[str, Any]:
     return {"deleted": instance_id, "removed": before - len(instances)}
 
 
-def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log: list[dict] | None = None) -> dict[str, Any]:
+def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log: list[dict] | None = None, chan_vis: dict | None = None) -> dict[str, Any]:
     """
     格式化回测结果为API响应格式
 
@@ -285,6 +306,7 @@ def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log:
         bt_result: BacktestResult 回测结果对象
         req: BacktestReq 请求对象
         benchmark_nav_log: 基准净值日志（可选）
+        chan_vis: 缠论可视化数据（可选）
 
     Returns:
         格式化后的响应字典
@@ -302,6 +324,19 @@ def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log:
                 "cost": t.get("cost", 0),
                 "proceeds": 0,
                 "note": "买入",
+                "fee_detail": t.get("fee_detail", ""),
+            })
+        elif action == "pending_sell":
+            pnl = t.get("pnl", 0)
+            trades.append({
+                "date": t.get("trade_date", ""),
+                "action": "pending_sell",
+                "price": t.get("price", 0),
+                "qty": int(t.get("size", 0)),
+                "cost": 0,
+                "proceeds": t.get("proceeds", 0),
+                "note": f"待卖（浮盈 {pnl:.2f}）",
+                "fee_detail": t.get("fee_detail", ""),
             })
         else:
             pnlcomm = t.get("pnlcomm", 0)
@@ -313,6 +348,7 @@ def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log:
                 "cost": 0,
                 "proceeds": t.get("proceeds", 0),
                 "note": f"盈亏: {pnlcomm:.2f}",
+                "fee_detail": t.get("fee_detail", ""),
             })
 
     # 基础指标（百分比指标统一返回小数形式，如0.25表示25%，前端负责乘以100显示）
@@ -333,7 +369,8 @@ def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log:
     enhanced_keys = [
         "volatility", "sortino", "calmar",
         "alpha", "beta", "tracking_error", "information_ratio",
-        "profit_factor", "max_consecutive_wins", "max_consecutive_losses",
+        "profit_factor", "avg_profit_loss",
+        "max_consecutive_wins", "max_consecutive_losses",
     ]
     for key in enhanced_keys:
         if key in m:
@@ -349,10 +386,12 @@ def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log:
         "stock_code": req.stock_code,
         "start_date": req.start,
         "end_date": req.end,
-        # 新增字段
         "drawdown_log": bt_result.drawdown_log if bt_result.drawdown_log else [],
         "monthly_returns": bt_result.monthly_returns if bt_result.monthly_returns else [],
         "benchmark_nav_log": benchmark_nav_log or bt_result.benchmark_nav_log or [],
+        "kline": bt_result.kline if bt_result.kline else [],
+        "indicator_data": bt_result.indicator_data if bt_result.indicator_data else {},
+        "chan_vis": chan_vis,
     }
 
     return result
@@ -363,6 +402,7 @@ def _run_single_backtest(
     meta: Any,
     params: dict[str, Any],
     req: BacktestReq,
+    chan_vis: dict | None = None,
 ) -> dict[str, Any]:
     from core.strategy.backtest_engine import run_backtest as bt_run
 
@@ -390,6 +430,10 @@ def _run_single_backtest(
             slippage_pct=req.slippage_pct,
             slippage_fixed=req.slippage_fixed,
             min_commission=req.min_commission,
+            position_pct=req.position_pct,
+            stamp_duty=req.stamp_duty,
+            transfer_fee_buy=req.transfer_fee_buy,
+            transfer_fee_sell=req.transfer_fee_sell,
         )
         _t1 = time.time()
         logger.info(
@@ -483,7 +527,7 @@ def _run_single_backtest(
     from dataclasses import replace
     bt_result = replace(bt_result, metrics=enhanced_metrics)
 
-    return _format_backtest_result(bt_result, req, benchmark_nav_log=benchmark_nav_log)
+    return _format_backtest_result(bt_result, req, benchmark_nav_log=benchmark_nav_log, chan_vis=chan_vis)
 
 
 @router.post("/backtest/run")
@@ -523,12 +567,16 @@ def run_backtest(req: BacktestReq = Body(...)) -> dict[str, Any]:
     params.update(req.params)
 
     # 缠论数据
+    _chan_vis_data = None
     if meta.requires_chan:
         from core.strategy.chan_engine import add_chan_fields
-        chan_result = add_chan_fields(df, symbol=req.stock_code)
+        chan_backend = params.pop("chan_backend", "self")
+        chan_result = add_chan_fields(df, backend=chan_backend, symbol=req.stock_code)
         df = chan_result.df
         if df["chan_signal"].isna().all():
             raise HTTPException(status_code=400, detail="chan_data_unavailable_当前缠论数据不可用")
+        # 保存缠论可视化数据，后续传给前端
+        _chan_vis_data = chan_result.chan_vis
 
     # 区间模式支持
     if req.interval_mode == "train_val_test":
@@ -537,7 +585,7 @@ def run_backtest(req: BacktestReq = Body(...)) -> dict[str, Any]:
             "数据加载完成，开始区间模式回测",
             extra={"stock_code": req.stock_code, "data_rows": len(df), "load_cost_ms": round((_load_cost - _t0) * 1000)}
         )
-        result = _run_interval_backtest(df, meta, params, req)
+        result = _run_interval_backtest(df, meta, params, req, chan_vis=_chan_vis_data)
         _t1 = time.time()
         logger.info(
             "回测请求结束（区间模式）",
@@ -553,7 +601,7 @@ def run_backtest(req: BacktestReq = Body(...)) -> dict[str, Any]:
     # 普通回测（增加异常包装）
     try:
         _bt_start = time.time()
-        result = _run_single_backtest(df, meta, params, req)
+        result = _run_single_backtest(df, meta, params, req, chan_vis=_chan_vis_data)
         _bt_end = time.time()
         _trades_count = len(result.get("trades", []))
         _metrics = result.get("metrics", {})
@@ -608,6 +656,7 @@ def _run_interval_backtest(
     meta: Any,
     params: dict[str, Any],
     req: BacktestReq,
+    chan_vis: dict | None = None,
 ) -> dict[str, Any]:
     _t0 = time.time()
     df_all = df.copy()
@@ -676,13 +725,14 @@ def _run_interval_backtest(
             interval_results.append({"name": i_name, "start": i_start, "end": i_end, "error": "no_data"})
             logger.warning(
                 "区间模式-子区间无数据",
-                extra={"name": i_name, "start": i_start, "end": i_end}
+                extra={"interval_name": i_name, "start": i_start, "end": i_end}
             )
             continue
 
         if meta.requires_chan and "chan_signal" not in i_df.columns:
             from core.strategy.chan_engine import add_chan_fields
-            chan_result = add_chan_fields(i_df, symbol=req.stock_code)
+            chan_backend = params.get("chan_backend", "self")
+            chan_result = add_chan_fields(i_df, backend=chan_backend, symbol=req.stock_code)
             i_df = chan_result.df
 
         sub_req = BacktestReq(
@@ -698,10 +748,14 @@ def _run_interval_backtest(
             slippage_fixed=req.slippage_fixed,
             min_commission=req.min_commission,
             benchmark_code=req.benchmark_code,
+            position_pct=req.position_pct,
+            stamp_duty=req.stamp_duty,
+            transfer_fee_buy=req.transfer_fee_buy,
+            transfer_fee_sell=req.transfer_fee_sell,
         )
 
         try:
-            sub_result = _run_single_backtest(i_df, meta, params, sub_req)
+            sub_result = _run_single_backtest(i_df, meta, params, sub_req, chan_vis=chan_vis)
             _it1 = time.time()
             _sub_metrics = sub_result.get("metrics", {})
             interval_results.append({
@@ -713,7 +767,7 @@ def _run_interval_backtest(
             logger.info(
                 "区间模式-子区间回测完成",
                 extra={
-                    "name": i_name,
+                    "interval_name": i_name,
                     "start": i_start,
                     "end": i_end,
                     "duration_ms": round((_it1 - _it0) * 1000),
@@ -732,7 +786,7 @@ def _run_interval_backtest(
             })
             logger.error(
                 "区间模式-子区间回测异常",
-                extra={"name": i_name, "start": i_start, "end": i_end, "error": e.detail}
+                extra={"interval_name": i_name, "start": i_start, "end": i_end, "error": e.detail}
             )
 
     return {
@@ -773,6 +827,9 @@ def _save_backtest_to_db(result: dict[str, Any], req: BacktestReq) -> None:
             "slippage_pct": req.slippage_pct,
             "slippage_fixed": req.slippage_fixed,
             "min_commission": req.min_commission,
+            "stamp_duty": req.stamp_duty,
+            "transfer_fee_buy": req.transfer_fee_buy,
+            "transfer_fee_sell": req.transfer_fee_sell,
             "benchmark_code": req.benchmark_code,
             "params": req.params,
             "metrics": result.get("metrics", {}),
@@ -781,6 +838,8 @@ def _save_backtest_to_db(result: dict[str, Any], req: BacktestReq) -> None:
             "benchmark_nav_log": result.get("benchmark_nav_log", []),
             "drawdown_log": result.get("drawdown_log", []),
             "monthly_returns": result.get("monthly_returns", []),
+            "chan_vis": result.get("chan_vis"),
+            "kline": result.get("kline", []),
         }
         backtest_id = save_backtest(record)
         result["backtest_id"] = backtest_id
@@ -817,6 +876,9 @@ def _save_batch_backtest_to_db(
             "slippage_pct": req.slippage_pct,
             "slippage_fixed": req.slippage_fixed,
             "min_commission": req.min_commission,
+            "stamp_duty": req.stamp_duty,
+            "transfer_fee_buy": req.transfer_fee_buy,
+            "transfer_fee_sell": req.transfer_fee_sell,
             "benchmark_code": None,  # 批量回测暂不支持基准
             "params": req.params,
             "metrics": task_result.get("metrics", {}),
@@ -825,6 +887,9 @@ def _save_batch_backtest_to_db(
             "benchmark_nav_log": [],
             "drawdown_log": [],
             "monthly_returns": [],
+            # 缠论可视化数据和K线数据
+            "chan_vis": task_result.get("chan_vis"),
+            "kline": task_result.get("kline", []),
             # 标记为批量回测的一部分
             "batch_mode": True,
         }
@@ -932,6 +997,12 @@ def run_batch_backtest(req: BatchBacktestReq = Body(...)) -> dict[str, Any]:
         slippage_pct=req.slippage_pct,
         slippage_fixed=req.slippage_fixed,
         min_commission=req.min_commission,
+        # 传递仓位比例
+        position_pct=req.position_pct,
+        # 传递印花税和过户费
+        stamp_duty=req.stamp_duty,
+        transfer_fee_buy=req.transfer_fee_buy,
+        transfer_fee_sell=req.transfer_fee_sell,
     )
 
     batch = engine.execute_batch(batch)
@@ -1016,7 +1087,8 @@ def run_walk_forward(req: WalkForwardReq = Body(...)) -> dict[str, Any]:
     # 缠论数据
     if meta.requires_chan:
         from core.strategy.chan_engine import add_chan_fields
-        chan_result = add_chan_fields(df, symbol=req.stock_code)
+        chan_backend = params.pop("chan_backend", "self")
+        chan_result = add_chan_fields(df, backend=chan_backend, symbol=req.stock_code)
         df = chan_result.df
         if df["chan_signal"].isna().all():
             raise HTTPException(status_code=400, detail="chan_data_unavailable_当前缠论数据不可用")
@@ -1041,6 +1113,9 @@ def run_walk_forward(req: WalkForwardReq = Body(...)) -> dict[str, Any]:
         "slippage_pct": req.slippage_pct,
         "slippage_fixed": req.slippage_fixed,
         "min_commission": req.min_commission,
+        "stamp_duty": req.stamp_duty,
+        "transfer_fee_buy": req.transfer_fee_buy,
+        "transfer_fee_sell": req.transfer_fee_sell,
     }
 
     wf_result = wf_run(
@@ -1155,7 +1230,8 @@ def run_param_search(req: ParamSearchReq = Body(...)) -> dict[str, Any]:
 
     if meta.requires_chan:
         from core.strategy.chan_engine import add_chan_fields
-        chan_result = add_chan_fields(df, symbol=req.stock_code)
+        chan_backend = params.pop("chan_backend", "self")
+        chan_result = add_chan_fields(df, backend=chan_backend, symbol=req.stock_code)
         df = chan_result.df
         if df["chan_signal"].isna().all():
             raise HTTPException(status_code=400, detail="chan_data_unavailable_当前缠论数据不可用")

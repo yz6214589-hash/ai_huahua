@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { fetchJson } from '@/api/client'
@@ -61,7 +62,7 @@ export default function JobDetail() {
         <CardHeader title="运行历史" />
         <CardBody className="p-0">
           {loading ? (
-            <div className="px-4 py-8 text-center text-sm text-zinc-500">加载中…</div>
+            <Loading className="py-8" />
           ) : err ? (
             <div className="px-4 py-8 text-center text-sm text-red-600">{err}</div>
           ) : history.length === 0 ? (

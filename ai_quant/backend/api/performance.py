@@ -1,20 +1,30 @@
 """
 绩效报告API模块
 支持绩效报告生成、查询、对比等功能
+集成 QuantStats 库，提供更丰富的绩效指标和中文 HTML 报告
 数据存储在MySQL的trade_performance_report和trade_backtest_record表中
 """
 from __future__ import annotations
 
 import json
-import random
+import os
 from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.db import connect, execute, load_mysql_config, query_dict
+from core.strategy.metrics_calculator import calc_quantstats_metrics
+from core.strategy.report_engine import (
+    generate_chinese_report,
+    nav_to_returns,
+    diagnose_market_regime,
+    analyze_trading_costs,
+    analyze_stock_pnl,
+)
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("performance")
@@ -38,6 +48,12 @@ class ReportGenerateRequest(BaseModel):
     backtest_id: Optional[str] = None
     initial_cash: Optional[float] = None
     benchmark_code: Optional[str] = None
+    # 真实回测数据字段（Optional，用于替代随机假数据）
+    metrics: Optional[dict] = None
+    trades: Optional[list[dict]] = None
+    nav_log: Optional[list[dict]] = None
+    drawdown_log: Optional[list[dict]] = None
+    monthly_returns: Optional[list[dict]] = None
 
 
 @router.get("/types")
@@ -59,30 +75,74 @@ async def generate_report(request: ReportGenerateRequest) -> dict[str, Any]:
         end = request.end_date or datetime.now().strftime("%Y-%m-%d")
         initial_cash = request.initial_cash or 1000000.0
 
-        metrics = {
-            "total_return": round(random.uniform(-10, 30), 2),
-            "annualized_return": round(random.uniform(-15, 40), 2),
-            "max_drawdown": round(random.uniform(5, 25), 2),
-            "volatility": round(random.uniform(10, 30), 2),
-            "sharpe_ratio": round(random.uniform(0.5, 3.0), 2),
-            "calmar_ratio": round(random.uniform(0.5, 2.5), 2),
-            "win_rate": round(random.uniform(40, 70), 2),
-            "profit_factor": round(random.uniform(1.0, 2.5), 2),
-            "total_trades": random.randint(50, 200),
-            "winning_trades": random.randint(20, 100),
-            "losing_trades": random.randint(20, 100),
-            "trading_days": random.randint(20, 60),
-            "avg_profit": round(random.uniform(1000, 5000), 2),
-            "avg_loss": round(random.uniform(-5000, -1000), 2),
+        # 初始化指标字典（默认值 0，当有真实数据时覆盖）
+        metrics: dict[str, Any] = {}
+        if request.metrics:
+            m = request.metrics
+            # 前端字段 → 数据库列名 映射
+            if "total_return" in m:
+                metrics["total_return"] = float(m["total_return"])
+            if "annual_return" in m:
+                metrics["annualized_return"] = float(m["annual_return"])
+            if "max_drawdown" in m:
+                metrics["max_drawdown"] = float(m["max_drawdown"])
+            # volatility 在前端是小数（如 0.0991），乘以 100 转为百分比存储
+            if "volatility" in m:
+                metrics["volatility"] = round(float(m["volatility"]) * 100, 2)
+            if "sharpe" in m:
+                metrics["sharpe_ratio"] = float(m["sharpe"])
+            if "calmar" in m:
+                metrics["calmar_ratio"] = float(m["calmar"])
+            if "win_rate" in m:
+                metrics["win_rate"] = float(m["win_rate"])
+            if "profit_factor" in m:
+                metrics["profit_factor"] = float(m["profit_factor"])
+            if "total_trades" in m:
+                metrics["total_trades"] = int(m["total_trades"])
+            if "avg_profit_loss" in m:
+                metrics["avg_profit"] = round(float(m["avg_profit_loss"]), 2)
+                metrics["avg_loss"] = 0
+            # 可选：如果 metrics 中也包含了 winning_trades / losing_trades / trading_days，则覆盖
+            if "winning_trades" in m:
+                metrics["winning_trades"] = int(m["winning_trades"])
+            if "losing_trades" in m:
+                metrics["losing_trades"] = int(m["losing_trades"])
+            if "trading_days" in m:
+                metrics["trading_days"] = int(m["trading_days"])
+
+        # 构建 chart_data 字典：优先使用请求中的真实数据，否则为空列表
+        chart_data_dict = {
+            "equity_curve": request.nav_log if request.nav_log else [],
+            "drawdown_curve": request.drawdown_log if request.drawdown_log else [],
+            "monthly_returns": request.monthly_returns if request.monthly_returns else [],
         }
+        # 将 sortino / alpha / beta / information_ratio 存入 chart_data（不单独占数据库列）
+        if request.metrics:
+            for extra_field in ["sortino", "alpha", "beta", "information_ratio"]:
+                val = request.metrics.get(extra_field)
+                if val is not None:
+                    chart_data_dict[extra_field] = float(val)
 
-        chart_data = json.dumps({
-            "equity_curve": [],
-            "drawdown_curve": [],
-            "monthly_returns": [],
-        }, ensure_ascii=False)
+        # ---- QuantStats 增强指标 ----
+        # 如果有 nav_log 数据，调用 calc_quantstats_metrics 计算更多指标并存入 chart_data
+        if request.nav_log and len(request.nav_log) >= 2:
+            try:
+                benchmark_nav_log = request.metrics.get("_benchmark_nav_log") if request.metrics else None
+                qs_metrics = calc_quantstats_metrics(request.nav_log, benchmark_nav_log)
+                # 将 quantstats 指标存入 chart_data（使用 "qs_" 前缀避免与已有字段冲突）
+                for key, value in qs_metrics.items():
+                    if value is not None:
+                        try:
+                            chart_data_dict[f"qs_{key}"] = float(value)
+                        except (ValueError, TypeError):
+                            pass
+            except Exception:
+                # quantstats 计算失败不影响报告生成
+                pass
+        chart_data = json.dumps(chart_data_dict, ensure_ascii=False)
 
-        trades_data = json.dumps([], ensure_ascii=False)
+        # 构建 trades_data：优先使用请求中的真实交易记录
+        trades_data = json.dumps(request.trades if request.trades else [], ensure_ascii=False)
 
         execute(
             conn,
@@ -105,19 +165,19 @@ async def generate_report(request: ReportGenerateRequest) -> dict[str, Any]:
                 start,
                 end,
                 initial_cash,
-                round(1.0 + metrics["total_return"] / 100, 4),
+                round(1.0 + metrics.get("total_return", 0) / 100, 4),
                 request.benchmark_code,
-                metrics["total_return"],
-                metrics["annualized_return"],
-                metrics["max_drawdown"],
-                metrics["volatility"],
-                metrics["sharpe_ratio"],
-                metrics["calmar_ratio"],
-                metrics["win_rate"],
-                metrics["profit_factor"],
-                metrics["total_trades"],
-                metrics["winning_trades"],
-                metrics["losing_trades"],
+                metrics.get("total_return", 0),
+                metrics.get("annualized_return", 0),
+                metrics.get("max_drawdown", 0),
+                metrics.get("volatility", 0),
+                metrics.get("sharpe_ratio", 0),
+                metrics.get("calmar_ratio", 0),
+                metrics.get("win_rate", 0),
+                metrics.get("profit_factor", 0),
+                metrics.get("total_trades", 0),
+                metrics.get("winning_trades", 0),
+                metrics.get("losing_trades", 0),
                 chart_data,
                 trades_data,
                 "completed",
@@ -193,10 +253,15 @@ async def get_report_list(
         """
         rows = query_dict(conn, data_sql, tuple(params + [page_size, offset]))
 
+        from decimal import Decimal
         for row in rows:
             for dt_field in ["start_date", "end_date", "created_at", "updated_at"]:
                 if row.get(dt_field) and hasattr(row[dt_field], "isoformat"):
                     row[dt_field] = row[dt_field].isoformat()
+            # Decimal 类型在 JSON 序列化中会变成字符串，统一转 float
+            for k, v in row.items():
+                if isinstance(v, Decimal):
+                    row[k] = float(v)
 
         return {
             "items": rows,
@@ -213,7 +278,7 @@ async def get_report_list(
 
 @router.get("/detail/{report_id}")
 async def get_report_detail(report_id: str) -> dict[str, Any]:
-    """获取报告详情"""
+    """获取报告详情（普通版）"""
     conn = _get_conn()
     try:
         rows = query_dict(conn, "SELECT * FROM trade_performance_report WHERE report_id = %s", (report_id,))
@@ -252,6 +317,37 @@ async def get_report_detail(report_id: str) -> dict[str, Any]:
         }
 
         chart_data = report.get("chart_data") or {}
+
+        # 从 chart_data 中提取 QuantStats 增强指标
+        qs_fields = [
+            "sortino", "alpha", "beta", "information_ratio", "tracking_error",
+            "omega", "var_95", "cvar_95", "gain_to_pain", "skew", "kurtosis",
+            "best_day", "worst_day", "consecutive_wins", "consecutive_losses",
+        ]
+        qs_metrics = {}
+        for field in qs_fields:
+            val = chart_data.get(field)
+            if val is not None:
+                qs_metrics[field] = float(val)
+
+        # 从 chart_data 中提取 QuantStats 增强指标（qs_ 前缀版本）
+        qs_enhanced_metrics = {}
+        for key, val in chart_data.items():
+            if key.startswith("qs_") and val is not None:
+                try:
+                    qs_enhanced_metrics[key] = float(val)
+                except (ValueError, TypeError):
+                    pass
+
+        # 从 chart_data 中提取基准净值曲线
+        benchmark_curve = chart_data.get("benchmark_curve") or chart_data.get("benchmark_nav_log") or []
+
+        # 从 chart_data 中提取成本分析数据（如果有）
+        cost_analysis = chart_data.get("cost_analysis") or None
+
+        # 从 chart_data 中提取 SVD 诊断数据（如果有）
+        svd_diagnosis = chart_data.get("svd_diagnosis") or None
+
         return {
             "id": report_id,
             "report_type": report.get("report_type"),
@@ -266,8 +362,14 @@ async def get_report_detail(report_id: str) -> dict[str, Any]:
             "drawdown_curve": chart_data.get("drawdown_curve", []),
             "monthly_returns": chart_data.get("monthly_returns", []),
             "trades": report.get("trades_data", []),
+            "benchmark_curve": benchmark_curve,
+            "qs_metrics": qs_enhanced_metrics,
+            "cost_analysis": cost_analysis,
+            "svd_diagnosis": svd_diagnosis,
             "status": report.get("status"),
             "created_at": report.get("created_at"),
+            "quantstats_metrics": qs_enhanced_metrics,
+            **qs_metrics,
         }
     except HTTPException:
         raise
@@ -276,6 +378,200 @@ async def get_report_detail(report_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"获取报告详情失败: {str(e)}")
     finally:
         conn.close()
+
+
+@router.get("/detail-plus/{report_id}")
+async def get_report_detail_plus(report_id: str) -> dict[str, Any]:
+    """
+    获取报告详情（Plus 版）
+
+    在普通版基础上额外返回：
+    - svd_diagnosis: SVD 市场状态诊断结果（如果报告有 stock_codes 数据则计算）
+    - cost_analysis: 交易成本分析（从 trades 数据计算佣金/印花税/过户费）
+    - stock_pnl: 个股盈亏分析（从 trades 数据按股票分组统计）
+    """
+    conn = _get_conn()
+    try:
+        rows = query_dict(conn, "SELECT * FROM trade_performance_report WHERE report_id = %s", (report_id,))
+        if not rows:
+            raise HTTPException(status_code=404, detail="报告不存在")
+
+        report = rows[0]
+
+        for dt_field in ["start_date", "end_date", "created_at", "updated_at"]:
+            if report.get(dt_field) and hasattr(report[dt_field], "isoformat"):
+                report[dt_field] = report[dt_field].isoformat()
+
+        if report.get("chart_data") and isinstance(report["chart_data"], str):
+            try:
+                report["chart_data"] = json.loads(report["chart_data"])
+            except Exception:
+                report["chart_data"] = {}
+        if report.get("trades_data") and isinstance(report["trades_data"], str):
+            try:
+                report["trades_data"] = json.loads(report["trades_data"])
+            except Exception:
+                report["trades_data"] = []
+
+        metrics = {
+            "total_return": float(report.get("total_return") or 0),
+            "annualized_return": float(report.get("annualized_return") or 0),
+            "max_drawdown": float(report.get("max_drawdown") or 0),
+            "volatility": float(report.get("volatility") or 0),
+            "sharpe_ratio": float(report.get("sharpe_ratio") or 0),
+            "calmar_ratio": float(report.get("calmar_ratio") or 0),
+            "win_rate": float(report.get("win_rate") or 0),
+            "profit_factor": float(report.get("profit_factor") or 0),
+            "total_trades": int(report.get("total_trades") or 0),
+            "winning_trades": int(report.get("winning_trades") or 0),
+            "losing_trades": int(report.get("losing_trades") or 0),
+        }
+
+        chart_data = report.get("chart_data") or {}
+        trades_data = report.get("trades_data") or []
+
+        # 从 chart_data 中提取 QuantStats 增强指标
+        qs_fields = [
+            "sortino", "alpha", "beta", "information_ratio", "tracking_error",
+            "omega", "var_95", "cvar_95", "gain_to_pain", "skew", "kurtosis",
+            "best_day", "worst_day", "consecutive_wins", "consecutive_losses",
+        ]
+        qs_metrics = {}
+        for field in qs_fields:
+            val = chart_data.get(field)
+            if val is not None:
+                qs_metrics[field] = float(val)
+
+        # 从 chart_data 中提取 QuantStats 增强指标（qs_ 前缀版本）
+        qs_enhanced_metrics = {}
+        for key, val in chart_data.items():
+            if key.startswith("qs_") and val is not None:
+                try:
+                    qs_enhanced_metrics[key] = float(val)
+                except (ValueError, TypeError):
+                    pass
+
+        # 从 chart_data 中提取基准净值曲线
+        benchmark_curve = chart_data.get("benchmark_curve") or chart_data.get("benchmark_nav_log") or []
+
+        # ---- Plus 版独有功能 ----
+
+        # 1. SVD 市场状态诊断：从 chart_data 或 strategy_params 中获取 stock_codes
+        svd_diagnosis = chart_data.get("svd_diagnosis") or None
+        stock_codes_raw = chart_data.get("stock_codes") or None
+        if not stock_codes_raw:
+            # 尝试从 strategy_params 中获取
+            strategy_params_str = report.get("strategy_params") or ""
+            if strategy_params_str:
+                try:
+                    sp = json.loads(strategy_params_str) if isinstance(strategy_params_str, str) else strategy_params_str
+                    stock_codes_raw = sp.get("stock_codes") if isinstance(sp, dict) else None
+                except Exception:
+                    pass
+
+        # 如果有 stock_codes 但没有缓存的 svd_diagnosis，则实时计算
+        if stock_codes_raw and not svd_diagnosis:
+            try:
+                stock_codes_list = stock_codes_raw if isinstance(stock_codes_raw, list) else []
+                start_date = report.get("start_date", "")
+                end_date = report.get("end_date", "")
+                if stock_codes_list and start_date and end_date:
+                    svd_diagnosis = diagnose_market_regime(
+                        stock_codes=stock_codes_list,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+            except Exception as e:
+                logger.warning("Plus版 SVD 诊断计算失败", extra={"error": str(e)})
+                svd_diagnosis = {"error": str(e)}
+
+        # 2. 交易成本分析：从 trades 数据计算
+        cost_analysis = chart_data.get("cost_analysis") or None
+        if not cost_analysis and trades_data:
+            try:
+                cost_analysis = analyze_trading_costs(trades_data)
+            except Exception as e:
+                logger.warning("Plus版交易成本分析失败", extra={"error": str(e)})
+                cost_analysis = {"error": str(e)}
+
+        # 3. 个股盈亏分析：从 trades 数据按股票分组统计
+        stock_pnl = []
+        if trades_data:
+            try:
+                stock_pnl = analyze_stock_pnl(trades_data)
+            except Exception as e:
+                logger.warning("Plus版个股盈亏分析失败", extra={"error": str(e)})
+
+        return {
+            "id": report_id,
+            "report_type": report.get("report_type"),
+            "account_id": report.get("account_id"),
+            "strategy_name": report.get("strategy_name"),
+            "start_date": report.get("start_date"),
+            "end_date": report.get("end_date"),
+            "initial_cash": float(report.get("initial_cash") or 0),
+            "final_nav": float(report.get("final_nav") or 1),
+            "benchmark_code": report.get("benchmark_code"),
+            "metrics": metrics,
+            "equity_curve": chart_data.get("equity_curve", []),
+            "drawdown_curve": chart_data.get("drawdown_curve", []),
+            "monthly_returns": chart_data.get("monthly_returns", []),
+            "trades": trades_data,
+            "benchmark_curve": benchmark_curve,
+            "qs_metrics": qs_enhanced_metrics,
+            "cost_analysis": cost_analysis,
+            "svd_diagnosis": svd_diagnosis,
+            "stock_pnl": stock_pnl,
+            "status": report.get("status"),
+            "created_at": report.get("created_at"),
+            "quantstats_metrics": qs_enhanced_metrics,
+            **qs_metrics,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("获取Plus版报告详情失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"获取Plus版报告详情失败: {str(e)}")
+    finally:
+        conn.close()
+
+
+class SVDDiagnosisRequest(BaseModel):
+    """SVD 市场状态诊断请求"""
+    stock_codes: list[str]
+    start_date: str
+    end_date: str
+    window: int = Field(default=60, ge=20, le=252)
+    step: int = Field(default=10, ge=1, le=60)
+
+
+@router.post("/svd-diagnosis")
+async def svd_diagnosis(request: SVDDiagnosisRequest) -> dict[str, Any]:
+    """
+    SVD 市场状态诊断接口
+
+    接收股票代码列表和日期范围，执行 SVD 市场状态诊断。
+    返回当前市场状态（齐涨齐跌/板块分化/个股行情）、
+    第一主成分方差占比、投资建议和滚动诊断数据。
+    """
+    if not request.stock_codes:
+        raise HTTPException(status_code=400, detail="stock_codes 不能为空")
+
+    if len(request.stock_codes) < 3:
+        raise HTTPException(status_code=400, detail="SVD 诊断至少需要 3 只股票的数据")
+
+    try:
+        result = diagnose_market_regime(
+            stock_codes=request.stock_codes,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            window=request.window,
+            step=request.step,
+        )
+        return result
+    except Exception as e:
+        logger.error("SVD 市场状态诊断失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"SVD 市场状态诊断失败: {str(e)}")
 
 
 @router.get("/comparison")
@@ -295,8 +591,8 @@ async def compare_performance(
         sim_pnl = float(sim_account.get("total_pnl") or 0)
         sim_pnl_pct = float(sim_account.get("total_pnl_pct") or 0)
 
-        real_pnl = real_total_pnl if real_total_pnl is not None else round(random.uniform(-20000, 80000), 2)
-        real_pnl_pct = round(real_pnl / (real_total_asset or 1000000) * 100, 2) if real_total_asset else round(random.uniform(-15, 40), 2)
+        real_pnl = real_total_pnl if real_total_pnl is not None else 0
+        real_pnl_pct = round(real_pnl / (real_total_asset or 1000000) * 100, 2) if real_total_asset else 0
 
         return {
             "sim": {
@@ -341,6 +637,147 @@ async def delete_report(report_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"删除绩效报告失败: {str(e)}")
     finally:
         conn.close()
+
+
+@router.get("/quantstats-html/{report_id}")
+async def get_quantstats_html(report_id: str) -> dict[str, Any]:
+    """
+    根据 report_id 从数据库获取 nav_log 数据，用 quantstats 生成中文 HTML 报告，
+    保存到 backend/static/reports/ 目录，返回 HTML 文件路径
+    """
+    conn = _get_conn()
+    try:
+        rows = query_dict(conn, "SELECT * FROM trade_performance_report WHERE report_id = %s", (report_id,))
+        if not rows:
+            raise HTTPException(status_code=404, detail="报告不存在")
+
+        report = rows[0]
+
+        # 解析 chart_data 获取 nav_log
+        chart_data = {}
+        if report.get("chart_data") and isinstance(report["chart_data"], str):
+            try:
+                chart_data = json.loads(report["chart_data"])
+            except Exception:
+                chart_data = {}
+
+        equity_curve = chart_data.get("equity_curve", [])
+        if not equity_curve:
+            raise HTTPException(status_code=400, detail="该报告无净值曲线数据，无法生成 QuantStats 报告")
+
+        # 从净值曲线构建日收益率序列
+        sorted_log = sorted(equity_curve, key=lambda x: x.get("date", ""))
+        navs = [float(r.get("nav", 0)) for r in sorted_log]
+        dates = [r.get("date", "") for r in sorted_log]
+
+        if len(navs) < 2:
+            raise HTTPException(status_code=400, detail="净值数据不足，至少需要2个数据点")
+
+        # 构建收益率序列
+        nav_series = pd.Series(navs, index=pd.to_datetime(dates))
+        returns = nav_series.pct_change().dropna()
+
+        # 构建基准收益率序列（如果 chart_data 中有 qs_ 前缀的基准指标，说明有基准数据）
+        benchmark = None
+        # 尝试从 chart_data 中获取基准净值数据
+        benchmark_curve = chart_data.get("benchmark_curve", [])
+        if benchmark_curve and len(benchmark_curve) >= 2:
+            sorted_bench = sorted(benchmark_curve, key=lambda x: x.get("date", ""))
+            bench_navs = [float(r.get("nav", 0)) for r in sorted_bench]
+            bench_dates = [r.get("date", "") for r in sorted_bench]
+            bench_series = pd.Series(bench_navs, index=pd.to_datetime(bench_dates))
+            benchmark = bench_series.pct_change().dropna()
+
+        # 生成中文 HTML 报告
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        reports_dir = os.path.join(project_root, "static", "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+        html_filename = f"quantstats_{report_id}.html"
+        html_path = os.path.join(reports_dir, html_filename)
+
+        strategy_name = report.get("strategy_name") or "策略"
+        generate_chinese_report(
+            returns,
+            benchmark=benchmark,
+            title=f"{strategy_name} - 绩效分析报告",
+            output_path=html_path,
+        )
+
+        # 返回可访问的 URL 路径
+        url = f"/static/reports/{html_filename}"
+        return {"html_path": html_path, "url": url, "report_id": report_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("生成 QuantStats 中文 HTML 报告失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"生成 QuantStats 报告失败: {str(e)}")
+    finally:
+        conn.close()
+
+
+class QuantStatsReportRequest(BaseModel):
+    """QuantStats 报告生成请求"""
+    nav_log: list[dict]
+    benchmark_nav_log: Optional[list[dict]] = None
+    title: str = Field(default="策略绩效报告")
+
+
+@router.post("/generate-quantstats-report")
+async def generate_quantstats_report(request: QuantStatsReportRequest) -> dict[str, Any]:
+    """
+    接收 nav_log 和 benchmark_nav_log，调用 quantstats 生成完整中文 HTML 报告，
+    返回报告路径
+    """
+    try:
+        if not request.nav_log or len(request.nav_log) < 2:
+            raise HTTPException(status_code=400, detail="nav_log 数据不足，至少需要2个数据点")
+
+        # 从净值日志构建日收益率序列
+        sorted_log = sorted(request.nav_log, key=lambda x: x.get("date", ""))
+        navs = [float(r.get("nav", 0)) for r in sorted_log]
+        dates = [r.get("date", "") for r in sorted_log]
+        nav_series = pd.Series(navs, index=pd.to_datetime(dates))
+        returns = nav_series.pct_change().dropna()
+
+        # 构建基准收益率序列
+        benchmark = None
+        if request.benchmark_nav_log and len(request.benchmark_nav_log) >= 2:
+            sorted_bench = sorted(request.benchmark_nav_log, key=lambda x: x.get("date", ""))
+            bench_navs = [float(r.get("nav", 0)) for r in sorted_bench]
+            bench_dates = [r.get("date", "") for r in sorted_bench]
+            bench_series = pd.Series(bench_navs, index=pd.to_datetime(bench_dates))
+            benchmark = bench_series.pct_change().dropna()
+
+        # 生成中文 HTML 报告
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        reports_dir = os.path.join(project_root, "static", "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        html_filename = f"quantstats_{ts}.html"
+        html_path = os.path.join(reports_dir, html_filename)
+
+        generate_chinese_report(
+            returns,
+            benchmark=benchmark,
+            title=request.title,
+            output_path=html_path,
+        )
+
+        url = f"/static/reports/{html_filename}"
+        return {
+            "success": True,
+            "message": "QuantStats 中文报告生成成功",
+            "html_path": html_path,
+            "url": url,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("生成 QuantStats 报告失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"生成 QuantStats 报告失败: {str(e)}")
 
 
 # ============================================

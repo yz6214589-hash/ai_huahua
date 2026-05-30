@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { fetchJson, postJson } from '@/api/client'
 import type { StockSearchItem, WatchlistGroup, WatchlistItem, WatchlistSnapshot } from '@/api/types'
 import { toast } from '@/components/Toast'
@@ -485,7 +486,7 @@ export default function Watchlist() {
           </div>
         </div>
         <CardBody>
-          {loading ? <div className="py-6 text-center text-sm text-zinc-500">加载中…</div>
+          {loading ? <Loading className="py-6" />
             : items.length === 0 ? <div className="py-6 text-center text-sm text-zinc-500">暂无自选股</div>
             : (
               <div className="space-y-4">

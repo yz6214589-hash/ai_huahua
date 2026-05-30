@@ -1,167 +1,235 @@
+"""
+舆情监控 API 路由
+
+提供舆情监控相关接口，包括：
+- 定时任务调度配置
+- 舆情分析任务触发
+- 舆情事件、新闻查询
+- 宏观舆情数据查询
+- 自定义股票监控列表管理
+- 通知设置
+"""
+
 from __future__ import annotations
 
-from datetime import datetime
+import json
+import logging
+import os
+import random
+import subprocess
+import tempfile
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import uuid4
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException, Query
+from pydantic import BaseModel
 
 from core.data import get_watchlist
-from core.db import load_mysql_config, connect, query_dict, execute
-from infra.storage.logging_service import get_logger
-from infra.storage import sentiment_store as store
+from core.db import MySQLConfig, connect, execute, executemany, query_dict
+from core.jobs.common import safe_float, to_ymd
 
-from pathlib import Path
-import sys
+logger = logging.getLogger("sentiment_api")
 
-# 将 sentiment_scorer 脚本目录加入 sys.path，以便直接 import
-_LLM_SKILL_DIR = Path(__file__).resolve().parents[1] / "llm" / "skills" / "sentiment-analysis" / "scripts"
-if str(_LLM_SKILL_DIR) not in sys.path:
-    sys.path.insert(0, str(_LLM_SKILL_DIR))
+router = APIRouter()
 
-from sentiment_scorer import init_client, analyze_single_news, extract_news_text as _extract_news_text
+# 时区
+_tz = timezone(timedelta(hours=8))
 
-logger = get_logger("sentiment")
+# LLM API 密钥
+DASHSCOPE_API_KEY = str(os.getenv("DASHSCOPE_API_KEY", "")).strip()
 
-router = APIRouter(prefix="/api/v1", tags=["sentiment"])
+# ---------- 工具函数 ----------
+
+def load_mysql_config() -> MySQLConfig:
+    """
+    从环境变量加载 MySQL 连接配置。
+
+    环境变量优先级：
+    1. WUCAI_SQL_* 系列的四个变量
+    2. 回退到 AI_QUANT_SQL_* 系列
+    3. 默认值 localhost:3306/quant_trade
+
+    Returns:
+        MySQLConfig: 数据库连接配置对象
+    """
+    from core.db import load_mysql_config as _load
+    return _load()
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    """返回北京时间 ISO 格式时间字符串"""
+    return datetime.now(_tz).isoformat(timespec="seconds")
 
 
-def _pick_watchlist_codes() -> tuple[list[str], list[str]]:
-    data = get_watchlist()
-    items = data.get("items") if isinstance(data, dict) else []
-    codes: list[str] = []
-    names: list[str] = []
-    for it in items if isinstance(items, list) else []:
-        code = str((it or {}).get("stock_code") or "").strip().upper()
-        if not code:
-            continue
-        name = str((it or {}).get("stock_name") or "").strip()
-        codes.append(code)
-        names.append(name or code)
-    return codes, names
+def _now_ymd() -> str:
+    """返回北京时间 YYYYMMDD 格式日期字符串"""
+    return datetime.now(_tz).strftime("%Y%m%d")
 
 
-# 关键词分类规则
-_POSITIVE_KEYWORDS = ["业绩预增", "增持", "回购", "利好", "涨停", "突破", "新高", "上涨", "签约", "中标", "获批"]
-_NEGATIVE_KEYWORDS = ["业绩预减", "减持", "处罚", "利空", "跌停", "亏损", "下滑", "违规", "退市", "暴雷", "风险"]
-_POLICY_KEYWORDS = ["政策", "规划", "补贴", "改革", "监管", "法规", "国务院", "证监会", "央行"]
+def _generate_run_id() -> str:
+    """生成一个16位十六进制运行ID"""
+    return os.urandom(8).hex()
 
 
-def _classify_news_event(run_id: str, stock_code: str, stock_name: str, news: dict, created_at: str) -> dict:
-    """根据关键词对新闻进行基础分类"""
-    title = str(news.get("title") or "")
-    content = str(news.get("content") or "")[:500]
-    text = title + content
+class SentimentStore:
+    """
+    舆情监控本地存储管理器
 
-    event_type = "中性"
-    confidence = 0.5
-    for kw in _POSITIVE_KEYWORDS:
-        if kw in text:
-            event_type = "利好"
-            confidence = 0.7
-            break
-    for kw in _NEGATIVE_KEYWORDS:
-        if kw in text:
-            event_type = "利空"
-            confidence = 0.7
-            break
-    for kw in _POLICY_KEYWORDS:
-        if kw in text:
-            event_type = "政策"
-            confidence = 0.6
-            break
+    将调度配置持久化到本地 JSON 文件。
+    兼容之前的文件存储格式，并支持同步到 MySQL。
+    """
 
-    return {
-        "run_id": run_id,
-        "stock_code": stock_code,
-        "stock_name": stock_name,
-        "source_type": news.get("news_type", "news"),
-        "source_title": title[:255],
-        "source_url": news.get("source_url"),
-        "published_at": str(news.get("published_at") or created_at),
-        "event_type": event_type,
-        "event_category": "新闻扫描",
-        "signal": "关注" if event_type == "利好" else "警惕" if event_type == "利空" else "观察",
-        "signal_reason": f"关键词匹配: {event_type}",
-        "impact": "待评估",
-        "confidence": confidence,
-        "urgency": "高" if event_type == "利空" else "低",
-    }
+    def __init__(self) -> None:
+        """
+        初始化存储目录，从环境变量或默认路径获取。
+        优先使用 AI_QUANT_CHARLES_JOB_STORE_DIR 环境变量指定的目录。
+        """
+        base = str(os.getenv("AI_QUANT_CHARLES_JOB_STORE_DIR", "")).strip()
+        if not base:
+            base = os.path.join(os.path.dirname(__file__), "..", ".ai_quant")
+        self._dir = os.path.join(base, "sentiment")
+        try:
+            os.makedirs(self._dir, exist_ok=True)
+        except PermissionError:
+            self._dir = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "..", ".ai_quant", "sentiment"
+            )
+            os.makedirs(self._dir, exist_ok=True)
+
+    def _path(self, name: str) -> str:
+        return os.path.join(self._dir, name)
+
+    def get_schedule(self) -> dict[str, Any]:
+        """
+        获取调度配置。
+
+        Returns:
+            dict: 包含 enabled/cron/timezone/frequency/market_time/fixed_time 的字典
+        """
+        default = {
+            "enabled": True,
+            "cron": "0 10 15 * * ?",
+            "timezone": "Asia/Shanghai",
+            "frequency": "daily",
+            "market_time": "14:00",
+            "fixed_time": "15:10",
+        }
+        p = self._path("schedule.json")
+        if not os.path.exists(p):
+            return default
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                stored = json.load(f)
+            if isinstance(stored, dict):
+                return {**default, **stored}
+        except Exception:
+            pass
+        return default
+
+    def save_schedule(self, data: dict[str, Any]) -> None:
+        """
+        保存调度配置到本地文件。
+
+        Args:
+            data: 调度配置字典
+        """
+        p = self._path("schedule.json")
+        try:
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, default=str)
+        except Exception as e:
+            logger.warning("保存调度配置失败", extra={"error": str(e)})
+
+    def save_schedule_to_mysql(self, data: dict[str, Any]) -> None:
+        """
+        同步调度配置到 MySQL。
+
+        更新 sentiment_schedule 表中 id=1 的配置记录。
+        此操作非阻塞，失败不影响主流程。
+
+        Args:
+            data: 调度配置字典
+        """
+        try:
+            cfg = load_mysql_config()
+            conn = connect(cfg)
+            try:
+                execute(
+                    conn,
+                    """INSERT INTO sentiment_schedule (id, name, enabled, schedule_type, cron_expression, timezone, frequency, use_watchlist)
+                       VALUES (1, %s, %s, 'market_open', %s, %s, %s, 1)
+                       ON DUPLICATE KEY UPDATE enabled=VALUES(enabled), cron_expression=VALUES(cron_expression), frequency=VALUES(frequency)""",
+                    (
+                        "舆情监控",
+                        1 if data.get("enabled") else 0,
+                        data.get("cron", "0 10 15 * * ?"),
+                        data.get("timezone", "Asia/Shanghai"),
+                        data.get("frequency", "daily"),
+                    ),
+                )
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning("保存调度配置到MySQL失败", extra={"error": str(e)})
+
+    def get_notify_config(self) -> dict[str, Any]:
+        """
+        获取通知配置。
+
+        Returns:
+            dict: 包含 enabled/threshold 的字典
+        """
+        default = {"enabled": True, "threshold": 0.3}
+        p = self._path("notify.json")
+        if not os.path.exists(p):
+            return default
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                stored = json.load(f)
+            if isinstance(stored, dict):
+                return {**default, **stored}
+        except Exception:
+            pass
+        return default
+
+    def save_notify_config(self, data: dict[str, Any]) -> None:
+        """
+        保存通知配置到本地文件。
+
+        Args:
+            data: 通知配置字典
+        """
+        p = self._path("notify.json")
+        try:
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, default=str)
+        except Exception as e:
+            logger.warning("保存通知配置失败", extra={"error": str(e)})
 
 
-def _build_no_news_event(run_id: str, stock_code: str, stock_name: str, created_at: str) -> dict:
-    """无新闻时创建占位事件"""
-    return {
-        "run_id": run_id,
-        "stock_code": stock_code,
-        "stock_name": stock_name,
-        "source_type": "system",
-        "source_title": "暂无近期舆情",
-        "source_url": None,
-        "published_at": created_at,
-        "event_type": "中性",
-        "event_category": "例行扫描",
-        "signal": "观察",
-        "signal_reason": "未发现近期新闻",
-        "impact": "暂无显著影响",
-        "confidence": 0.3,
-        "urgency": "低",
-    }
+store = SentimentStore()
 
 
-def _llm_classify_news(run_id: str, stock_code: str, stock_name: str, news: dict, created_at: str, llm_client) -> dict:
-    """使用 LLM 对新闻进行情感分析并生成事件记录"""
-    title = str(news.get("title") or "")
-    content = str(news.get("content") or "")
-    # 使用 sentiment_scorer 的 extract_news_text 提取文本
-    text = _extract_news_text({"title": title, "content": content})
-    if not text.strip():
-        text = title + " " + content[:500]
-
-    try:
-        result = analyze_single_news(llm_client, text[:2000])
-    except Exception as e:
-        logger.warning("LLM 情感分析失败，回退到关键词分类", extra={"stock_code": stock_code, "error": str(e)})
-        return _classify_news_event(run_id, stock_code, stock_name, news, created_at)
-
-    sentiment_map = {"正面": "利好", "负面": "利空", "中性": "中性"}
-    event_type = sentiment_map.get(result.get("sentiment", "中性"), "中性")
-    strength = max(1, min(5, int(result.get("strength", 3) or 3)))
-    confidence = strength / 5.0
-    impact = str(result.get("market_impact") or result.get("summary") or "待评估")
-
-    return {
-        "run_id": run_id,
-        "stock_code": stock_code,
-        "stock_name": stock_name,
-        "source_type": news.get("news_type", "news"),
-        "source_title": title[:255],
-        "source_url": news.get("source_url"),
-        "published_at": str(news.get("published_at") or created_at),
-        "event_type": event_type,
-        "event_category": "LLM 精检",
-        "signal": "关注" if event_type == "利好" else "警惕" if event_type == "利空" else "观察",
-        "signal_reason": str(result.get("summary") or f"LLM 分析: {event_type}"),
-        "impact": impact,
-        "confidence": round(confidence, 2),
-        "urgency": "高" if event_type == "利空" else "低",
-    }
-
+# ---------- 路由 ----------
 
 @router.get("/sentiment/schedule")
 def sentiment_schedule_get() -> dict[str, Any]:
+    """获取舆情监控定时调度配置"""
     return store.get_schedule()
 
 
 @router.put("/sentiment/schedule")
 def sentiment_schedule_put(body: dict[str, Any]) -> dict[str, Any]:
+    """
+    更新舆情监控定时调度配置。
+
+    支持更新 enabled/cron/timezone/frequency/market_time/fixed_time 字段。
+    同时同步到 MySQL（非阻塞）。
+    """
     current = store.get_schedule()
     enabled = bool(body.get("enabled", current.get("enabled", True)))
-    cron = str(body.get("cron") or current.get("cron", "10 15 * * 1-5")).strip()
+    cron = str(body.get("cron") or current.get("cron", "0 10 15 * * ?")).strip()
     timezone = str(body.get("timezone") or current.get("timezone", "Asia/Shanghai")).strip() or "Asia/Shanghai"
     frequency = str(body.get("frequency") or current.get("frequency", "daily")).strip() or "daily"
     market_time = str(body.get("market_time") or current.get("market_time", "14:00")).strip() or "14:00"
@@ -175,7 +243,6 @@ def sentiment_schedule_put(body: dict[str, Any]) -> dict[str, Any]:
         "fixed_time": fixed_time,
     }
     store.save_schedule(updated)
-    # 同步写入 MySQL（非阻塞，失败不影响主流程）
     store.save_schedule_to_mysql(updated)
     logger.info("舆情调度配置已更新", extra={
         "enabled": enabled,
@@ -188,296 +255,276 @@ def sentiment_schedule_put(body: dict[str, Any]) -> dict[str, Any]:
     return store.get_schedule()
 
 
-@router.get("/sentiment/runs")
-def sentiment_runs_list(limit: str = "20") -> dict[str, Any]:
-    # Bug 3 修复: limit 参数类型改为 str，内部自行转换，避免非数字字符串触发 422
-    try:
-        limit_val = int(limit)
-    except (ValueError, TypeError):
-        limit_val = 20
-    return {"runs": store.list_runs(limit=limit_val)}
-
-
 @router.post("/sentiment/runs")
-def sentiment_run_create(body: dict[str, Any]) -> dict[str, Any]:
-    logger.info("舆情扫描任务创建", extra={
-        "stock_codes": body.get("stock_codes"),
-        "days": body.get("days"),
-        "use_llm": body.get("use_llm")
-    })
+def sentiment_run(body: dict[str, Any]) -> dict[str, Any]:
+    """
+    触发舆情分析任务
+
+    三种触发模式：
+    1. 无参数（或空 body）：使用自选股列表+默认配置
+    2. 指定 stock_codes：手动分析指定股票
+    3. 其他配置参数（days, use_llm 等）可选
+
+    Args:
+        body: 请求体，可包含 stock_codes/days/use_llm 等
+
+    Returns:
+        {"run_id": str, "status": str, "message": str}
+
+    Raises:
+        HTTPException: 参数校验失败时抛出 400
+    """
     raw_codes = body.get("stock_codes")
-    if isinstance(raw_codes, list):
-        stock_codes = [str(x or "").strip().upper() for x in raw_codes if str(x or "").strip()]
+    if raw_codes is not None:
+        if not isinstance(raw_codes, list) or len(raw_codes) == 0:
+            raise HTTPException(status_code=400, detail="stock_codes 必须是非空列表")
+        stock_codes = [str(c).strip().upper() for c in raw_codes if str(c).strip()]
+        if not stock_codes:
+            raise HTTPException(status_code=400, detail="股票代码列表为空")
     else:
-        stock_codes = []
-    stock_names: list[str] = []
-    if stock_codes:
-        # Bug 5 修复: 从 trade_stock_master 表查询股票中文名称，查询失败时 fallback 为代码
+        # 从舆情股票列表读取
         try:
             cfg = load_mysql_config()
             conn = connect(cfg)
             try:
-                name_map: dict[str, str] = {}
-                for code in stock_codes:
-                    rows = query_dict(
-                        conn,
-                        "SELECT stock_name FROM trade_stock_master WHERE stock_code = %s LIMIT 1",
-                        (code,),
-                    )
-                    name_map[code] = rows[0]["stock_name"] if rows else code
-                stock_names = [name_map.get(c, c) for c in stock_codes]
+                rows = query_dict(conn, "SELECT stock_code, stock_name FROM sentiment_stock_list")
+                stock_codes = [str(r["stock_code"]).strip().upper() for r in (rows or []) if r.get("stock_code")]
+                stock_names = [str(r.get("stock_name") or "") for r in (rows or [])]
             finally:
                 conn.close()
-        except Exception as e:
-            logger.warning("查询股票名称失败，使用代码作为名称", extra={"error": str(e)})
-            stock_names = [str(x) for x in stock_codes]
-    else:
-        stock_codes, stock_names = _pick_watchlist_codes()
+        except Exception:
+            stock_codes = []
 
-    run_id = uuid4().hex
-    logger.info("舆情扫描开始", extra={
-        "run_id": run_id,
-        "stock_codes_count": len(stock_codes)
-    })
-
-    created_at = _now_iso()
-    # Bug 1 修复: days 传入非数字字符串时，int() 转换失败使用默认值 3
-    # Bug 2 修复: days 增加 1~30 范围限制，与 sentiment_monitor.py 保持一致
-    try:
-        days = int(body.get("days") or 3)
-    except (ValueError, TypeError):
-        days = 3
-    days = max(1, min(30, days))
-    run = {
-        "run_id": run_id,
-        "trigger": "manual",
-        "stock_codes": stock_codes,
-        "stock_names": stock_names,
-        "days": days,
-        "use_llm": bool(body.get("use_llm", False)),
-        "status": "running",
-        "total_events": 0,
-        "created_at": created_at,
-        "started_at": created_at,
-        "finished_at": None,
-        "error_message": None,
-    }
-    store.write_run(run)
-    # 同步写入 MySQL（非阻塞，失败不影响主流程）
-    store.write_run_to_mysql(run)
-
-    # 从 trade_stock_news 查询真实新闻
+    days = max(1, min(30, int(body.get("days", 3) or 3)))
     use_llm = bool(body.get("use_llm", False))
-    llm_client = None
-    if use_llm:
-        try:
-            llm_client = init_client()
-            logger.info("LLM 客户端初始化成功，将使用 LLM 精检", extra={"run_id": run_id})
-        except Exception as e:
-            logger.warning("LLM 客户端初始化失败，回退到关键词分类", extra={"error": str(e)})
-            use_llm = False
+    use_watchlist = bool(body.get("use_watchlist", True))
 
-    event_count = 0
+    if not stock_codes:
+        raise HTTPException(status_code=400, detail="股票列表为空，请先添加股票")
+
+    run_id = _generate_run_id()
+    now_iso = _now_iso()
+
+    # 记录运行记录到 MySQL
     try:
         cfg = load_mysql_config()
         conn = connect(cfg)
         try:
-            for code, name in zip(stock_codes, stock_names):
-                news_rows = query_dict(
-                    conn,
-                    """SELECT title, content, source, source_url, published_at, news_type
-                       FROM trade_stock_news
-                       WHERE stock_code = %s
-                       AND published_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
-                       ORDER BY published_at DESC
-                       LIMIT 20""",
-                    (code, days),
-                )
-                if not news_rows:
-                    evt = _build_no_news_event(run_id, code, name, created_at)
-                    store.write_event(evt)
-                    # 同步写入 MySQL
-                    store.write_event_to_mysql(evt)
-                    event_count += 1
-                    continue
-                for news in news_rows:
-                    if use_llm and llm_client:
-                        evt = _llm_classify_news(run_id, code, name, news, created_at, llm_client)
-                    else:
-                        evt = _classify_news_event(run_id, code, name, news, created_at)
-                    store.write_event(evt)
-                    # 同步写入 MySQL
-                    store.write_event_to_mysql(evt)
-                    event_count += 1
+            execute(
+                conn,
+                """INSERT INTO sentiment_run
+                   (run_id, trigger_type, stock_codes_json, stock_names_json, days, use_llm, status, created_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    run_id,
+                    "manual",
+                    json.dumps(stock_codes, ensure_ascii=False),
+                    json.dumps(stock_names if stock_names else [], ensure_ascii=False),
+                    days,
+                    1 if use_llm else 0,
+                    "waiting",
+                    now_iso,
+                ),
+            )
         finally:
             conn.close()
     except Exception as e:
-        logger.error("舆情新闻查询失败", extra={"error": str(e)})
-        for code, name in zip(stock_codes, stock_names):
-            evt = _build_no_news_event(run_id, code, name, created_at)
-            store.write_event(evt)
-            # 同步写入 MySQL
-            store.write_event_to_mysql(evt)
-            event_count += 1
+        logger.warning("写入运行记录失败", extra={"error": str(e)})
 
-    finished_at = _now_iso()
-    run["status"] = "success"
-    run["total_events"] = event_count
-    run["finished_at"] = finished_at
-    store.write_run(run)
-    # 同步更新 MySQL
-    store.write_run_to_mysql(run)
+    # 异步启动采集子进程（后台任务），传递必要参数
+    script = os.path.join(os.path.dirname(__file__), "..", "core", "jobs", "domains", "sentiment_monitor.py")
+    if not os.path.exists(script):
+        raise HTTPException(status_code=500, detail=f"采集脚本不存在: {script}")
 
-    logger.info("舆情扫描完成", extra={
+    args = [
+        "python3",
+        script,
+        "--run_id", run_id,
+        "--stock_codes", ",".join(stock_codes),
+        "--days", str(days),
+        "--mysql_host", str(os.getenv("WUCAI_SQL_HOST", "127.0.0.1")),
+        "--mysql_port", str(os.getenv("WUCAI_SQL_PORT", "3306")),
+        "--mysql_user", str(os.getenv("WUCAI_SQL_USERNAME", "root")),
+        "--mysql_password", str(os.getenv("WUCAI_SQL_PASSWORD", "")),
+        "--mysql_db", str(os.getenv("WUCAI_SQL_DB", "quant_trade")),
+    ]
+    if use_llm:
+        args.append("--use_llm")
+
+    try:
+        subprocess.Popen(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        )
+        logger.info("舆情分析任务已启动", extra={"run_id": run_id, "stock_count": len(stock_codes)})
+    except Exception as e:
+        logger.error("启动舆情分析任务失败", extra={"run_id": run_id, "error": str(e)})
+        raise HTTPException(status_code=500, detail=f"启动任务失败: {e}")
+
+    return {
         "run_id": run_id,
-        "total_events": event_count,
-    })
-    return {"ok": True, "run": store.read_run(run_id)}
+        "status": "pending",
+        "message": f"舆情分析任务已启动，涉及 {len(stock_codes)} 只股票",
+    }
+
+
+@router.get("/sentiment/runs")
+def sentiment_runs(limit: int = 20) -> dict[str, Any]:
+    """
+    获取舆情分析运行记录列表。
+
+    Args:
+        limit: 返回记录数量上限，默认 20
+
+    Returns:
+        {"runs": list[dict]}，包含 run_id/status/total_events/stock_count 等字段
+    """
+    try:
+        cfg = load_mysql_config()
+        conn = connect(cfg)
+        try:
+            rows = query_dict(
+                conn,
+                """SELECT run_id, trigger_type, stock_codes_json, days, use_llm, status,
+                          total_events, total_news, positive_count, negative_count, neutral_count,
+                          created_at, started_at, finished_at, error_message
+                   FROM sentiment_run ORDER BY created_at DESC LIMIT %s""",
+                (int(limit),),
+            )
+            items = []
+            for r in rows or []:
+                codes = []
+                try:
+                    codes = json.loads(str(r.get("stock_codes_json") or "[]"))
+                except Exception:
+                    pass
+                items.append({
+                    "run_id": r.get("run_id"),
+                    "trigger_type": r.get("trigger_type"),
+                    "stock_count": len(codes),
+                    "days": r.get("days"),
+                    "use_llm": bool(int(r.get("use_llm") or 0) == 1),
+                    "status": r.get("status"),
+                    "total_events": int(r.get("total_events") or 0),
+                    "total_news": int(r.get("total_news") or 0),
+                    "positive_count": int(r.get("positive_count") or 0),
+                    "negative_count": int(r.get("negative_count") or 0),
+                    "neutral_count": int(r.get("neutral_count") or 0),
+                    "created_at": str(r.get("created_at") or ""),
+                    "started_at": str(r.get("started_at") or ""),
+                    "finished_at": str(r.get("finished_at") or ""),
+                    "error_message": r.get("error_message"),
+                })
+            return {"runs": items}
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("查询运行记录失败", extra={"error": str(e)})
+        return {"runs": []}
 
 
 @router.get("/sentiment/events")
-def sentiment_events_list(
+def sentiment_events(
     run_id: str | None = None,
-    limit: str = "200",
-    q: str | None = None,
     event_type: str | None = None,
+    limit: int = 200,
 ) -> dict[str, Any]:
-    # Bug 3 修复: limit 参数类型改为 str，内部自行转换，避免非数字字符串触发 422
-    try:
-        limit_val = int(limit)
-    except (ValueError, TypeError):
-        limit_val = 200
-    events = store.list_events(
-        run_id=run_id,
-        limit=limit_val,
-        q=q,
-        event_type=event_type,
-    )
-    return {"events": events}
-
-
-@router.get("/macro/latest")
-def macro_latest() -> dict[str, Any]:
-    return store.get_macro_data()
-
-
-# 指标名称映射
-_INDICATOR_NAMES: dict[str, str] = {
-    "CPI": "CPI（居民消费价格指数）",
-    "PMI": "PMI（采购经理指数）",
-    "LPR": "LPR（贷款市场报价利率）",
-    "VIX": "VIX（CBOE波动率指数）",
-    "iVIX": "iVIX（中国波动率指数）",
-    "OVX": "OVX（原油波动率指数）",
-    "GVZ": "GVZ（黄金波动率指数）",
-    "US10Y": "美国10年期国债收益率",
-    "FearGreed": "恐惧贪婪指数",
-}
-
-# FRED 指标对应的 series_id 映射
-_FRED_SERIES: dict[str, str] = {
-    "VIX": "VIXCLS",
-    "OVX": "OVXCLS",
-    "GVZ": "GVZCLS",
-    "US10Y": "DGS10",
-}
-
-
-@router.get("/macro/history/{indicator}")
-def macro_history(indicator: str, days: str = "90") -> dict[str, Any]:
     """
-    返回指定指标的历史数据，用于前端绘制趋势图表。
-    支持指标: CPI, PMI, LPR, VIX, iVIX, OVX, GVZ, US10Y, FearGreed
+    查询舆情事件列表。
+
+    支持按运行ID、事件类型和数量限制进行过滤。
+
+    Args:
+        run_id: 运行ID，不传时查询所有
+        event_type: 事件类型过滤，"利好"/"利空"/"政策"
+        limit: 返回事件数量上限，默认 200
+
+    Returns:
+        {"events": list[dict]}，包含事件详细信息
     """
-    # days 参数处理
-    try:
-        days_val = int(days)
-    except (ValueError, TypeError):
-        days_val = 90
-    days_val = max(7, min(365, days_val))
-
-    name = _INDICATOR_NAMES.get(indicator, indicator)
-    data: list[dict[str, Any]] = []
-
-    # --- CPI / PMI / LPR: 从 trade_macro_indicator 宽表查询 ---
-    if indicator == "CPI":
-        sql = (
-            "SELECT indicator_date, cpi_yoy AS value "
-            "FROM trade_macro_indicator "
-            "WHERE cpi_yoy IS NOT NULL "
-            "AND indicator_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY) "
-            "ORDER BY indicator_date"
-        )
-        data = _query_macro_history(sql, days_val)
-    elif indicator == "PMI":
-        sql = (
-            "SELECT indicator_date, pmi AS value "
-            "FROM trade_macro_indicator "
-            "WHERE pmi IS NOT NULL "
-            "AND indicator_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY) "
-            "ORDER BY indicator_date"
-        )
-        data = _query_macro_history(sql, days_val)
-    elif indicator == "LPR":
-        sql = (
-            "SELECT indicator_date, lpr_1y AS value "
-            "FROM trade_macro_indicator "
-            "WHERE lpr_1y IS NOT NULL "
-            "AND indicator_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY) "
-            "ORDER BY indicator_date"
-        )
-        data = _query_macro_history(sql, days_val)
-
-    # --- VIX / OVX / GVZ / US10Y: 从 FRED 获取历史 CSV ---
-    elif indicator in _FRED_SERIES:
-        data = store._fred_history(_FRED_SERIES[indicator], days_val)
-
-    # --- FearGreed: 优先从 CNN 获取，降级使用 VIX 计算 ---
-    elif indicator == "FearGreed":
-        cnn_data = store._fetch_cnn_fear_greed_history(days_val)
-        if cnn_data:
-            data = cnn_data
-        else:
-            # 降级: 基于 VIX 历史数据计算
-            vix_data = store._fred_history("VIXCLS", days_val)
-            for point in vix_data:
-                score = store._compute_fear_greed(point["value"])
-                if score is not None:
-                    data.append({"date": point["date"], "value": score})
-
-    # --- iVIX: 从 akshare 获取历史数据 ---
-    elif indicator == "iVIX":
-        data = store._fetch_ivix_history(days_val)
-
-    return {
-        "indicator": indicator,
-        "name": name,
-        "data": data,
-    }
-
-
-def _query_macro_history(sql: str, days_val: int) -> list[dict[str, Any]]:
-    """从 trade_macro_indicator 宽表查询历史数据"""
     try:
         cfg = load_mysql_config()
         conn = connect(cfg)
         try:
-            rows = query_dict(conn, sql, (days_val,))
-            return [
-                {"date": str(r.get("indicator_date", ""))[:10], "value": float(r["value"])}
-                for r in rows
-                if r.get("value") is not None
-            ]
+            sql = "SELECT * FROM sentiment_event WHERE 1=1"
+            params: list[Any] = []
+            if run_id:
+                sql += " AND run_id = %s"
+                params.append(run_id)
+            if event_type:
+                sql += " AND event_type = %s"
+                params.append(event_type)
+            sql += " ORDER BY published_at DESC, id DESC LIMIT %s"
+            params.append(int(limit))
+            rows = query_dict(conn, sql, tuple(params))
+            return {"events": rows if rows else []}
         finally:
             conn.close()
     except Exception as e:
-        logger.warning("宏观历史数据查询失败", extra={"error": str(e)})
-        return []
+        logger.warning("查询舆情事件失败", extra={"error": str(e)})
+        return {"events": []}
+
+
+@router.get("/sentiment/news")
+def sentiment_news(
+    run_id: str | None = None,
+    stock_code: str | None = None,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """
+    查询舆情新闻列表。
+
+    支持按运行ID、股票代码过滤。
+
+    Args:
+        run_id: 运行ID，不传时查询所有
+        stock_code: 股票代码过滤
+        limit: 返回新闻数量上限，默认 200
+
+    Returns:
+        {"news": list[dict]}，包含新闻详细信息
+    """
+    try:
+        cfg = load_mysql_config()
+        conn = connect(cfg)
+        try:
+            sql = "SELECT * FROM sentiment_news WHERE 1=1"
+            params: list[Any] = []
+            if run_id:
+                sql += " AND run_id = %s"
+                params.append(run_id)
+            if stock_code:
+                sql += " AND stock_code = %s"
+                params.append(stock_code)
+            sql += " ORDER BY published_at DESC, id DESC LIMIT %s"
+            params.append(int(limit))
+            rows = query_dict(conn, sql, tuple(params))
+            return {"news": rows if rows else []}
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("查询舆情新闻失败", extra={"error": str(e)})
+        return {"news": []}
+
+
+@router.get("/sentiment/macro")
+def sentiment_macro() -> list[dict[str, Any]]:
+    """获取宏观舆情数据（占位接口，返回空列表）"""
+    return []
 
 
 @router.get("/sentiment/stock-list")
 def get_sentiment_stock_list() -> dict[str, Any]:
-    """查询舆情监控系统的独立股票列表"""
+    """
+    查询舆情监控系统的独立股票列表
+
+    从 sentiment_stock_list 表中读取所有股票，按添加时间倒序排列。
+
+    Returns:
+        {"items": list[dict]}，每项包含 stock_code/stock_name/added_at/notes
+    """
     try:
         cfg = load_mysql_config()
         conn = connect(cfg)
@@ -494,11 +541,51 @@ def get_sentiment_stock_list() -> dict[str, Any]:
         return {"items": []}
 
 
+@router.delete("/sentiment/stock-list/{stock_code}")
+def delete_sentiment_stock(stock_code: str) -> dict[str, Any]:
+    """
+    从舆情监控股票列表中删除指定股票
+
+    根据股票代码删除 sentiment_stock_list 表中的对应记录。
+
+    Args:
+        stock_code: 股票代码，如 "600519.SH"
+
+    Returns:
+        {"ok": bool, "message": str}
+    """
+    code = str(stock_code or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="股票代码不能为空")
+    try:
+        cfg = load_mysql_config()
+        conn = connect(cfg)
+        try:
+            affected = execute(conn, "DELETE FROM sentiment_stock_list WHERE stock_code = %s", (code,))
+            if affected > 0:
+                logger.info("已从舆情股票列表删除: %s", code)
+                return {"ok": True, "message": f"已删除 {code}"}
+            else:
+                return {"ok": False, "message": f"未找到 {code}"}
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("删除舆情股票失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"删除失败: {e}")
+
+
 @router.post("/sentiment/stock-list/sync")
 def sync_from_watchlist() -> dict[str, Any]:
     """
     从通用自选库同步股票到舆情监控股票列表。
-    @标识规则：带 @ 的股票保持不动，无 @ 的追加
+
+    同步规则：
+    - 仅添加自选库中尚不存在的股票
+    - 已存在的股票跳过
+    - stock_code 带 @ 前缀表示受保护的记录，以 @ 后的实际代码判断是否已存在
+
+    Returns:
+        {"items": list, "added_count": int, "skipped_count": int, "total": int}
     """
     added_count = 0
     skipped_count = 0
@@ -538,3 +625,63 @@ def sync_from_watchlist() -> dict[str, Any]:
     except Exception as e:
         logger.warning("从自选库同步舆情股票列表失败", extra={"error": str(e)})
         return {"items": [], "added_count": 0, "skipped_count": 0, "total": 0, "error": str(e)}
+
+
+@router.get("/sentiment/notify")
+def sentiment_notify_get() -> dict[str, Any]:
+    """获取舆情通知配置"""
+    return store.get_notify_config()
+
+
+@router.put("/sentiment/notify")
+def sentiment_notify_put(body: dict[str, Any]) -> dict[str, Any]:
+    """
+    更新舆情通知配置
+
+    Args:
+        body: 包含 enabled/threshold 等字段
+
+    Returns:
+        dict: 更新后的通知配置
+    """
+    current = store.get_notify_config()
+    enabled = bool(body.get("enabled", current.get("enabled", True)))
+    threshold = float(body.get("threshold", current.get("threshold", 0.3)))
+    updated = {"enabled": enabled, "threshold": threshold}
+    store.save_notify_config(updated)
+    return store.get_notify_config()
+
+
+@router.get("/sentiment/history")
+def sentiment_history(days: int = 7) -> list[dict[str, Any]]:
+    """
+    获取历史舆情数据概览。
+
+    以日为维度聚合过去 N 天的舆情事件数量。
+
+    Args:
+        days: 回溯天数，默认 7
+
+    Returns:
+        list[dict]，每项包含日期和事件数量
+    """
+    try:
+        cfg = load_mysql_config()
+        conn = connect(cfg)
+        try:
+            since = (datetime.now(_tz) - timedelta(days=max(1, days))).isoformat()
+            rows = query_dict(
+                conn,
+                """SELECT DATE(published_at) AS day, COUNT(*) AS cnt
+                   FROM sentiment_event
+                   WHERE published_at >= %s
+                   GROUP BY DATE(published_at)
+                   ORDER BY day ASC""",
+                (since,),
+            )
+            return [{"date": str(r["day"]), "count": int(r["cnt"])} for r in (rows or [])]
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("查询历史舆情数据失败", extra={"error": str(e)})
+        return []

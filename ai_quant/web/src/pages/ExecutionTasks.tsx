@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
 import { cn } from '@/lib/utils'
@@ -248,7 +249,7 @@ export default function ExecutionTasks() {
                 </thead>
                 <tbody>
                   {loading && items.length === 0 ? (
-                    <tr><td className="px-4 py-12 text-center text-zinc-500" colSpan={7}>加载中…</td></tr>
+                    <tr><td className="px-4 py-12 text-center" colSpan={7}><Loading size="sm" /></td></tr>
                   ) : items.length === 0 ? (
                     <tr><td className="px-4 py-12 text-center text-zinc-500" colSpan={7}>暂无执行任务</td></tr>
                   ) : items.map((t) => {

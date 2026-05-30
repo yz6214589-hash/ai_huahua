@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchJson } from '@/api/client'
 import { Card, CardBody } from '@/components/Card'
@@ -323,7 +324,7 @@ export default function FinancialHot() {
 
       {/* 加载中且无数据时显示骨架 */}
       {loading && !data ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">正在加载数据...</div>
+        <Loading className="py-20" />
       ) : !data ? (
         <div className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center text-sm text-zinc-500">暂无热点数据</div>
       ) : (

@@ -15,14 +15,17 @@ class StrategyMeta:
     requires_weekly: bool = False
     requires_chan: bool = False
     requires_predictions: bool = False
+    group: str = "basic"  # 策略分组 "basic" | "optimized" | "combo"
 
 
-def _p_int(label: str, help: str, min_v: int | None = None, max_v: int | None = None) -> dict[str, Any]:
+def _p_int(label: str, help: str, min_v: int | None = None, max_v: int | None = None, *, section: str | None = None) -> dict[str, Any]:
     d: dict[str, Any] = {"type": "int", "label": label, "help": help}
     if min_v is not None:
         d["min"] = int(min_v)
     if max_v is not None:
         d["max"] = int(max_v)
+    if section is not None:
+        d["section"] = section
     return d
 
 
@@ -32,6 +35,8 @@ def _p_float(
     min_v: float | None = None,
     max_v: float | None = None,
     step: float | None = None,
+    *,
+    section: str | None = None,
 ) -> dict[str, Any]:
     d: dict[str, Any] = {"type": "float", "label": label, "help": help}
     if min_v is not None:
@@ -40,19 +45,37 @@ def _p_float(
         d["max"] = float(max_v)
     if step is not None:
         d["step"] = float(step)
+    if section is not None:
+        d["section"] = section
     return d
 
 
-def _p_bool(label: str, help: str) -> dict[str, Any]:
-    return {"type": "bool", "label": label, "help": help}
+def _p_bool(label: str, help: str, *, section: str | None = None) -> dict[str, Any]:
+    d: dict[str, Any] = {"type": "bool", "label": label, "help": help}
+    if section is not None:
+        d["section"] = section
+    return d
 
 
-def _p_enum(label: str, help: str, values: list[str]) -> dict[str, Any]:
-    return {"type": "enum", "label": label, "help": help, "values": list(values)}
+def _p_select(label: str, help: str, options: list[dict], *, section: str | None = None) -> dict[str, Any]:
+    d: dict[str, Any] = {"type": "select", "label": label, "help": help, "options": options}
+    if section is not None:
+        d["section"] = section
+    return d
 
 
-def _p_object(label: str, help: str) -> dict[str, Any]:
-    return {"type": "object", "label": label, "help": help}
+def _p_enum(label: str, help: str, values: list[str], *, section: str | None = None) -> dict[str, Any]:
+    d: dict[str, Any] = {"type": "enum", "label": label, "help": help, "values": list(values)}
+    if section is not None:
+        d["section"] = section
+    return d
+
+
+def _p_object(label: str, help: str, *, section: str | None = None) -> dict[str, Any]:
+    d: dict[str, Any] = {"type": "object", "label": label, "help": help}
+    if section is not None:
+        d["section"] = section
+    return d
 
 
 def _safe_float(val, default: float = 0.0) -> float:
@@ -1255,23 +1278,30 @@ def _make_chan_grid_trend_linkage():
     return ChanGridTrend
 
 
+def _make_combo_custom():
+    """自定义组合策略工厂函数，延迟导入避免循环依赖"""
+    from core.strategy.combo_engine import make_combo_strategy
+    return make_combo_strategy()
+
+
 def get_strategy_registry() -> dict[str, StrategyMeta]:
     return {
         "ma_dual": StrategyMeta(
             strategy_id="ma_dual",
             name="MA双均线策略",
-            description="适用：趋势行情。逻辑：快均线上穿慢均线买入，下穿卖出。震荡市可能频繁来回切换。",
+            description="快均线上穿慢均线买入，下穿卖出。震荡市可能频繁来回切换。",
             params_schema={
                 "fast": _p_int("快均线周期", "快均线的周期（通常小于慢均线）。周期越小越敏感，信号越多。", 2, 250),
                 "slow": _p_int("慢均线周期", "慢均线的周期（通常大于快均线）。周期越大越稳健，但信号滞后。", 3, 400),
             },
             default_params={"fast": 10, "slow": 30},
             bt_strategy_factory=_make_dual_ma,
+            group="basic",
         ),
         "macd_basic": StrategyMeta(
             strategy_id="macd_basic",
             name="MACD策略",
-            description="适用：趋势/波段行情。逻辑：DIF 上穿 DEA（金叉）买入，下穿 DEA（死叉）卖出。",
+            description="DIF 上穿 DEA（金叉）买入，下穿 DEA（死叉）卖出。",
             params_schema={
                 "fast": _p_int("快线周期", "MACD 快线 EMA 周期（常用 12）。越小越敏感。", 2, 200),
                 "slow": _p_int("慢线周期", "MACD 慢线 EMA 周期（常用 26）。应大于快线周期。", 3, 400),
@@ -1279,11 +1309,12 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             default_params={"fast": 12, "slow": 26, "signal": 9},
             bt_strategy_factory=_make_macd_basic,
+            group="basic",
         ),
         "rsi_basic": StrategyMeta(
             strategy_id="rsi_basic",
             name="RSI策略",
-            description="适用：震荡/回调行情。逻辑：RSI 低于超卖阈值买入，高于超买阈值卖出。",
+            description="RSI 低于超卖阈值买入，高于超买阈值卖出。",
             params_schema={
                 "period": _p_int("RSI周期", "RSI 计算周期（常用 14）。周期越小越敏感。", 2, 200),
                 "oversold": _p_float("超卖阈值", "RSI 低于该阈值视为超卖区域，触发买入。常用 30。", 1, 60, 1),
@@ -1291,22 +1322,24 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             default_params={"period": 14, "oversold": 30, "overbought": 70},
             bt_strategy_factory=_make_rsi_basic,
+            group="basic",
         ),
         "boll_basic": StrategyMeta(
             strategy_id="boll_basic",
             name="布林带策略",
-            description="适用：震荡市（均值回归）。逻辑：收盘价跌破下轨买入，上穿上轨卖出。",
+            description="收盘价跌破下轨买入，上穿上轨卖出。",
             params_schema={
                 "period": _p_int("布林周期", "布林带中轨的均线周期（常用 20）。", 5, 250),
                 "devfactor": _p_float("标准差倍数", "上下轨距离中轨的标准差倍数（常用 2.0）。越大越宽，触发更少。", 0.5, 6.0, 0.1),
             },
             default_params={"period": 20, "devfactor": 2.0},
             bt_strategy_factory=_make_boll_basic,
+            group="basic",
         ),
         "bias": StrategyMeta(
             strategy_id="bias",
             name="乖离率策略",
-            description="适用：震荡/回归行情。逻辑：BIAS=(收盘-均线)/均线*100，低于阈值买入，高于阈值卖出。",
+            description="BIAS=(收盘-均线)/均线*100，低于阈值买入，高于阈值卖出。",
             params_schema={
                 "period": _p_int("均线周期", "用于计算 BIAS 的均线周期（常用 20）。", 2, 250),
                 "buy_threshold": _p_float("买入阈值(%)", "BIAS 小于该阈值触发买入（负值表示低于均线）。例如 -6 表示低于均线 6%。", -50, 0, 0.1),
@@ -1314,33 +1347,24 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             default_params={"period": 20, "buy_threshold": -6.0, "sell_threshold": 3.0},
             bt_strategy_factory=_make_bias,
+            group="basic",
         ),
         "momentum": StrategyMeta(
             strategy_id="momentum",
             name="动量策略",
-            description="适用：趋势/强势行情。逻辑：ROC(涨跌幅)高于阈值买入，低于负阈值卖出。",
+            description="ROC(涨跌幅)高于阈值买入，低于负阈值卖出。",
             params_schema={
                 "period": _p_int("ROC周期", "ROC 计算周期（常用 20）。周期越小越敏感。", 2, 250),
                 "threshold": _p_float("动量阈值(%)", "ROC 高于阈值买入；低于 -threshold 卖出。", 0.1, 50, 0.1),
             },
             default_params={"period": 20, "threshold": 5.0},
             bt_strategy_factory=_make_momentum,
-        ),
-        "momentum_fast": StrategyMeta(
-            strategy_id="momentum_fast",
-            name="动量策略(快)",
-            description="适用：更短周期的动量交易。逻辑同动量策略，但更敏感、信号更多。",
-            params_schema={
-                "period": _p_int("ROC周期", "ROC 计算周期（更短）。", 2, 250),
-                "threshold": _p_float("动量阈值(%)", "ROC 高于阈值买入；低于 -threshold 卖出。", 0.1, 50, 0.1),
-            },
-            default_params={"period": 10, "threshold": 3.0},
-            bt_strategy_factory=_make_momentum,
+            group="basic",
         ),
         "rsi_cross_confirm": StrategyMeta(
             strategy_id="rsi_cross_confirm",
             name="RSI增强-穿越确认",
-            description="适用：震荡/回升确认。逻辑：RSI 从超卖区向上穿越阈值后买入（确认回升），RSI 超买卖出。",
+            description="RSI 从超卖区向上穿越阈值后买入（确认回升），RSI 超买卖出。",
             params_schema={
                 "period": _p_int("RSI周期", "RSI 计算周期（常用 14）。", 2, 200),
                 "oversold": _p_float("超卖阈值", "RSI 从低于该阈值回升并向上穿越时触发买入。", 1, 60, 1),
@@ -1348,11 +1372,12 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             default_params={"period": 14, "oversold": 30, "overbought": 70},
             bt_strategy_factory=_make_rsi_cross_confirm,
+            group="optimized",
         ),
         "macd_vol_confirm": StrategyMeta(
             strategy_id="macd_vol_confirm",
             name="MACD增强-成交量确认",
-            description="适用：趋势行情中的过滤增强。逻辑：MACD 金叉且成交量放量确认才买入；MACD 死叉卖出。",
+            description="MACD 金叉且成交量放量确认才买入；MACD 死叉卖出。",
             params_schema={
                 "fast": _p_int("快线周期", "MACD 快线 EMA 周期（常用 12）。", 2, 200),
                 "slow": _p_int("慢线周期", "MACD 慢线 EMA 周期（常用 26）。", 3, 400),
@@ -1362,11 +1387,12 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             default_params={"fast": 12, "slow": 26, "signal": 9, "vol_period": 20, "vol_mult": 0.9},
             bt_strategy_factory=_make_macd_vol_confirm,
+            group="optimized",
         ),
         "macd_profit_lock": StrategyMeta(
             strategy_id="macd_profit_lock",
             name="MACD增强-利润锁定",
-            description="适用：趋势行情的持有增强。逻辑：MACD 金叉入场；盈利达到阈值后启用回撤锁定；MACD 死叉也出场。",
+            description="MACD 金叉入场；盈利达到阈值后启用回撤锁定；MACD 死叉也出场。",
             params_schema={
                 "fast": _p_int("快线周期", "MACD 快线 EMA 周期。", 2, 200),
                 "slow": _p_int("慢线周期", "MACD 慢线 EMA 周期。", 3, 400),
@@ -1376,22 +1402,24 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             default_params={"fast": 12, "slow": 26, "signal": 9, "profit_trigger": 5.0, "trail_pct": 3.0},
             bt_strategy_factory=_make_macd_profit_lock,
+            group="optimized",
         ),
         "boll_mid_stop": StrategyMeta(
             strategy_id="boll_mid_stop",
             name="布林带增强-中轨止损",
-            description="适用：震荡市的风控增强。逻辑：下轨买入，上轨止盈；若反弹到中轨上方后再跌破中轨，触发止损。",
+            description="下轨买入，上轨止盈；若反弹到中轨上方后再跌破中轨，触发止损。",
             params_schema={
                 "period": _p_int("布林周期", "布林带中轨周期（常用 20）。", 5, 250),
                 "devfactor": _p_float("标准差倍数", "上下轨标准差倍数（常用 2.0）。", 0.5, 6.0, 0.1),
             },
             default_params={"period": 20, "devfactor": 2.0},
             bt_strategy_factory=_make_boll_mid_stop,
+            group="optimized",
         ),
         "adaptive": StrategyMeta(
             strategy_id="adaptive",
             name="综合增强-自适应策略",
-            description="适用：趋势/震荡自适应。逻辑：ADX 判断趋势或震荡；趋势用 MACD 信号，震荡用 RSI 信号；统一 ATR 跟踪止损。",
+            description="ADX 判断趋势或震荡；趋势用 MACD 信号，震荡用 RSI 信号；统一 ATR 跟踪止损。",
             params_schema={
                 "adx_period": _p_int("ADX周期", "ADX 计算周期（常用 14）。", 2, 200),
                 "adx_trend": _p_float("趋势阈值", "ADX 大于该值认为趋势行情（偏趋势策略）。常用 25。", 1, 100, 1),
@@ -1419,11 +1447,12 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
                 "overbought": 70,
             },
             bt_strategy_factory=_make_adaptive,
+            group="combo",
         ),
         "macd_divergence": StrategyMeta(
             strategy_id="macd_divergence",
             name="MACD底背离策略",
-            description="适用：超跌反弹/拐点捕捉。逻辑：价格接近阶段新低，但 MACD 不再创新低（背离）且处于金叉态买入；死叉确认卖出。",
+            description="价格接近阶段新低，但 MACD 不再创新低（背离）且处于金叉态买入；死叉确认卖出。",
             params_schema={
                 "lookback": _p_int("回看窗口", "用于判断阶段低点与 MACD 低点的回看窗口（常用 30）。", 10, 400),
                 "fast": _p_int("快线周期", "MACD 快线 EMA 周期。", 2, 200),
@@ -1432,22 +1461,24 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             default_params={"lookback": 30, "fast": 12, "slow": 26, "signal": 9},
             bt_strategy_factory=_make_macd_divergence,
+            group="optimized",
         ),
         "turtle_simple": StrategyMeta(
             strategy_id="turtle_simple",
             name="简单海龟交易法则",
-            description="适用：趋势突破。逻辑：收盘价突破 N 日唐奇安上轨入场，跌破 M 日唐奇安下轨出场。",
+            description="收盘价突破 N 日唐奇安上轨入场，跌破 M 日唐奇安下轨出场。",
             params_schema={
                 "entry_period": _p_int("入场通道周期", "唐奇安上轨周期（常用 20）。", 2, 400),
                 "exit_period": _p_int("出场通道周期", "唐奇安下轨周期（常用 10）。", 2, 400),
             },
             default_params={"entry_period": 20, "exit_period": 10},
             bt_strategy_factory=_make_turtle_simple,
+            group="basic",
         ),
         "turtle_full": StrategyMeta(
             strategy_id="turtle_full",
             name="完整海龟交易法则",
-            description="适用：趋势突破（系统化风控）。逻辑：通道突破入场；ATR 风险仓位；金字塔加仓；2N 止损；下轨出场。",
+            description="通道突破入场；ATR 风险仓位；金字塔加仓；2N 止损；下轨出场。",
             params_schema={
                 "entry_period": _p_int("入场通道周期", "唐奇安上轨周期。", 2, 400),
                 "exit_period": _p_int("出场通道周期", "唐奇安下轨周期。", 2, 400),
@@ -1467,11 +1498,12 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
                 "stop_n": 2.0,
             },
             bt_strategy_factory=_make_turtle_full,
+            group="optimized",
         ),
         "turtle_adx": StrategyMeta(
             strategy_id="turtle_adx",
             name="ADX海龟策略",
-            description="适用：趋势突破（减少假突破）。逻辑：只有 ADX 达到阈值才允许执行海龟突破入场；其余同完整海龟。",
+            description="只有 ADX 达到阈值才允许执行海龟突破入场；其余同完整海龟。",
             params_schema={
                 "entry_period": _p_int("入场通道周期", "唐奇安上轨周期。", 2, 400),
                 "exit_period": _p_int("出场通道周期", "唐奇安下轨周期。", 2, 400),
@@ -1495,11 +1527,12 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
                 "stop_n": 2.0,
             },
             bt_strategy_factory=_make_turtle_adx,
+            group="optimized",
         ),
         "turtle_multi_tf": StrategyMeta(
             strategy_id="turtle_multi_tf",
             name="多周期海龟策略",
-            description="适用：趋势跟随（过滤逆势）。逻辑：周线判断趋势方向，日线执行突破/出场与加仓。",
+            description="周线判断趋势方向，日线执行突破/出场与加仓。",
             params_schema={
                 "daily_entry": _p_int("日线入场通道周期", "日线唐奇安上轨周期（常用 20）。", 2, 400),
                 "daily_exit": _p_int("日线出场通道周期", "日线唐奇安下轨周期（常用 10）。", 2, 400),
@@ -1522,11 +1555,12 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             bt_strategy_factory=_make_turtle_multi_tf,
             requires_weekly=True,
+            group="optimized",
         ),
         "turtle_ml": StrategyMeta(
             strategy_id="turtle_ml",
             name="ML增强海龟策略",
-            description="适用：趋势突破 + ML 过滤。逻辑：突破信号需满足预测概率阈值才入场（predictions 需传入）。其余同完整海龟。",
+            description="突破信号需满足预测概率阈值才入场（predictions 需传入）。其余同完整海龟。",
             params_schema={
                 "entry_period": _p_int("入场通道周期", "唐奇安上轨周期。", 2, 400),
                 "exit_period": _p_int("出场通道周期", "唐奇安下轨周期。", 2, 400),
@@ -1551,24 +1585,34 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             bt_strategy_factory=_make_turtle_ml,
             requires_predictions=True,
+            group="optimized",
         ),
         "chan_third_buy": StrategyMeta(
             strategy_id="chan_third_buy",
             name="经典缠论-基础三买",
-            description="适用：趋势启动（缠论三买）。逻辑：第三类买点入场；跌回中枢上沿止损（可选）；达到固定止盈或三卖离场。",
+            description="第三类买点入场；跌回中枢上沿止损（可选）；达到固定止盈或三卖离场。",
             params_schema={
+                "chan_backend": _p_select("缠论分析库", "选择缠论分析引擎：自研 ChanAnalyzer 或开源 chan.py", [
+                    {"value": "self", "label": "自研 ChanAnalyzer"},
+                    {"value": "chanpy", "label": "开源 chan.py"},
+                ]),
                 "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场（如 0.15=15%）。", 0.0, 5.0, 0.01),
                 "use_chan_stop": _p_bool("使用中枢止损", "开启后优先用中枢上沿 ZG 作为止损线；否则使用固定比例兜底止损。"),
             },
-            default_params={"take_profit_pct": 0.15, "use_chan_stop": True},
+            default_params={"chan_backend": "self", "take_profit_pct": 0.15, "use_chan_stop": True},
             bt_strategy_factory=_make_chan_third_buy,
             requires_chan=True,
+            group="basic",
         ),
         "chan_trailing": StrategyMeta(
             strategy_id="chan_trailing",
             name="缠论-量价增强策略",
-            description="适用：趋势波段（更强风控）。逻辑：三买入场；盈利后阶梯止损（保本/锁利）+ ATR 跟踪止损；三卖离场。",
+            description="三买入场；盈利后阶梯止损（保本/锁利）+ ATR 跟踪止损；三卖离场。",
             params_schema={
+                "chan_backend": _p_select("缠论分析库", "选择缠论分析引擎：自研 ChanAnalyzer 或开源 chan.py", [
+                    {"value": "self", "label": "自研 ChanAnalyzer"},
+                    {"value": "chanpy", "label": "开源 chan.py"},
+                ]),
                 "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场（如 0.15=15%）。", 0.0, 5.0, 0.01),
                 "use_chan_stop": _p_bool("使用中枢止损", "开启后优先用中枢上沿 ZG 作为止损线；否则使用固定比例兜底止损。"),
                 "atr_period": _p_int("ATR周期", "ATR 计算周期（常用 14）。用于跟踪止损。", 2, 200),
@@ -1578,6 +1622,7 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
                 "lock_amount_pct": _p_float("锁定利润", "锁利后至少锁定的利润比例（如 0.05=5%）。", 0.0, 2.0, 0.01),
             },
             default_params={
+                "chan_backend": "self",
                 "take_profit_pct": 0.15,
                 "use_chan_stop": True,
                 "atr_period": 14,
@@ -1588,38 +1633,49 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             bt_strategy_factory=_make_chan_trailing_stop,
             requires_chan=True,
+            group="optimized",
         ),
         "chan_multi_tf": StrategyMeta(
             strategy_id="chan_multi_tf",
             name="缠论-多周期缠论策略",
-            description="适用：趋势过滤（减少逆势信号）。逻辑：周线向上才允许日线三买入场；其余止盈/止损/三卖离场。",
+            description="周线向上才允许日线三买入场；其余止盈/止损/三卖离场。",
             params_schema={
+                "chan_backend": _p_select("缠论分析库", "选择缠论分析引擎：自研 ChanAnalyzer 或开源 chan.py", [
+                    {"value": "self", "label": "自研 ChanAnalyzer"},
+                    {"value": "chanpy", "label": "开源 chan.py"},
+                ]),
                 "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场。", 0.0, 5.0, 0.01),
                 "weekly_ma_period": _p_int("周线MA周期", "周线趋势过滤的均线周期（默认 20）。周线收盘高于均线视为向上。", 2, 200),
             },
-            default_params={"take_profit_pct": 0.15, "weekly_ma_period": 20},
+            default_params={"chan_backend": "self", "take_profit_pct": 0.15, "weekly_ma_period": 20},
             bt_strategy_factory=_make_chan_multi_tf,
             requires_chan=True,
             requires_weekly=True,
+            group="optimized",
         ),
         "chan_ml": StrategyMeta(
             strategy_id="chan_ml",
             name="缠论-ML增强缠论策略",
-            description="适用：缠论三买 + ML 过滤。逻辑：三买信号需满足预测概率阈值才入场（predictions 需传入）；其余止盈/止损/三卖离场。",
+            description="三买信号需满足预测概率阈值才入场（predictions 需传入）；其余止盈/止损/三卖离场。",
             params_schema={
+                "chan_backend": _p_select("缠论分析库", "选择缠论分析引擎：自研 ChanAnalyzer 或开源 chan.py", [
+                    {"value": "self", "label": "自研 ChanAnalyzer"},
+                    {"value": "chanpy", "label": "开源 chan.py"},
+                ]),
                 "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场。", 0.0, 5.0, 0.01),
                 "ml_threshold": _p_float("放行阈值", "预测概率 >= 阈值时才允许入场。", 0.0, 1.0, 0.01),
                 "predictions": _p_object("预测字典", "格式：{ 'YYYY-MM-DD': 概率 }。用于过滤三买信号。"),
             },
-            default_params={"take_profit_pct": 0.15, "ml_threshold": 0.5, "predictions": {}},
+            default_params={"chan_backend": "self", "take_profit_pct": 0.15, "ml_threshold": 0.5, "predictions": {}},
             bt_strategy_factory=_make_chan_ml,
             requires_chan=True,
             requires_predictions=True,
+            group="optimized",
         ),
         "grid_classic": StrategyMeta(
             strategy_id="grid_classic",
             name="经典网格交易",
-            description="适用：震荡行情。逻辑：用回看区间的高低点构建网格，价格穿越网格线触发买卖（收租）。",
+            description="用回看区间的高低点构建网格，价格穿越网格线触发买卖（收租）。",
             params_schema={
                 "lookback": _p_int("回看天数", "用于估计区间上下界的回看天数（常用 60）。", 10, 600),
                 "num_grids": _p_int("网格数量", "区间被切分成多少个网格（常用 6~12）。", 2, 200),
@@ -1628,34 +1684,134 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             },
             default_params={"lookback": 60, "num_grids": 8, "margin_pct": 0.02, "capital_ratio": 0.90},
             bt_strategy_factory=_make_grid_classic,
+            group="basic",
         ),
         "chan_grid": StrategyMeta(
             strategy_id="chan_grid",
             name="缠论中枢网络策略",
-            description="适用：中枢震荡。逻辑：用中枢 ZG/ZD 作为网格边界；突破中枢则清仓并停用网格。",
+            description="用中枢 ZG/ZD 作为网格边界；突破中枢则清仓并停用网格。",
             params_schema={
+                "chan_backend": _p_select("缠论分析库", "选择缠论分析引擎：自研 ChanAnalyzer 或开源 chan.py", [
+                    {"value": "self", "label": "自研 ChanAnalyzer"},
+                    {"value": "chanpy", "label": "开源 chan.py"},
+                ]),
                 "num_grids": _p_int("网格数量", "中枢区间被切分成多少个网格（常用 6）。", 2, 200),
                 "capital_ratio": _p_float("资金占比", "用于网格策略的资金占比（如 0.80=80%）。", 0.0, 1.0, 0.01),
                 "exit_on_breakout": _p_bool("突破即退出", "开启后，价格突破/跌破中枢一定比例时清仓并停用网格。"),
                 "breakout_pct": _p_float("突破确认(%)", "突破确认比例（如 0.005=0.5%）。用于避免噪声突破。", 0.0, 0.2, 0.0005),
             },
-            default_params={"num_grids": 6, "capital_ratio": 0.80, "exit_on_breakout": True, "breakout_pct": 0.005},
+            default_params={"chan_backend": "self", "num_grids": 6, "capital_ratio": 0.80, "exit_on_breakout": True, "breakout_pct": 0.005},
             bt_strategy_factory=_make_chan_grid,
             requires_chan=True,
+            group="optimized",
         ),
         "chan_grid_trend": StrategyMeta(
             strategy_id="chan_grid_trend",
             name="中枢网格+趋势联动",
-            description="适用：中枢震荡 + 突破趋势。逻辑：中枢内做网格；向上突破转趋势持有并用 ATR 跟踪止损；向下跌破转空防守。",
+            description="中枢内做网格；向上突破转趋势持有并用 ATR 跟踪止损；向下跌破转空防守。",
             params_schema={
+                "chan_backend": _p_select("缠论分析库", "选择缠论分析引擎：自研 ChanAnalyzer 或开源 chan.py", [
+                    {"value": "self", "label": "自研 ChanAnalyzer"},
+                    {"value": "chanpy", "label": "开源 chan.py"},
+                ]),
                 "num_grids": _p_int("网格数量", "中枢区间被切分成多少个网格。", 2, 200),
                 "capital_ratio": _p_float("资金占比", "用于网格策略的资金占比。", 0.0, 1.0, 0.01),
                 "atr_period": _p_int("ATR周期", "趋势模式下 ATR 跟踪止损的周期（常用 14）。", 2, 200),
                 "atr_trail_mult": _p_float("ATR跟踪倍数", "趋势模式止损距离：最高价 - atr_trail_mult * ATR。", 0.1, 10.0, 0.1),
                 "breakout_confirm": _p_float("突破确认(%)", "突破确认比例（如 0.005=0.5%）。", 0.0, 0.2, 0.0005),
             },
-            default_params={"num_grids": 6, "capital_ratio": 0.80, "atr_period": 14, "atr_trail_mult": 2.5, "breakout_confirm": 0.005},
+            default_params={"chan_backend": "self", "num_grids": 6, "capital_ratio": 0.80, "atr_period": 14, "atr_trail_mult": 2.5, "breakout_confirm": 0.005},
             bt_strategy_factory=_make_chan_grid_trend_linkage,
             requires_chan=True,
+            group="optimized",
+        ),
+        "combo_custom": StrategyMeta(
+            strategy_id="combo_custom",
+            name="自定义组合策略",
+            description="基于行情判别（ADX/MA/布林带）自动切换趋势与震荡模式，分别匹配不同的买入/卖出条件，支持自定义参数。",
+            params_schema={
+                "detector_type": _p_select("行情判别方式", "选择判断趋势/震荡的方法：ADX指标、MA均线、布林带", [
+                    {"value": "adx", "label": "ADX指标"},
+                    {"value": "ma", "label": "MA均线"},
+                    {"value": "boll", "label": "布林带"},
+                ], section="行情判别"),
+                "adx_period": _p_int("ADX周期", "ADX计算周期（常用14）。", 2, 200, section="行情判别"),
+                "adx_trend_threshold": _p_float("趋势阈值", "ADX大于该值判定为趋势行情（常用25）。", 1, 100, 1, section="行情判别"),
+                "adx_range_threshold": _p_float("震荡阈值", "ADX小于该值判定为震荡行情（常用20）。", 1, 100, 1, section="行情判别"),
+                "det_ma_fast": _p_int("判别快均线", "MA判别模式的快均线周期。", 2, 200, section="行情判别"),
+                "det_ma_slow": _p_int("判别慢均线", "MA判别模式的慢均线周期。", 3, 400, section="行情判别"),
+                "det_boll_period": _p_int("判别布林周期", "布林带判别模式的中轨周期。", 5, 250, section="行情判别"),
+                "det_boll_devfactor": _p_float("判别布林倍数", "布林带判别模式的标准差倍数。", 0.5, 6.0, 0.1, section="行情判别"),
+                "trend_buy": _p_select("趋势买入条件", "趋势行情下的买入信号", [
+                    {"value": "macd_cross", "label": "MACD金叉"},
+                    {"value": "ma_cross", "label": "MA交叉"},
+                    {"value": "breakout", "label": "突破新高"},
+                ], section="趋势买入"),
+                "tb_macd_fast": _p_int("趋势MACD快线", "趋势买入MACD快线周期。", 2, 200, section="趋势买入"),
+                "tb_macd_slow": _p_int("趋势MACD慢线", "趋势买入MACD慢线周期。", 3, 400, section="趋势买入"),
+                "tb_macd_signal": _p_int("趋势MACD信号线", "趋势买入MACD信号线周期。", 2, 200, section="趋势买入"),
+                "tb_ma_fast": _p_int("趋势MA快线", "趋势买入MA交叉快线周期。", 2, 200, section="趋势买入"),
+                "tb_ma_slow": _p_int("趋势MA慢线", "趋势买入MA交叉慢线周期。", 3, 400, section="趋势买入"),
+                "tb_breakout_period": _p_int("突破回看周期", "趋势买入突破新高的回看周期。", 2, 400, section="趋势买入"),
+                "trend_sell": _p_select("趋势卖出条件", "趋势行情下的卖出信号", [
+                    {"value": "macd_dead_cross", "label": "MACD死叉"},
+                    {"value": "atr_stop", "label": "ATR跟踪止损"},
+                    {"value": "profit_lock", "label": "利润锁定"},
+                ], section="趋势卖出"),
+                "ts_macd_fast": _p_int("卖出MACD快线", "趋势卖出MACD快线周期。", 2, 200, section="趋势卖出"),
+                "ts_macd_slow": _p_int("卖出MACD慢线", "趋势卖出MACD慢线周期。", 3, 400, section="趋势卖出"),
+                "ts_macd_signal": _p_int("卖出MACD信号线", "趋势卖出MACD信号线周期。", 2, 200, section="趋势卖出"),
+                "ts_atr_period": _p_int("卖出ATR周期", "趋势卖出ATR计算周期。", 2, 200, section="趋势卖出"),
+                "ts_atr_mult": _p_float("卖出ATR倍数", "趋势卖出ATR止损距离倍数。", 0.1, 10.0, 0.1, section="趋势卖出"),
+                "ts_profit_trigger": _p_float("利润触发(%)", "利润锁定模式下，收益率达到该阈值后启动锁定。", 0.1, 200, 0.1, section="趋势卖出"),
+                "ts_trail_pct": _p_float("回撤锁定(%)", "利润锁定模式下，从最高价回撤超过该比例时卖出。", 0.1, 50, 0.1, section="趋势卖出"),
+                "range_buy": _p_select("震荡买入条件", "震荡行情下的买入信号", [
+                    {"value": "rsi_oversold", "label": "RSI超卖"},
+                    {"value": "boll_lower", "label": "布林下轨"},
+                    {"value": "bias_low", "label": "乖离率低"},
+                ], section="震荡买入"),
+                "rb_rsi_period": _p_int("震荡RSI周期", "震荡买入RSI计算周期。", 2, 200, section="震荡买入"),
+                "rb_rsi_oversold": _p_float("RSI超卖阈值", "震荡买入RSI低于该值触发。", 1, 60, 1, section="震荡买入"),
+                "rb_boll_period": _p_int("震荡布林周期", "震荡买入布林带周期。", 5, 250, section="震荡买入"),
+                "rb_boll_devfactor": _p_float("震荡布林倍数", "震荡买入布林带标准差倍数。", 0.5, 6.0, 0.1, section="震荡买入"),
+                "rb_bias_period": _p_int("震荡乖离率周期", "震荡买入乖离率的均线周期。", 2, 250, section="震荡买入"),
+                "rb_bias_threshold": _p_float("乖离率阈值(%)", "震荡买入乖离率低于该值触发（负值）。", -50, 0, 0.1, section="震荡买入"),
+                "range_sell": _p_select("震荡卖出条件", "震荡行情下的卖出信号", [
+                    {"value": "rsi_overbought", "label": "RSI超买"},
+                    {"value": "boll_upper", "label": "布林上轨"},
+                ], section="震荡卖出"),
+                "rs_rsi_period": _p_int("卖出RSI周期", "震荡卖出RSI计算周期。", 2, 200, section="震荡卖出"),
+                "rs_rsi_overbought": _p_float("RSI超买阈值", "震荡卖出RSI高于该值触发。", 40, 99, 1, section="震荡卖出"),
+                "rs_boll_period": _p_int("卖出布林周期", "震荡卖出布林带周期。", 5, 250, section="震荡卖出"),
+                "rs_boll_devfactor": _p_float("卖出布林倍数", "震荡卖出布林带标准差倍数。", 0.5, 6.0, 0.1, section="震荡卖出"),
+                "use_atr_stop": _p_bool("启用ATR止损", "持仓期间使用ATR跟踪止损作为通用止损保护。", section="通用止损"),
+                "atr_stop_period": _p_int("止损ATR周期", "通用止损ATR计算周期。", 2, 200, section="通用止损"),
+                "atr_stop_mult": _p_float("止损ATR倍数", "通用止损距离：close - atr_stop_mult * ATR。", 0.1, 10.0, 0.1, section="通用止损"),
+            },
+            default_params={
+                "detector_type": "adx",
+                "adx_period": 14, "adx_trend_threshold": 25.0, "adx_range_threshold": 20.0,
+                "det_ma_fast": 10, "det_ma_slow": 30,
+                "det_boll_period": 20, "det_boll_devfactor": 2.0,
+                "trend_buy": "macd_cross",
+                "tb_macd_fast": 12, "tb_macd_slow": 26, "tb_macd_signal": 9,
+                "tb_ma_fast": 5, "tb_ma_slow": 20,
+                "tb_breakout_period": 20,
+                "trend_sell": "atr_stop",
+                "ts_macd_fast": 12, "ts_macd_slow": 26, "ts_macd_signal": 9,
+                "ts_atr_period": 14, "ts_atr_mult": 2.5,
+                "ts_profit_trigger": 5.0, "ts_trail_pct": 3.0,
+                "range_buy": "rsi_oversold",
+                "rb_rsi_period": 14, "rb_rsi_oversold": 30.0,
+                "rb_boll_period": 20, "rb_boll_devfactor": 2.0,
+                "rb_bias_period": 20, "rb_bias_threshold": -6.0,
+                "range_sell": "rsi_overbought",
+                "rs_rsi_period": 14, "rs_rsi_overbought": 70.0,
+                "rs_boll_period": 20, "rs_boll_devfactor": 2.0,
+                "use_atr_stop": True,
+                "atr_stop_period": 14, "atr_stop_mult": 2.0,
+            },
+            bt_strategy_factory=_make_combo_custom,
+            group="combo",
         ),
     }

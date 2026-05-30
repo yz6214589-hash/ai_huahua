@@ -398,6 +398,36 @@ def _calc_atr(current_row: dict[str, Any], prev_rows: list[dict[str, Any]], peri
 
 
 # ---------------------------------------------------------------------------
+# 技术指标字段映射配置
+# ---------------------------------------------------------------------------
+
+_TECHNICAL_INDICATOR_FIELDS: tuple[str, ...] = (
+    "ma5", "ma10", "ma20", "ma60",
+    "vol_ma5", "vol_ma20",
+    "rsi14", "rsi_custom",
+    "macd_dif", "macd_dea", "macd_hist",
+    "macd_dif_custom", "macd_dea_custom", "macd_hist_custom",
+    "boll_upper", "boll_mid", "boll_lower",
+    "kdj_k", "kdj_d", "kdj_j",
+    "atr14", "atr_custom",
+    "ma_custom",
+)
+
+
+def _build_tech_indicator_dict(
+    computed: dict[str, Any],
+    base_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    if base_data:
+        result.update(base_data)
+    for field in _TECHNICAL_INDICATOR_FIELDS:
+        result[field] = computed.get(field)
+    result["atr14"] = None
+    return result
+
+
+# ---------------------------------------------------------------------------
 # 技术指标行构建
 # ---------------------------------------------------------------------------
 
@@ -417,75 +447,34 @@ def _calc_tech_row(
     vol = _safe_float(row.get("volume"))
     amount = _safe_float(row.get("amount"))
 
+    base_data = {
+        "trade_date": _fmt_date(row.get("trade_date")),
+        "open_price": open_,
+        "high_price": high,
+        "low_price": low,
+        "close_price": close,
+        "volume": vol,
+        "amount": amount,
+    }
+
     if computed is not None:
-        # 从预计算字典读取所有指标
-        return {
-            "trade_date": _fmt_date(row.get("trade_date")),
-            "open_price": open_,
-            "high_price": high,
-            "low_price": low,
-            "close_price": close,
-            "volume": vol,
-            "amount": amount,
-            "ma5": computed.get("ma5"),
-            "ma10": computed.get("ma10"),
-            "ma20": computed.get("ma20"),
-            "ma60": computed.get("ma60"),
-            "vol_ma5": computed.get("vol_ma5"),
-            "vol_ma20": computed.get("vol_ma20"),
-            "rsi14": computed.get("rsi14"),
-            "macd_dif": computed.get("macd_dif"),
-            "macd_dea": computed.get("macd_dea"),
-            "macd_hist": computed.get("macd_hist"),
-            "boll_upper": computed.get("boll_upper"),
-            "boll_mid": computed.get("boll_mid"),
-            "boll_lower": computed.get("boll_lower"),
-            "kdj_k": computed.get("kdj_k"),
-            "kdj_d": computed.get("kdj_d"),
-            "kdj_j": computed.get("kdj_j"),
-            "atr14": None,
-            "atr_custom": computed.get("atr_custom"),
-            "ma_custom": computed.get("ma_custom"),
-            "macd_dif_custom": computed.get("macd_dif_custom"),
-            "macd_dea_custom": computed.get("macd_dea_custom"),
-            "macd_hist_custom": computed.get("macd_hist_custom"),
-            "rsi_custom": computed.get("rsi_custom"),
-        }
+        return _build_tech_indicator_dict(computed, base_data)
     else:
-        # 兼容旧逻辑：从 DB row 读取（这些字段在 DB 中可能为 NULL）
         atr_val = _calc_atr(row, prev_rows, atr_period) if prev_rows else None
-        return {
-            "trade_date": _fmt_date(row.get("trade_date")),
-            "open_price": open_,
-            "high_price": high,
-            "low_price": low,
-            "close_price": close,
-            "volume": vol,
-            "amount": amount,
-            "ma5": _safe_float(row.get("ma5")),
-            "ma10": _safe_float(row.get("ma10")),
-            "ma20": _safe_float(row.get("ma20")),
-            "ma60": _safe_float(row.get("ma60")),
-            "vol_ma5": _safe_float(row.get("vol_ma5")),
-            "vol_ma20": _safe_float(row.get("vol_ma20")),
-            "rsi14": _safe_float(row.get("rsi14")),
-            "macd_dif": _safe_float(row.get("macd_dif")),
-            "macd_dea": _safe_float(row.get("macd_dea")),
-            "macd_hist": _safe_float(row.get("macd_hist")),
-            "boll_upper": _safe_float(row.get("boll_upper")),
-            "boll_mid": _safe_float(row.get("boll_mid")),
-            "boll_lower": _safe_float(row.get("boll_lower")),
-            "kdj_k": _safe_float(row.get("kdj_k")),
-            "kdj_d": _safe_float(row.get("kdj_d")),
-            "kdj_j": _safe_float(row.get("kdj_j")),
-            "atr14": None,
-            "atr_custom": atr_val,
-            "ma_custom": _safe_float(row.get("ma20")),
-            "macd_dif_custom": _safe_float(row.get("macd_dif")),
-            "macd_dea_custom": _safe_float(row.get("macd_dea")),
-            "macd_hist_custom": _safe_float(row.get("macd_hist")),
-            "rsi_custom": _safe_float(row.get("rsi14")),
-        }
+        computed_from_db: dict[str, Any] = {field: None for field in _TECHNICAL_INDICATOR_FIELDS}
+        for field in ("ma5", "ma10", "ma20", "ma60", "vol_ma5", "vol_ma20",
+                      "rsi14", "macd_dif", "macd_dea", "macd_hist",
+                      "boll_upper", "boll_mid", "boll_lower",
+                      "kdj_k", "kdj_d", "kdj_j"):
+            computed_from_db[field] = _safe_float(row.get(field))
+        computed_from_db["atr14"] = None
+        computed_from_db["atr_custom"] = atr_val
+        computed_from_db["ma_custom"] = _safe_float(row.get("ma20"))
+        computed_from_db["macd_dif_custom"] = _safe_float(row.get("macd_dif"))
+        computed_from_db["macd_dea_custom"] = _safe_float(row.get("macd_dea"))
+        computed_from_db["macd_hist_custom"] = _safe_float(row.get("macd_hist"))
+        computed_from_db["rsi_custom"] = _safe_float(row.get("rsi14"))
+        return _build_tech_indicator_dict(computed_from_db, base_data)
 
 
 def _calc_tech_latest(
@@ -496,31 +485,7 @@ def _calc_tech_latest(
     从预计算的 computed 字典中读取所有指标值。"""
     if computed is None:
         return None
-    return {
-        "ma5": computed.get("ma5"),
-        "ma10": computed.get("ma10"),
-        "ma20": computed.get("ma20"),
-        "ma60": computed.get("ma60"),
-        "vol_ma5": computed.get("vol_ma5"),
-        "vol_ma20": computed.get("vol_ma20"),
-        "rsi14": computed.get("rsi14"),
-        "macd_dif": computed.get("macd_dif"),
-        "macd_dea": computed.get("macd_dea"),
-        "macd_hist": computed.get("macd_hist"),
-        "boll_upper": computed.get("boll_upper"),
-        "boll_mid": computed.get("boll_mid"),
-        "boll_lower": computed.get("boll_lower"),
-        "kdj_k": computed.get("kdj_k"),
-        "kdj_d": computed.get("kdj_d"),
-        "kdj_j": computed.get("kdj_j"),
-        "atr14": None,
-        "atr_custom": computed.get("atr_custom"),
-        "ma_custom": computed.get("ma_custom"),
-        "macd_dif_custom": computed.get("macd_dif_custom"),
-        "macd_dea_custom": computed.get("macd_dea_custom"),
-        "macd_hist_custom": computed.get("macd_hist_custom"),
-        "rsi_custom": computed.get("rsi_custom"),
-    }
+    return _build_tech_indicator_dict(computed)
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useState, useEffect } from 'react'
 import { fetchJson, postJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
@@ -144,7 +145,7 @@ export default function StockSelectML() {
         <CardHeader title="规则引擎信号结果" />
         <CardBody className="p-0">
           {loading && predictions.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-zinc-500">加载中...</div>
+            <Loading className="py-8" />
           ) : error && predictions.length === 0 ? (
             <div className="flex flex-col items-center px-4 py-8">
               <p className="text-sm text-red-600">{error}</p>

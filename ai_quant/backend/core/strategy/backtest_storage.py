@@ -73,10 +73,30 @@ def ensure_backtest_tables() -> None:
         with conn.cursor() as cur:
             cur.execute(_CREATE_RECORDS_TABLE)
             cur.execute(_CREATE_NAV_LOG_TABLE)
+        # 补充字段（兼容已有表）
+        _add_column_if_missing(conn, "stamp_duty", "DOUBLE NOT NULL DEFAULT 0.001")
+        _add_column_if_missing(conn, "transfer_fee_buy", "DOUBLE NOT NULL DEFAULT 0.00001")
+        _add_column_if_missing(conn, "transfer_fee_sell", "DOUBLE NOT NULL DEFAULT 0.00001")
+        _add_column_if_missing(conn, "position_pct", "DOUBLE NOT NULL DEFAULT 0.95")
+        # 缠论可视化数据和K线数据
+        _add_column_if_missing(conn, "chan_vis_json", "MEDIUMTEXT")
+        _add_column_if_missing(conn, "kline_json", "MEDIUMTEXT")
+        conn.commit()
     except Exception as e:
         logger.error("建表失败", extra={"error": str(e)})
     finally:
         conn.close()
+
+
+def _add_column_if_missing(conn, column_name: str, col_def: str) -> None:
+    """安全地添加列（如果列不存在则添加）"""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"ALTER TABLE backtest_records ADD COLUMN {column_name} {col_def}",
+            )
+    except Exception:
+        pass  # 列已存在或无法添加，忽略
 
 
 def save_backtest(record: dict) -> str:
@@ -124,10 +144,11 @@ def save_backtest(record: dict) -> str:
             INSERT INTO backtest_records
                 (backtest_id, strategy_id, stock_code, start_date, end_date,
                  initial_cash, commission_buy, commission_sell, slippage_pct,
-                 slippage_fixed, min_commission, benchmark_code,
+                 slippage_fixed, min_commission, stamp_duty, transfer_fee_buy,
+                 transfer_fee_sell, position_pct, benchmark_code,
                  params_json, metrics_json, trades_json, benchmark_nav_json,
-                 drawdown_log_json, monthly_returns_json)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 drawdown_log_json, monthly_returns_json, chan_vis_json, kline_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 backtest_id,
@@ -141,6 +162,10 @@ def save_backtest(record: dict) -> str:
                 float(record.get("slippage_pct", 0.0)),
                 float(record.get("slippage_fixed", 0.0)),
                 float(record.get("min_commission", 5.0)),
+                float(record.get("stamp_duty", 0.001)),
+                float(record.get("transfer_fee_buy", 0.00001)),
+                float(record.get("transfer_fee_sell", 0.00001)),
+                float(record.get("position_pct", 0.95)),
                 record.get("benchmark_code"),
                 _json_dump(record.get("params", {})),
                 _json_dump(record.get("metrics", {})),
@@ -148,6 +173,8 @@ def save_backtest(record: dict) -> str:
                 _json_dump(record.get("benchmark_nav_log", [])),
                 _json_dump(record.get("drawdown_log", [])),
                 _json_dump(record.get("monthly_returns", [])),
+                _json_dump(record.get("chan_vis")),
+                _json_dump(record.get("kline")),
             ),
         )
 
@@ -198,7 +225,7 @@ def get_backtest(backtest_id: str) -> dict | None:
             return None
         rec = rows[0]
         # 解析 JSON 字段
-        for key in ["params_json", "metrics_json", "trades_json", "benchmark_nav_json", "drawdown_log_json", "monthly_returns_json"]:
+        for key in ["params_json", "metrics_json", "trades_json", "benchmark_nav_json", "drawdown_log_json", "monthly_returns_json", "chan_vis_json", "kline_json"]:
             raw = rec.get(key)
             if raw and isinstance(raw, str):
                 try:

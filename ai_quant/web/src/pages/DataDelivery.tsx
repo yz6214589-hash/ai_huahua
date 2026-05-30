@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchJson } from '@/api/client'
@@ -200,7 +201,7 @@ export default function DataDelivery() {
           />
           <CardBody className="p-0">
             {datasetLoading ? (
-              <div className="px-4 py-8 text-center text-sm text-zinc-500">加载中...</div>
+              <Loading className="py-8" />
             ) : datasetErr ? (
               <div className="px-4 py-8 text-center text-sm text-red-600">{datasetErr}</div>
             ) : !datasetData || datasetData.rows.length === 0 ? (
@@ -308,7 +309,7 @@ export default function DataDelivery() {
               />
               <CardBody className="p-0">
                 {loading && history.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-zinc-500">加载中...</div>
+                  <Loading className="py-8" />
                 ) : err ? (
                   <div className="px-4 py-8 text-center text-sm text-red-600">{err}</div>
                 ) : history.length === 0 ? (

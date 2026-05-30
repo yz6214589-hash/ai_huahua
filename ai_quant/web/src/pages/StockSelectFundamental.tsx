@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchJson, postJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
@@ -443,7 +444,7 @@ export default function StockSelectFundamental() {
         </CardHeader>
         <CardBody className="p-0">
           {loading ? (
-            <div className="px-4 py-12 text-center text-sm text-zinc-500">加载中...</div>
+            <Loading className="py-12" />
           ) : results.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-zinc-500">暂无符合条件的股票，请调整筛选条件</div>
           ) : (

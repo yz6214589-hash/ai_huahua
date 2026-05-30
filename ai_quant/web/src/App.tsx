@@ -48,6 +48,7 @@ import WorkFlowMorning from '@/pages/WorkFlowMorning'
 import WorkFlowDragon from '@/pages/WorkFlowDragon'
 import SignalCenter from '@/pages/SignalCenter'
 import PerformanceReport from '@/pages/PerformanceReport'
+import PerformanceReportDetail from '@/pages/PerformanceReportDetail'
 import MainForceIdentification from '@/pages/MainForceIdentification'
 import SimAccount from '@/pages/SimAccount'
 import NotFound from '@/pages/NotFound'
@@ -97,6 +98,7 @@ export default function App() {
             <Route path="walk-forward" element={<WalkForwardPanel />} />
             <Route path="param-optimizer" element={<ParamOptimizer />} />
             <Route path="performance" element={<PerformanceReport />} />
+            <Route path="performance/:reportId" element={<PerformanceReportDetail />} />
           </Route>
           <Route path="/stock-select" element={<StockSelect />}>
             <Route index element={<Navigate to="fundamental" replace />} />

@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useState, useEffect, useCallback } from 'react'
 import { fetchJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
@@ -82,12 +83,7 @@ export default function OpportunityLimitUp() {
   const breaks = filtered.filter((s) => s.status === 'break_limit_up' || s.status === 'break_limit_down')
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-zinc-400">
-        <RefreshCcw className="mr-2 h-5 w-5 animate-spin" />
-        <span>加载中...</span>
-      </div>
-    )
+    return <Loading className="py-20" />
   }
 
   if (error) {

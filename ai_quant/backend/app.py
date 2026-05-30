@@ -21,6 +21,7 @@ except Exception:
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 # 导入各个业务模块的路由处理器
 from .api.agent import router as agent_router
@@ -290,6 +291,11 @@ def create_app() -> FastAPI:
     api.include_router(stock_group_router)     # 股票分组管理路由
     api.include_router(intraday_router)         # 个股分时数据路由
     api.include_router(workflow_team_router)     # 工作流团队路由
+
+    # 挂载静态文件目录，用于 QuantStats HTML 报告访问
+    reports_static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "reports")
+    os.makedirs(reports_static_dir, exist_ok=True)
+    api.mount("/static/reports", StaticFiles(directory=reports_static_dir), name="static-reports")
     
     logger.info("业务路由注册完成", extra={
         "routers_count": 14,

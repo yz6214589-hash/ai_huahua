@@ -8,6 +8,7 @@ import { fetchJson, fetchText, postJson } from '@/api/client'
 import type { ReportModel, ReportTask } from '@/api/types'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
+import { Loading } from '@/components/Loading'
 import { StockPicker } from '@/components/StockPicker'
 import type { StockSearchItem } from '@/api/types'
 import { ExternalLink, Plus, RefreshCcw, Trash2, X } from 'lucide-react'
@@ -385,7 +386,7 @@ export default function Reports() {
             {/* 模态框内容：Markdown 渲染 */}
             <div className="flex-1 overflow-auto px-4 py-4">
               {viewerLoading ? (
-                <div className="text-sm text-zinc-500">加载中...</div>
+                <Loading size="sm" className="py-4" />
               ) : (
                 <div className="prose prose-zinc max-w-none">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{viewerMd || ''}</ReactMarkdown>

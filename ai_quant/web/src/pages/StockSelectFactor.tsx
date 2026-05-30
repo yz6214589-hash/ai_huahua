@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { Loading } from '@/components/Loading'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { fetchJson, postJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { RefreshCcw } from 'lucide-react'
+import { Search, RefreshCcw } from 'lucide-react'
 
 interface Factor {
   key: string
@@ -152,7 +153,7 @@ export default function StockSelectFactor() {
         <CardHeader title={`多因子评分排名（${sorted.length} 只）`} />
         <CardBody className="p-0">
           {loading && sorted.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-zinc-500">加载中...</div>
+            <Loading className="py-8" />
           ) : error && sorted.length === 0 ? (
             <div className="flex flex-col items-center px-4 py-8">
               <p className="text-sm text-red-600">{error}</p>

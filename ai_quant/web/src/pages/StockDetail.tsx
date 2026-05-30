@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { fetchJson } from '@/api/client'
 import type {
   StockFeedResponse,
@@ -909,7 +910,7 @@ export default function StockDetail() {
         }
       />
       <CardBody>
-        {loadingIntraday ? <div className="text-sm text-zinc-500">加载中…</div> : null}
+        {loadingIntraday ? <Loading size="sm" /> : null}
         {!loadingIntraday && (!intraday || !intraday?.minute_data || intraday.minute_data.length === 0) ? (
           <div className="text-sm text-zinc-500">暂无分时数据</div>
         ) : null}

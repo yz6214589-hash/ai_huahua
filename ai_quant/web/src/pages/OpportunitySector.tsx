@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useState, useEffect } from 'react'
 import { fetchJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
@@ -150,11 +151,7 @@ export default function OpportunitySector() {
   const totalDown = sectors.length - totalUp
 
   if (loading && sectors.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-12 text-sm text-zinc-500">
-        加载中...
-      </div>
-    )
+    return <Loading className="py-12" />
   }
 
   if (error && sectors.length === 0) {

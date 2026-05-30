@@ -41,6 +41,12 @@ class BacktestTask:
     slippage_pct: float = 0.0
     slippage_fixed: float = 0.0
     min_commission: float = 5.0
+    # 新增：仓位比例
+    position_pct: float = 0.95
+    # 新增：印花税和过户费
+    stamp_duty: float = 0.001
+    transfer_fee_buy: float = 0.00001
+    transfer_fee_sell: float = 0.00001
     status: BacktestTaskStatus = BacktestTaskStatus.PENDING
     result: Any = None
     error: str | None = None
@@ -128,6 +134,12 @@ class BacktestExecutorAgent:
                 slippage_pct=self.task.slippage_pct,
                 slippage_fixed=self.task.slippage_fixed,
                 min_commission=self.task.min_commission,
+                # 传递仓位比例
+                position_pct=self.task.position_pct,
+                # 传递印花税和过户费
+                stamp_duty=self.task.stamp_duty,
+                transfer_fee_buy=self.task.transfer_fee_buy,
+                transfer_fee_sell=self.task.transfer_fee_sell,
             )
 
             if "error" in bt_result.metrics:
@@ -254,6 +266,12 @@ class MultiAgentBacktestEngine:
         slippage_pct: float = 0.0,
         slippage_fixed: float = 0.0,
         min_commission: float = 5.0,
+        # 新增：仓位比例
+        position_pct: float = 0.95,
+        # 新增：印花税和过户费
+        stamp_duty: float = 0.001,
+        transfer_fee_buy: float = 0.00001,
+        transfer_fee_sell: float = 0.00001,
     ) -> BatchBacktestResult:
         batch_id = str(uuid.uuid4())[:8]
 
@@ -275,6 +293,12 @@ class MultiAgentBacktestEngine:
                 slippage_pct=slippage_pct,
                 slippage_fixed=slippage_fixed,
                 min_commission=min_commission,
+                # 传递仓位比例
+                position_pct=position_pct,
+                # 传递印花税和过户费
+                stamp_duty=stamp_duty,
+                transfer_fee_buy=transfer_fee_buy,
+                transfer_fee_sell=transfer_fee_sell,
             )
             tasks.append(task)
 

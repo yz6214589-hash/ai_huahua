@@ -1,8 +1,9 @@
+import { Loading } from '@/components/Loading'
 import { useState, useEffect, useCallback } from 'react'
 import { fetchJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { RefreshCcw, AlertTriangle } from 'lucide-react'
+import { AlertTriangle, RefreshCcw, ArrowRight, TrendingUp } from 'lucide-react'
 
 interface TradeRecord {
   id: string
@@ -68,12 +69,7 @@ export default function ExecutionRecords() {
   const totalSell = filtered.filter((r) => r.side === 'sell').reduce((s, r) => s + r.amount, 0)
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-zinc-400">
-        <RefreshCcw className="mr-2 h-5 w-5 animate-spin" />
-        <span>加载中...</span>
-      </div>
-    )
+    return <Loading className="py-20" />
   }
 
   if (error) {

@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useEffect, useState, useCallback } from 'react'
 import { postJson, fetchJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
@@ -215,10 +216,7 @@ export default function WorkFlowTeam() {
           />
           <CardBody>
             {detailLoading ? (
-              <div className="flex items-center justify-center py-16 text-zinc-400">
-                <Clock className="mr-2 h-5 w-5 animate-spin" />
-                <span>加载中...</span>
-              </div>
+              <Loading className="py-16" />
             ) : detail ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-3 text-xs text-zinc-500">

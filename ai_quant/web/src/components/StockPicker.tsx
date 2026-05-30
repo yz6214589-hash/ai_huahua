@@ -4,6 +4,7 @@
  * 支持单选/多选模式，下拉列表支持滚动加载更多
  */
 
+import { Loading } from '@/components/Loading'
 import { cn } from '@/lib/utils'
 import type { StockSearchItem } from '@/api/types'
 import { fetchJson } from '@/api/client'
@@ -304,7 +305,7 @@ export function StockPicker({
         <div className="absolute z-50 mt-1 w-full rounded-lg border border-zinc-200 bg-white shadow-sm">
           <div ref={listRef} className="max-h-64 overflow-auto p-1.5">
             {loading && results.length === 0 ? (
-              <div className="px-2 py-3 text-xs text-zinc-500">加载中…</div>
+              <Loading className="py-3" size="sm" />
             ) : err && results.length === 0 ? (
               <div className="px-2 py-3 text-xs text-red-600">{err}</div>
             ) : results.length === 0 ? (

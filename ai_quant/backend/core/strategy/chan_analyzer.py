@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -280,6 +280,7 @@ def analyze_chan(df: pd.DataFrame) -> pd.DataFrame:
         result["chan_signal"] = np.nan
         result["chan_zg"] = np.nan
         result["chan_zd"] = np.nan
+        result.attrs["_chan_vis_data"] = {"bi_list": [], "seg_list": [], "zs_list": []}
         return result
 
     strokes = _find_strokes(fractals)
@@ -289,6 +290,7 @@ def analyze_chan(df: pd.DataFrame) -> pd.DataFrame:
         result["chan_signal"] = np.nan
         result["chan_zg"] = np.nan
         result["chan_zd"] = np.nan
+        result.attrs["_chan_vis_data"] = {"bi_list": [], "seg_list": [], "zs_list": []}
         return result
 
     klines_map = {k.idx: k for k in klines}
@@ -299,12 +301,34 @@ def analyze_chan(df: pd.DataFrame) -> pd.DataFrame:
         result["chan_signal"] = np.nan
         result["chan_zg"] = np.nan
         result["chan_zd"] = np.nan
+        result.attrs["_chan_vis_data"] = {"bi_list": [], "seg_list": [], "zs_list": []}
         return result
 
     signal_df = _generate_signals(klines, fractals, zhongshus)
+
+    # 构建可视化数据（笔和中枢）
+    vis_data: dict[str, Any] = {"bi_list": [], "seg_list": [], "zs_list": []}
+
+    for s in strokes:
+        vis_data["bi_list"].append({
+            "start_idx": s.start_idx,
+            "end_idx": s.end_idx,
+            "start_price": s.start_price,
+            "end_price": s.end_price,
+            "direction": s.direction,
+        })
+
+    for z in zhongshus:
+        vis_data["zs_list"].append({
+            "zg": z.zg,
+            "zd": z.zd,
+            "start_idx": z.start_idx,
+            "end_idx": z.end_idx,
+        })
 
     result = pd.DataFrame(index=df.index)
     result["chan_signal"] = signal_df["chan_signal"].values if len(signal_df) == len(df) else np.nan
     result["chan_zg"] = signal_df["chan_zg"].values if len(signal_df) == len(df) else np.nan
     result["chan_zd"] = signal_df["chan_zd"].values if len(signal_df) == len(df) else np.nan
+    result.attrs["_chan_vis_data"] = vis_data
     return result

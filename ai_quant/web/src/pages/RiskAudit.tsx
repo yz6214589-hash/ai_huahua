@@ -1,3 +1,4 @@
+import { Loading } from '@/components/Loading'
 import { useEffect, useState } from 'react'
 import { fetchJson } from '@/api/client'
 import type { RiskAuditResponse } from '@/api/types'
@@ -88,7 +89,7 @@ export default function RiskAudit() {
         <CardHeader title={`审批记录（${filtered.length} 条）`} />
         <CardBody className="p-0">
           {loading && !data ? (
-            <div className="px-4 py-12 text-center text-sm text-zinc-500">加载中…</div>
+            <Loading className="py-12" />
           ) : filtered.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-zinc-500">暂无审批记录</div>
           ) : (
