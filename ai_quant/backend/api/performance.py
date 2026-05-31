@@ -80,34 +80,38 @@ async def generate_report(request: ReportGenerateRequest) -> dict[str, Any]:
         if request.metrics:
             m = request.metrics
             # 前端字段 → 数据库列名 映射
-            if "total_return" in m:
+            # 注意：前端 EnhancedMetrics 中的总收益率是 decimal（如 0.05 表示 5%），直接存储
+            if "total_return" in m and m["total_return"] is not None:
                 metrics["total_return"] = float(m["total_return"])
-            if "annual_return" in m:
+            if "annual_return" in m and m["annual_return"] is not None:
                 metrics["annualized_return"] = float(m["annual_return"])
-            if "max_drawdown" in m:
+            if "max_drawdown" in m and m["max_drawdown"] is not None:
                 metrics["max_drawdown"] = float(m["max_drawdown"])
             # volatility 在前端是小数（如 0.0991），乘以 100 转为百分比存储
-            if "volatility" in m:
+            if "volatility" in m and m["volatility"] is not None:
                 metrics["volatility"] = round(float(m["volatility"]) * 100, 2)
-            if "sharpe" in m:
+            if "sharpe" in m and m["sharpe"] is not None:
                 metrics["sharpe_ratio"] = float(m["sharpe"])
-            if "calmar" in m:
+            if "calmar" in m and m["calmar"] is not None:
                 metrics["calmar_ratio"] = float(m["calmar"])
-            if "win_rate" in m:
+            if "win_rate" in m and m["win_rate"] is not None:
                 metrics["win_rate"] = float(m["win_rate"])
-            if "profit_factor" in m:
+            if "profit_factor" in m and m["profit_factor"] is not None:
                 metrics["profit_factor"] = float(m["profit_factor"])
-            if "total_trades" in m:
+            # 兼容：前端 EnhancedMetrics 使用 num_trades，映射到 total_trades
+            if "total_trades" in m and m["total_trades"] is not None:
                 metrics["total_trades"] = int(m["total_trades"])
-            if "avg_profit_loss" in m:
+            elif "num_trades" in m and m["num_trades"] is not None:
+                metrics["total_trades"] = int(m["num_trades"])
+            if "avg_profit_loss" in m and m["avg_profit_loss"] is not None:
                 metrics["avg_profit"] = round(float(m["avg_profit_loss"]), 2)
                 metrics["avg_loss"] = 0
             # 可选：如果 metrics 中也包含了 winning_trades / losing_trades / trading_days，则覆盖
-            if "winning_trades" in m:
+            if "winning_trades" in m and m["winning_trades"] is not None:
                 metrics["winning_trades"] = int(m["winning_trades"])
-            if "losing_trades" in m:
+            if "losing_trades" in m and m["losing_trades"] is not None:
                 metrics["losing_trades"] = int(m["losing_trades"])
-            if "trading_days" in m:
+            if "trading_days" in m and m["trading_days"] is not None:
                 metrics["trading_days"] = int(m["trading_days"])
 
         # 构建 chart_data 字典：优先使用请求中的真实数据，否则为空列表
@@ -165,7 +169,7 @@ async def generate_report(request: ReportGenerateRequest) -> dict[str, Any]:
                 start,
                 end,
                 initial_cash,
-                round(1.0 + metrics.get("total_return", 0) / 100, 4),
+                round(1.0 + metrics.get("total_return", 0), 4),
                 request.benchmark_code,
                 metrics.get("total_return", 0),
                 metrics.get("annualized_return", 0),
@@ -243,7 +247,7 @@ async def get_report_list(
 
         offset = (page - 1) * page_size
         data_sql = f"""
-            SELECT id, report_id, report_type, account_id, strategy_name, start_date, end_date,
+            SELECT id, report_id, report_type, account_id, strategy_name, backtest_id, start_date, end_date,
                    initial_cash, final_nav, total_return, annualized_return, max_drawdown,
                    sharpe_ratio, win_rate, total_trades, status, created_at
             FROM trade_performance_report
@@ -323,12 +327,34 @@ async def get_report_detail(report_id: str) -> dict[str, Any]:
             "sortino", "alpha", "beta", "information_ratio", "tracking_error",
             "omega", "var_95", "cvar_95", "gain_to_pain", "skew", "kurtosis",
             "best_day", "worst_day", "consecutive_wins", "consecutive_losses",
+            "cagr", "avg_win", "avg_loss", "downside_risk", "up_capture",
+            "down_capture", "payoff_ratio", "profit_factor", "win_rate",
+            "calmar", "volatility", "r_squared", "tail_ratio",
+            "common_sense_ratio", "expected_return", "expected_shortfall",
+            "ulcer_index", "ulcer_performance_index", "risk_return_ratio",
         ]
         qs_metrics = {}
         for field in qs_fields:
             val = chart_data.get(field)
+            if val is None:
+                val = chart_data.get(f"qs_{field}")
             if val is not None:
                 qs_metrics[field] = float(val)
+
+        # 字段名映射：前端期望 avg_profit，QuantStats 返回 avg_win
+        if "avg_win" in qs_metrics and "avg_profit" not in qs_metrics:
+            qs_metrics["avg_profit"] = qs_metrics["avg_win"]
+
+        # 补充前端需要但后端未单独计算的字段
+        nav_log = chart_data.get("equity_curve", [])
+        if nav_log and len(nav_log) >= 2:
+            qs_metrics.setdefault("trading_days", len(nav_log))
+        if "max_drawdown" in metrics:
+            qs_metrics.setdefault("max_drawdown_duration", None)
+        if "total_return" in metrics and "max_drawdown" in metrics:
+            md = abs(float(metrics["max_drawdown"]))
+            if md > 0:
+                qs_metrics.setdefault("recovery_factor", float(metrics["total_return"]) / md)
 
         # 从 chart_data 中提取 QuantStats 增强指标（qs_ 前缀版本）
         qs_enhanced_metrics = {}
@@ -435,12 +461,34 @@ async def get_report_detail_plus(report_id: str) -> dict[str, Any]:
             "sortino", "alpha", "beta", "information_ratio", "tracking_error",
             "omega", "var_95", "cvar_95", "gain_to_pain", "skew", "kurtosis",
             "best_day", "worst_day", "consecutive_wins", "consecutive_losses",
+            "cagr", "avg_win", "avg_loss", "downside_risk", "up_capture",
+            "down_capture", "payoff_ratio", "profit_factor", "win_rate",
+            "calmar", "volatility", "r_squared", "tail_ratio",
+            "common_sense_ratio", "expected_return", "expected_shortfall",
+            "ulcer_index", "ulcer_performance_index", "risk_return_ratio",
         ]
         qs_metrics = {}
         for field in qs_fields:
             val = chart_data.get(field)
+            if val is None:
+                val = chart_data.get(f"qs_{field}")
             if val is not None:
                 qs_metrics[field] = float(val)
+
+        # 字段名映射：前端期望 avg_profit，QuantStats 返回 avg_win
+        if "avg_win" in qs_metrics and "avg_profit" not in qs_metrics:
+            qs_metrics["avg_profit"] = qs_metrics["avg_win"]
+
+        # 补充前端需要但后端未单独计算的字段
+        nav_log = chart_data.get("equity_curve", [])
+        if nav_log and len(nav_log) >= 2:
+            qs_metrics.setdefault("trading_days", len(nav_log))
+        if "max_drawdown" in metrics:
+            qs_metrics.setdefault("max_drawdown_duration", None)
+        if "total_return" in metrics and "max_drawdown" in metrics:
+            md = abs(float(metrics["max_drawdown"]))
+            if md > 0:
+                qs_metrics.setdefault("recovery_factor", float(metrics["total_return"]) / md)
 
         # 从 chart_data 中提取 QuantStats 增强指标（qs_ 前缀版本）
         qs_enhanced_metrics = {}
@@ -619,7 +667,7 @@ async def compare_performance(
         conn.close()
 
 
-@router.delete("/detail/{report_id}")
+@router.delete("/{report_id}")
 async def delete_report(report_id: str) -> dict[str, Any]:
     """删除绩效报告"""
     conn = _get_conn()
@@ -880,6 +928,335 @@ async def get_backtest_detail(backtest_id: str) -> dict[str, Any]:
         raise
     except Exception as e:
         logger.error("获取回测记录详情失败", extra={"error": str(e)})
-        raise HTTPException(status_code=500, detail=f"获取回测记录详情失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取回测记录详情失败：{str(e)}")
+    finally:
+        conn.close()
+
+
+# ============================================
+# 重新生成报告 API
+# ============================================
+
+class RegenerateReportRequest(BaseModel):
+    """重新生成报告请求体"""
+    report_type: str | None = Field(default=None, description="报告类型，'plus' 表示增强版")
+
+
+@router.post("/regenerate/{report_id}")
+async def regenerate_report(report_id: str, body: RegenerateReportRequest = None) -> dict[str, Any]:
+    """
+    重新生成绩效报告
+    
+    功能：
+    1. 从数据库读取现有报告数据
+    2. 解析 chart_data 和 trades_data
+    3. 重新计算 QuantStats 指标（如果有 nav_log）
+    4. 如果 body 中 report_type 为"plus"，还重新计算 SVD 诊断和交易成本分析
+    5. 更新数据库中的记录
+    6. 返回成功信息
+    """
+    conn = _get_conn()
+    try:
+        # 读取现有报告
+        rows = query_dict(conn, "SELECT * FROM trade_performance_report WHERE report_id = %s", (report_id,))
+        if not rows:
+            raise HTTPException(status_code=404, detail="报告不存在")
+        
+        report = rows[0]
+        
+        # 解析 chart_data
+        chart_data_raw = {}
+        if report.get("chart_data") and isinstance(report["chart_data"], str):
+            try:
+                chart_data_raw = json.loads(report["chart_data"])
+            except Exception:
+                chart_data_raw = {}
+        
+        # 从 chart_data 中获取 equity_curve 作为 nav_log
+        nav_log = chart_data_raw.get("equity_curve", [])
+        
+        # 重新计算 QuantStats 指标
+        chart_data_dict = dict(chart_data_raw)  # 复制原有数据
+        
+        if nav_log and len(nav_log) >= 2:
+            try:
+                # 提取基准净值曲线（如果存在）
+                benchmark_nav_log = chart_data_raw.get("benchmark_curve") or chart_data_raw.get("benchmark_nav_log") or None
+                
+                qs_metrics = calc_quantstats_metrics(nav_log, benchmark_nav_log)
+                
+                # 将 quantstats 指标存入 chart_data（使用"qs_"前缀避免冲突）
+                for key, value in qs_metrics.items():
+                    if value is not None:
+                        try:
+                            chart_data_dict[f"qs_{key}"] = float(value)
+                        except (ValueError, TypeError):
+                            pass
+            except Exception as e:
+                logger.warning("重新计算 QuantStats 指标失败", extra={"error": str(e)})
+        
+        # 如果是 Plus 版，重新计算 SVD 诊断和交易成本分析
+        report_type = report.get("report_type", "common")
+        if body and body.report_type == "plus":
+            report_type = "plus"
+            
+            # SVD 市场状态诊断
+            stock_codes_raw = chart_data_raw.get("stock_codes") or None
+            if not stock_codes_raw:
+                strategy_params_str = report.get("strategy_params") or ""
+                if strategy_params_str:
+                    try:
+                        sp = json.loads(strategy_params_str) if isinstance(strategy_params_str, str) else strategy_params_str
+                        stock_codes_raw = sp.get("stock_codes") if isinstance(sp, dict) else None
+                    except Exception:
+                        pass
+            
+            if stock_codes_raw:
+                try:
+                    stock_codes_list = stock_codes_raw if isinstance(stock_codes_raw, list) else []
+                    start_date = report.get("start_date", "")
+                    end_date = report.get("end_date", "")
+                    if stock_codes_list and start_date and end_date:
+                        svd_result = diagnose_market_regime(
+                            stock_codes=stock_codes_list,
+                            start_date=start_date,
+                            end_date=end_date,
+                        )
+                        chart_data_dict["svd_diagnosis"] = svd_result
+                except Exception as e:
+                    logger.warning("重新计算 SVD 诊断失败", extra={"error": str(e)})
+            
+            # 交易成本分析
+            trades_data_raw = report.get("trades_data") or []
+            if isinstance(trades_data_raw, str):
+                try:
+                    trades_data_raw = json.loads(trades_data_raw)
+                except Exception:
+                    trades_data_raw = []
+            
+            if trades_data_raw:
+                try:
+                    cost_result = analyze_trading_costs(trades_data_raw)
+                    chart_data_dict["cost_analysis"] = cost_result
+                except Exception as e:
+                    logger.warning("重新计算交易成本分析失败", extra={"error": str(e)})
+        
+        # 更新数据库中的记录
+        chart_data_json = json.dumps(chart_data_dict, ensure_ascii=False)
+        
+        execute(
+            conn,
+            """UPDATE trade_performance_report
+               SET chart_data = %s, report_type = %s, updated_at = NOW()
+               WHERE report_id = %s""",
+            (chart_data_json, report_type, report_id)
+        )
+        
+        return {
+            "status": "ok",
+            "report_id": report_id,
+            "message": "报告重新生成成功"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("重新生成报告失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"重新生成报告失败：{str(e)}")
+    finally:
+        conn.close()
+
+
+# ============================================
+# AI 分析 API
+# ============================================
+
+
+@router.post("/ai-analysis/{report_id}")
+async def ai_analysis_report(report_id: str) -> dict[str, Any]:
+    """
+    AI 分析报告生成
+    
+    功能：
+    1. 从数据库读取报告数据
+    2. 收集策略名称、指标、交易记录等关键信息
+    3. 调用 LLM 生成分析报告（如果 LLM 不可用则使用模板）
+    4. 返回分析结果
+    """
+    conn = _get_conn()
+    try:
+        # 读取现有报告
+        rows = query_dict(conn, "SELECT * FROM trade_performance_report WHERE report_id = %s", (report_id,))
+        if not rows:
+            raise HTTPException(status_code=404, detail="报告不存在")
+        
+        report = rows[0]
+        
+        # 提取关键信息
+        strategy_name = report.get("strategy_name") or "未知策略"
+        start_date = report.get("start_date") or ""
+        end_date = report.get("end_date") or ""
+        initial_cash = float(report.get("initial_cash") or 0)
+        
+        # 核心绩效指标
+        total_return = float(report.get("total_return") or 0)
+        annual_return = float(report.get("annualized_return") or 0)
+        max_drawdown = float(report.get("max_drawdown") or 0)
+        volatility = float(report.get("volatility") or 0)
+        sharpe_ratio = float(report.get("sharpe_ratio") or 0)
+        calmar_ratio = float(report.get("calmar_ratio") or 0)
+        win_rate = float(report.get("win_rate") or 0)
+        profit_factor = float(report.get("profit_factor") or 0)
+        total_trades = int(report.get("total_trades") or 0)
+        
+        # 解析 chart_data 获取增强指标
+        chart_data_raw = {}
+        if report.get("chart_data") and isinstance(report["chart_data"], str):
+            try:
+                chart_data_raw = json.loads(report["chart_data"])
+            except Exception:
+                chart_data_raw = {}
+        
+        # 解析 trades_data
+        trades_data_raw = report.get("trades_data") or []
+        if isinstance(trades_data_raw, str):
+            try:
+                trades_data_raw = json.loads(trades_data_raw)
+            except Exception:
+                trades_data_raw = []
+        
+        # 计算交易统计
+        avg_profit_loss = 0.0
+        if trades_data_raw and len(trades_data_raw) > 0:
+            total_pnl = sum(float(t.get("pnl", 0)) for t in trades_data_raw)
+            avg_profit_loss = total_pnl / len(trades_data_raw) if trades_data_raw else 0
+        
+        # 尝试调用 LLM 生成分析
+        try:
+            # 构建分析 prompt
+            prompt = f"""请对以下量化策略绩效进行分析：
+
+## 基本信息
+- 策略名称：{strategy_name}
+- 回测区间：{start_date} ~ {end_date}
+- 初始资金：{initial_cash:,.2f}
+
+## 核心绩效指标
+- 总收益率：{total_return:.2f}%
+- 年化收益率：{annual_return:.2f}%
+- 最大回撤：{max_drawdown:.2f}%
+- 波动率：{volatility:.2f}%
+- 夏普比率：{sharpe_ratio:.2f}
+- 卡尔玛比率：{calmar_ratio:.2f}
+- 胜率：{win_rate:.1f}%
+- 盈亏比：{profit_factor:.2f}
+
+## 交易统计
+- 总交易次数：{total_trades}
+- 平均盈亏：{avg_profit_loss:.2f}
+
+## 市场环境
+"""
+            # 如果是 Plus 版，添加 SVD 诊断信息
+            svd_diagnosis = chart_data_raw.get("svd_diagnosis")
+            if svd_diagnosis:
+                prompt += f"- SVD 市场诊断：{json.dumps(svd_diagnosis, ensure_ascii=False)}\n"
+            else:
+                prompt += "- 无市场环境数据\n"
+            
+            prompt += "\n请根据以上数据生成一份专业的策略绩效分析报告，包括收益分析、风险评估、交易分析和综合评价。"
+            
+            # 由于 run_report_agent 是为个股研报设计的，我们使用模板方式作为 fallback
+            # 这里直接调用简单的 LLM 方式
+            from langchain_community.chat_models.tongyi import ChatTongyi
+            import os
+            
+            llm = ChatTongyi(model=os.getenv("CHARLES_MODEL", "qwen-plus"))
+            messages = [
+                {"role": "system", "content": "你是一位专业的量化投资分析师，擅长分析策略绩效数据并提供专业建议。"},
+                {"role": "user", "content": prompt}
+            ]
+            
+            try:
+                res = llm.invoke(messages)
+                analysis_text = str(getattr(res, "content", "") or "")
+                
+                if analysis_text and len(analysis_text) > 50:
+                    return {
+                        "status": "ok",
+                        "report_id": report_id,
+                        "analysis": analysis_text,
+                        "mode": "llm"
+                    }
+            except Exception as llm_error:
+                logger.warning("LLM 调用失败，使用模板生成分析", extra={"error": str(llm_error)})
+        
+        except ImportError:
+            logger.warning("LLM 模块不可用，使用模板生成分析")
+        except Exception as e:
+            logger.warning("AI 分析失败，使用模板生成", extra={"error": str(e)})
+        
+        # Fallback: 使用模板生成分析
+        analysis = f"""## 策略绩效分析报告
+
+### 基本信息
+- 策略名称：{strategy_name}
+- 回测区间：{start_date} ~ {end_date}
+- 初始资金：{initial_cash:,.2f}
+
+### 收益分析
+- 总收益率：{total_return:.2f}%
+- 年化收益率：{annual_return:.2f}%
+- 最大回撤：{max_drawdown:.2f}%
+
+### 风险评估
+- 夏普比率：{sharpe_ratio:.2f}
+- 波动率：{volatility:.2f}%
+- 卡尔玛比率：{calmar_ratio:.2f}
+
+### 交易分析
+- 总交易次数：{total_trades}
+- 胜率：{win_rate:.1f}%
+- 盈亏比：{profit_factor:.2f}
+- 平均盈亏：{avg_profit_loss:.2f}
+
+### 综合评价
+"""
+        # 根据指标生成评价
+        if sharpe_ratio > 1.5:
+            evaluation = "策略风险调整后收益优秀，夏普比率高于 1.5，显示出较强的风险控制能力。"
+        elif sharpe_ratio > 1.0:
+            evaluation = "策略风险调整后收益良好，夏普比率超过 1.0，表现稳健。"
+        elif sharpe_ratio > 0.5:
+            evaluation = "策略风险调整后收益一般，建议进一步优化风险控制。"
+        else:
+            evaluation = "策略风险调整后收益偏低，需要重新评估策略逻辑和风险控制。"
+        
+        if max_drawdown < 10:
+            evaluation += " 最大回撤控制在 10% 以内，风险水平较低。"
+        elif max_drawdown < 20:
+            evaluation += " 最大回撤在 10%-20% 之间，风险水平适中。"
+        else:
+            evaluation += " 最大回撤超过 20%，风险水平较高，建议加强风控。"
+        
+        if win_rate > 60:
+            evaluation += " 胜率较高，策略具有较好的交易质量。"
+        elif win_rate > 50:
+            evaluation += " 胜率适中，策略表现正常。"
+        else:
+            evaluation += " 胜率偏低，建议优化入场和出场信号。"
+        
+        analysis += evaluation
+        
+        return {
+            "status": "ok",
+            "report_id": report_id,
+            "analysis": analysis,
+            "mode": "template"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("AI 分析失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"AI 分析失败：{str(e)}")
     finally:
         conn.close()

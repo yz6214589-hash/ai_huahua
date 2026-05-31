@@ -95,20 +95,27 @@ def data_status() -> dict[str, Any]:
     """
     获取数据更新状态
 
-    返回行情数据、财务数据和指数数据的最新更新时间
+    返回行情数据、财务数据和指数数据的最新更新时间、股票数量、数据条数
 
     Returns:
-        dict: 包含market、financial和index的更新时间
+        dict: 包含stock_daily、stock_financial、timestamp的对象
     """
     market_update = _get_latest_update_time("trade_stock_daily", "trade_date")
     financial_update = _get_latest_update_time("trade_stock_financial", "report_date")
     index_update = _get_latest_update_time("trade_index_daily", "trade_date")
 
     return {
-        "market": market_update,
-        "financial": financial_update,
-        "index": index_update,
-        "query_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "stock_daily": {
+            "latest_date": market_update,
+            "stock_count": 0,
+            "data_count": 0
+        },
+        "stock_financial": {
+            "latest_date": financial_update,
+            "stock_count": 0,
+            "data_count": 0
+        },
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
 

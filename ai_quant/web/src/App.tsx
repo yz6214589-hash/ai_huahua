@@ -30,6 +30,7 @@ import RiskDashboard from '@/pages/RiskDashboard'
 import StrategyAnalysis from '@/pages/StrategyAnalysis'
 import StrategyLibrary from '@/pages/StrategyLibrary'
 import StrategyInstances from '@/pages/StrategyInstances'
+import StrategyInstanceCreate from '@/pages/StrategyInstanceCreate'
 import StrategyBacktest from '@/pages/StrategyBacktest'
 import BacktestHistory from '@/pages/BacktestHistory'
 import WalkForwardPanel from '@/components/WalkForwardPanel'
@@ -93,6 +94,7 @@ export default function App() {
             <Route index element={<Navigate to="library" replace />} />
             <Route path="library" element={<StrategyLibrary />} />
             <Route path="instances" element={<StrategyInstances />} />
+            <Route path="instances/create" element={<StrategyInstanceCreate />} />
             <Route path="backtest" element={<StrategyBacktest />} />
             <Route path="backtest-history" element={<BacktestHistory />} />
             <Route path="walk-forward" element={<WalkForwardPanel />} />

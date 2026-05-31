@@ -195,6 +195,8 @@ def _extract_vis_data(chan_data: dict) -> dict:
         vis["seg_list"].append({
             "start_date": str(seg.get("start_date", ""))[:10],
             "end_date": str(seg.get("end_date", ""))[:10],
+            "start_price": seg.get("start_price", 0),
+            "end_price": seg.get("end_price", 0),
             "direction": seg.get("direction", "up"),
         })
 

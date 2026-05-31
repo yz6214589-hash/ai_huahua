@@ -306,25 +306,45 @@ def analyze_chan(df: pd.DataFrame) -> pd.DataFrame:
 
     signal_df = _generate_signals(klines, fractals, zhongshus)
 
+    # 构建 idx -> 日期字符串 的映射，用于可视化数据
+    date_col = "trade_date" if "trade_date" in df.columns else None
+    idx_to_date: dict[int, str] = {}
+    if date_col is not None:
+        for i in range(len(df)):
+            dt_val = df.iloc[i][date_col]
+            idx_to_date[i] = str(pd.Timestamp(dt_val).date()) if pd.notna(dt_val) else ""
+
     # 构建可视化数据（笔和中枢）
     vis_data: dict[str, Any] = {"bi_list": [], "seg_list": [], "zs_list": []}
 
     for s in strokes:
-        vis_data["bi_list"].append({
+        bi_item: dict[str, Any] = {
             "start_idx": s.start_idx,
             "end_idx": s.end_idx,
             "start_price": s.start_price,
             "end_price": s.end_price,
             "direction": s.direction,
-        })
+        }
+        # 添加日期字段（与 chanpy_adapter 输出格式对齐）
+        if idx_to_date:
+            bi_item["start_date"] = idx_to_date.get(s.start_idx, "")
+            bi_item["end_date"] = idx_to_date.get(s.end_idx, "")
+        vis_data["bi_list"].append(bi_item)
 
     for z in zhongshus:
-        vis_data["zs_list"].append({
+        zs_item: dict[str, Any] = {
+            "ZG": z.zg,
+            "ZD": z.zd,
             "zg": z.zg,
             "zd": z.zd,
             "start_idx": z.start_idx,
             "end_idx": z.end_idx,
-        })
+        }
+        # 添加日期字段（与 chanpy_adapter 输出格式对齐）
+        if idx_to_date:
+            zs_item["start_date"] = idx_to_date.get(z.start_idx, "")
+            zs_item["end_date"] = idx_to_date.get(z.end_idx, "")
+        vis_data["zs_list"].append(zs_item)
 
     result = pd.DataFrame(index=df.index)
     result["chan_signal"] = signal_df["chan_signal"].values if len(signal_df) == len(df) else np.nan

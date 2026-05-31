@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 策略组合引擎
-基于行情判别（ADX/MA/布林带）自动切换趋势与震荡模式，
+基于行情判别（ADX/MA/布林带）自动切换趋势/震荡/过渡模式，
 分别匹配不同的买入/卖出条件，支持自定义参数。
+选择"空仓"时该行情类型下不产生任何信号。
 """
 from __future__ import annotations
 
@@ -63,6 +64,31 @@ def make_combo_strategy():
             rs_rsi_overbought=70.0,
             rs_boll_period=20,
             rs_boll_devfactor=2.0,
+            # 过渡买入
+            trans_buy="empty",
+            trb_macd_fast=12,
+            trb_macd_slow=26,
+            trb_macd_signal=9,
+            trb_ma_fast=5,
+            trb_ma_slow=20,
+            trb_breakout_period=20,
+            trb_rsi_period=14,
+            trb_rsi_oversold=30.0,
+            trb_boll_period=20,
+            trb_boll_devfactor=2.0,
+            # 过渡卖出
+            trans_sell="empty",
+            trs_macd_fast=12,
+            trs_macd_slow=26,
+            trs_macd_signal=9,
+            trs_atr_period=14,
+            trs_atr_mult=2.5,
+            trs_profit_trigger=5.0,
+            trs_trail_pct=3.0,
+            trs_rsi_period=14,
+            trs_rsi_overbought=70.0,
+            trs_boll_period=20,
+            trs_boll_devfactor=2.0,
             # 通用止损
             use_atr_stop=True,
             atr_stop_period=14,
@@ -112,6 +138,37 @@ def make_combo_strategy():
                 self.data.close, period=int(self.p.rs_boll_period),
                 devfactor=float(self.p.rs_boll_devfactor),
             )
+            # 过渡买入指标
+            self.trb_macd = bt.indicators.MACD(
+                self.data.close,
+                period_me1=int(self.p.trb_macd_fast),
+                period_me2=int(self.p.trb_macd_slow),
+                period_signal=int(self.p.trb_macd_signal),
+            )
+            self.trb_macd_cross = bt.indicators.CrossOver(self.trb_macd.macd, self.trb_macd.signal)
+            self.trb_ma_fast = bt.indicators.SMA(self.data.close, period=int(self.p.trb_ma_fast))
+            self.trb_ma_slow = bt.indicators.SMA(self.data.close, period=int(self.p.trb_ma_slow))
+            self.trb_ma_cross = bt.indicators.CrossOver(self.trb_ma_fast, self.trb_ma_slow)
+            self.trb_entry_high = bt.indicators.Highest(self.data.high, period=int(self.p.trb_breakout_period))
+            self.trb_rsi = bt.indicators.RSI(self.data.close, period=int(self.p.trb_rsi_period))
+            self.trb_boll = bt.indicators.BollingerBands(
+                self.data.close, period=int(self.p.trb_boll_period),
+                devfactor=float(self.p.trb_boll_devfactor),
+            )
+            # 过渡卖出指标
+            self.trs_macd = bt.indicators.MACD(
+                self.data.close,
+                period_me1=int(self.p.trs_macd_fast),
+                period_me2=int(self.p.trs_macd_slow),
+                period_signal=int(self.p.trs_macd_signal),
+            )
+            self.trs_macd_cross = bt.indicators.CrossOver(self.trs_macd.macd, self.trs_macd.signal)
+            self.trs_atr = bt.indicators.ATR(self.data, period=int(self.p.trs_atr_period))
+            self.trs_rsi = bt.indicators.RSI(self.data.close, period=int(self.p.trs_rsi_period))
+            self.trs_boll = bt.indicators.BollingerBands(
+                self.data.close, period=int(self.p.trs_boll_period),
+                devfactor=float(self.p.trs_boll_devfactor),
+            )
             # 通用止损指标
             self.stop_atr = bt.indicators.ATR(self.data, period=int(self.p.atr_stop_period))
             # 状态
@@ -120,7 +177,7 @@ def make_combo_strategy():
             self.stop_price = None
 
         def _detect_market(self) -> str:
-            """行情判别：根据配置的方式判断当前为趋势/震荡/中性"""
+            """行情判别：根据配置的方式判断当前为趋势/震荡/过渡"""
             dt = str(self.p.detector_type)
             if dt == "adx":
                 adx_val = _safe_float(self.adx[0])
@@ -148,6 +205,8 @@ def make_combo_strategy():
         def _trend_buy_signal(self) -> bool:
             """趋势买入信号判断"""
             bt_type = str(self.p.trend_buy)
+            if bt_type == "empty":
+                return False
             if bt_type == "macd_cross":
                 return _safe_float(self.tb_macd_cross[0]) > 0
             if bt_type == "ma_cross":
@@ -159,6 +218,8 @@ def make_combo_strategy():
         def _trend_sell_signal(self) -> bool:
             """趋势卖出信号判断"""
             st = str(self.p.trend_sell)
+            if st == "empty":
+                return False
             if st == "macd_dead_cross":
                 return _safe_float(self.ts_macd_cross[0]) < 0
             if st == "atr_stop":
@@ -180,6 +241,8 @@ def make_combo_strategy():
         def _range_buy_signal(self) -> bool:
             """震荡买入信号判断"""
             bt_type = str(self.p.range_buy)
+            if bt_type == "empty":
+                return False
             if bt_type == "rsi_oversold":
                 return _safe_float(self.rb_rsi[0]) < float(self.p.rb_rsi_oversold)
             if bt_type == "boll_lower":
@@ -195,10 +258,56 @@ def make_combo_strategy():
         def _range_sell_signal(self) -> bool:
             """震荡卖出信号判断"""
             st = str(self.p.range_sell)
+            if st == "empty":
+                return False
             if st == "rsi_overbought":
                 return _safe_float(self.rs_rsi[0]) > float(self.p.rs_rsi_overbought)
             if st == "boll_upper":
                 return _safe_float(self.data.close[0]) > _safe_float(self.rs_boll.top[0])
+            return False
+
+        def _trans_buy_signal(self) -> bool:
+            """过渡买入信号判断"""
+            bt_type = str(self.p.trans_buy)
+            if bt_type == "empty":
+                return False
+            if bt_type == "macd_cross":
+                return _safe_float(self.trb_macd_cross[0]) > 0
+            if bt_type == "ma_cross":
+                return _safe_float(self.trb_ma_cross[0]) > 0
+            if bt_type == "breakout":
+                return _safe_float(self.data.close[0]) > _safe_float(self.trb_entry_high[-1])
+            if bt_type == "rsi_oversold":
+                return _safe_float(self.trb_rsi[0]) < float(self.p.trb_rsi_oversold)
+            if bt_type == "boll_lower":
+                return _safe_float(self.data.close[0]) < _safe_float(self.trb_boll.bot[0])
+            return False
+
+        def _trans_sell_signal(self) -> bool:
+            """过渡卖出信号判断"""
+            st = str(self.p.trans_sell)
+            if st == "empty":
+                return False
+            if st == "macd_dead_cross":
+                return _safe_float(self.trs_macd_cross[0]) < 0
+            if st == "atr_stop":
+                if self.peak_price is not None and _safe_float(self.trs_atr[0]) > 0:
+                    trail = float(self.peak_price) - float(self.p.trs_atr_mult) * _safe_float(self.trs_atr[0])
+                    return _safe_float(self.data.close[0]) < trail
+                return False
+            if st == "profit_lock":
+                if self.entry_price is not None and float(self.entry_price) > 0:
+                    close = _safe_float(self.data.close[0])
+                    profit_pct = (close - float(self.entry_price)) / float(self.entry_price) * 100.0
+                    if profit_pct >= float(self.p.trs_profit_trigger):
+                        if self.peak_price is not None:
+                            drop_pct = (float(self.peak_price) - close) / float(self.peak_price) * 100.0
+                            return drop_pct >= float(self.p.trs_trail_pct)
+                return False
+            if st == "rsi_overbought":
+                return _safe_float(self.trs_rsi[0]) > float(self.p.trs_rsi_overbought)
+            if st == "boll_upper":
+                return _safe_float(self.data.close[0]) > _safe_float(self.trs_boll.top[0])
             return False
 
         def _reset_state(self):
@@ -233,6 +342,10 @@ def make_combo_strategy():
                     self.sell()
                     self._reset_state()
                     return
+                if market == "neutral" and self._trans_sell_signal():
+                    self.sell()
+                    self._reset_state()
+                    return
                 return
 
             # 空仓时检查买入信号
@@ -242,6 +355,11 @@ def make_combo_strategy():
                 self.peak_price = close
                 self.stop_price = None
             elif market == "range" and self._range_buy_signal():
+                self.buy()
+                self.entry_price = close
+                self.peak_price = close
+                self.stop_price = None
+            elif market == "neutral" and self._trans_buy_signal():
                 self.buy()
                 self.entry_price = close
                 self.peak_price = close

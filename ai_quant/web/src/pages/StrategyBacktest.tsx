@@ -20,7 +20,8 @@ interface StrategyDef {
     default?: number | string | boolean
     values?: string[]
     options?: Array<{ value: string; label: string }>
-    section?: string  // 参数所属区域
+    section?: string
+    show_if?: { field: string; value: string | boolean }
   }>
   default_params: Record<string, unknown>
   requires_chan?: boolean
@@ -95,6 +96,8 @@ interface SingleBacktestResult {
     seg_list: Array<{
       start_date?: string
       end_date?: string
+      start_price?: number
+      end_price?: number
       direction: 'up' | 'down'
     }>
     zs_list: Array<{
@@ -377,6 +380,10 @@ export default function StrategyBacktest() {
   const [selectedInstanceId, setSelectedInstanceId] = useState('')
   const [selectedStrategyId, setSelectedStrategyId] = useState('')
   const [overrideParams, setOverrideParams] = useState<Record<string, string>>({})
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
+  const toggleSection = (name: string) => {
+    setCollapsedSections((prev) => ({ ...prev, [name]: !prev[name] }))
+  }
   const [stockCode, setStockCode] = useState<StockSearchItem | null>(null)
   const [batchStockCodes, setBatchStockCodes] = useState<StockSearchItem[]>([])
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
@@ -1096,11 +1103,22 @@ export default function StrategyBacktest() {
                   )}
                 </div>
                 {(() => {
-                  // 按 section 分组
+                  const isVisible = (key: string) => {
+                    const meta = currentStrategy.params_schema[key]
+                    if (!meta?.show_if) return true
+                    const { field, value } = meta.show_if
+                    const currentVal = overrideParams[field]
+                    if (typeof value === 'boolean') {
+                      return (currentVal === 'true') === value
+                    }
+                    return currentVal === value
+                  }
+
                   const sections: Record<string, Array<[string, typeof currentStrategy.params_schema[string]]>> = {}
                   const noSection: Array<[string, typeof currentStrategy.params_schema[string]]> = []
 
                   for (const [key, meta] of Object.entries(currentStrategy.params_schema)) {
+                    if (!isVisible(key)) continue
                     if (meta.section) {
                       if (!sections[meta.section]) sections[meta.section] = []
                       sections[meta.section].push([key, meta])
@@ -1108,6 +1126,17 @@ export default function StrategyBacktest() {
                       noSection.push([key, meta])
                     }
                   }
+
+                  const sectionOrder = ['行情判别', '趋势买入', '趋势卖出', '震荡买入', '震荡卖出', '过渡买入', '过渡卖出', '通用止损']
+
+                  const sortedSections = Object.entries(sections).sort((a, b) => {
+                    const idxA = sectionOrder.indexOf(a[0])
+                    const idxB = sectionOrder.indexOf(b[0])
+                    if (idxA === -1 && idxB === -1) return 0
+                    if (idxA === -1) return 1
+                    if (idxB === -1) return -1
+                    return idxA - idxB
+                  })
 
                   const renderParams = (params: Array<[string, typeof currentStrategy.params_schema[string]]>) => (
                     <div className="grid grid-cols-3 gap-3">
@@ -1181,14 +1210,31 @@ export default function StrategyBacktest() {
                       {noSection.length > 0 && renderParams(noSection)}
 
                       {/* 有分组的参数 */}
-                      {Object.entries(sections).map(([sectionName, params]) => (
-                        <div key={sectionName}>
-                          <div className="flex items-center gap-2 mb-2 mt-1">
-                            <span className="text-xs font-semibold text-zinc-700 bg-zinc-100 px-2 py-0.5 rounded">{sectionName}</span>
+                      {sortedSections.map(([sectionName, params]) => {
+                        const collapsed = collapsedSections[sectionName] === true
+                        return (
+                          <div key={sectionName} className="rounded-lg border border-zinc-100 bg-zinc-50/50">
+                            <button
+                              type="button"
+                              onClick={() => toggleSection(sectionName)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                            >
+                              {collapsed ? (
+                                <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
+                              ) : (
+                                <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
+                              )}
+                              <span className="text-xs font-semibold text-zinc-700">{sectionName}</span>
+                              <span className="text-xs text-zinc-400">{params.length} 项</span>
+                            </button>
+                            {!collapsed && (
+                              <div className="px-3 pb-3">
+                                {renderParams(params)}
+                              </div>
+                            )}
                           </div>
-                          {renderParams(params)}
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )
                 })()}
@@ -1561,6 +1607,7 @@ export default function StrategyBacktest() {
                               const hasChanVis = !!singleResult.chan_vis
                               if (hasChanVis) {
                                 if (singleResult.chan_vis!.bi_list?.length) legendData.push('笔')
+                                if (singleResult.chan_vis!.seg_list?.length) legendData.push('线段')
                                 if (singleResult.chan_vis!.zs_list?.length) legendData.push('中枢')
                               }
 
@@ -1742,55 +1789,118 @@ export default function StrategyBacktest() {
                                 )
                               }
 
-                              // 缠论可视化：笔（bi_list）- 折线段
+                              // 缠论可视化：笔（bi_list）- markLine 统一渲染
                               if (singleResult.chan_vis?.bi_list?.length) {
-                                singleResult.chan_vis.bi_list.forEach((bi, i) => {
+                                const biMarkData: any[] = []
+                                singleResult.chan_vis.bi_list.forEach((bi) => {
                                   const startIdx = bi.start_date ? chartDates.indexOf(bi.start_date) : bi.start_idx
                                   const endIdx = bi.end_date ? chartDates.indexOf(bi.end_date) : bi.end_idx
                                   if (startIdx != null && endIdx != null && startIdx >= 0 && endIdx >= 0) {
-                                    seriesList.push({
-                                      name: i === 0 ? '笔' : '',
-                                      type: 'line',
-                                      data: chartDates.map((_: string, j: number) =>
-                                        j === startIdx ? bi.start_price :
-                                        j === endIdx ? bi.end_price : null
-                                      ),
-                                      xAxisIndex: 0,
-                                      yAxisIndex: 0,
-                                      smooth: false,
-                                      symbol: 'none',
-                                      lineStyle: {
-                                        color: bi.direction === 'up' ? '#ef4444' : '#22c55e',
-                                        width: 2,
+                                    biMarkData.push([
+                                      {
+                                        xAxis: chartDates[startIdx],
+                                        yAxis: bi.start_price,
+                                        lineStyle: {
+                                          color: bi.direction === 'up' ? '#ef4444' : '#22c55e',
+                                          width: 2,
+                                          type: 'solid' as const,
+                                        },
                                       },
-                                      connectNulls: true,
-                                      z: 4,
-                                    })
+                                      { xAxis: chartDates[endIdx], yAxis: bi.end_price },
+                                    ])
                                   }
                                 })
+                                if (biMarkData.length > 0) {
+                                  seriesList.push({
+                                    name: '笔',
+                                    type: 'line',
+                                    data: [],
+                                    xAxisIndex: 0,
+                                    yAxisIndex: 0,
+                                    markLine: {
+                                      symbol: 'none',
+                                      animation: false,
+                                      label: { show: false },
+                                      data: biMarkData,
+                                    },
+                                    z: 4,
+                                  })
+                                }
                               }
 
-                              // 缠论可视化：中枢（zs_list）- 矩形区域
-                              if (singleResult.chan_vis?.zs_list?.length) {
-                                const closeSeriesIdx = seriesList.findIndex(s => s.name === '收盘价')
-                                if (closeSeriesIdx >= 0) {
-                                  const markAreas = singleResult.chan_vis.zs_list.map(zs => {
-                                    const startIdx = zs.start_date ? chartDates.indexOf(zs.start_date) : zs.start_idx
-                                    const endIdx = zs.end_date ? chartDates.indexOf(zs.end_date) : zs.end_idx
-                                    const zg = zs.ZG ?? zs.zg ?? 0
-                                    const zd = zs.ZD ?? zs.zd ?? 0
-                                    if (startIdx != null && endIdx != null && startIdx >= 0 && endIdx >= 0) {
-                                      return [
-                                        { xAxis: startIdx, yAxis: zd, itemStyle: { color: 'rgba(59,130,246,0.08)' } },
-                                        { xAxis: endIdx, yAxis: zg },
-                                      ]
+                              // 缠论可视化：线段（seg_list）- markLine 统一渲染
+                              if (singleResult.chan_vis?.seg_list?.length) {
+                                const segMarkData: any[] = []
+                                singleResult.chan_vis.seg_list.forEach((seg) => {
+                                  const startIdx = seg.start_date ? chartDates.indexOf(seg.start_date) : -1
+                                  const endIdx = seg.end_date ? chartDates.indexOf(seg.end_date) : -1
+                                  if (startIdx >= 0 && endIdx >= 0) {
+                                    const startPrice = seg.start_price ?? singleResult.kline![startIdx]?.close
+                                    const endPrice = seg.end_price ?? singleResult.kline![endIdx]?.close
+                                    if (startPrice != null && endPrice != null) {
+                                      segMarkData.push([
+                                        {
+                                          xAxis: chartDates[startIdx],
+                                          yAxis: startPrice,
+                                          lineStyle: {
+                                            color: seg.direction === 'up' ? '#dc2626' : '#16a34a',
+                                            width: 3,
+                                            type: 'dashed' as const,
+                                          },
+                                        },
+                                        { xAxis: chartDates[endIdx], yAxis: endPrice },
+                                      ])
                                     }
-                                    return null
-                                  }).filter(Boolean)
-
-                                  if (markAreas.length > 0) {
-                                    seriesList[closeSeriesIdx].markArea = { data: markAreas, silent: true }
                                   }
+                                })
+                                if (segMarkData.length > 0) {
+                                  seriesList.push({
+                                    name: '线段',
+                                    type: 'line',
+                                    data: [],
+                                    xAxisIndex: 0,
+                                    yAxisIndex: 0,
+                                    markLine: {
+                                      symbol: 'none',
+                                      animation: false,
+                                      label: { show: false },
+                                      data: segMarkData,
+                                    },
+                                    z: 3,
+                                  })
+                                }
+                              }
+
+                              // 缠论可视化：中枢（zs_list）- 独立 series + markArea
+                              if (singleResult.chan_vis?.zs_list?.length) {
+                                const zsMarkData: any[] = []
+                                singleResult.chan_vis.zs_list.forEach((zs) => {
+                                  const startIdx = zs.start_date ? chartDates.indexOf(zs.start_date) : zs.start_idx
+                                  const endIdx = zs.end_date ? chartDates.indexOf(zs.end_date) : zs.end_idx
+                                  const zg = zs.ZG ?? zs.zg ?? 0
+                                  const zd = zs.ZD ?? zs.zd ?? 0
+                                  if (startIdx != null && endIdx != null && startIdx >= 0 && endIdx >= 0 && zg > 0 && zd > 0) {
+                                    zsMarkData.push([
+                                      { xAxis: chartDates[startIdx], yAxis: zd, itemStyle: { color: 'rgba(59,130,246,0.12)' } },
+                                      { xAxis: chartDates[endIdx], yAxis: zg },
+                                    ])
+                                  }
+                                })
+                                if (zsMarkData.length > 0) {
+                                  seriesList.push({
+                                    name: '中枢',
+                                    type: 'line',
+                                    data: [],
+                                    xAxisIndex: 0,
+                                    yAxisIndex: 0,
+                                    markArea: {
+                                      silent: true,
+                                      animation: false,
+                                      label: { show: false },
+                                      data: zsMarkData,
+                                    },
+                                    z: 2,
+                                  })
                                 }
                               }
 

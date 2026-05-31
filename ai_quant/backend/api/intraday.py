@@ -144,11 +144,7 @@ def _fetch_intraday_from_qmt(stock_code: str, trade_date: str) -> list[dict] | N
     返回格式统一的 list[dict]，失败返回 None。
     """
     try:
-        from infra.qmt_gateway_client import (
-            QMTConnectionError,
-            QMTGatewayError,
-            historical_kline,
-        )
+        from infra.qmt_gateway_client import historical_kline
 
         # QMT 要求日期格式为 YYYYMMDD
         qmt_date = trade_date.replace("-", "")
@@ -192,9 +188,6 @@ def _fetch_intraday_from_qmt(stock_code: str, trade_date: str) -> list[dict] | N
         logger.info("从 QMT 获取分时数据成功",
                     extra={"stock_code": stock_code, "trade_date": trade_date, "count": len(data)})
         return data
-    except (QMTConnectionError, QMTGatewayError) as e:
-        logger.warning("QMT 分时数据获取失败", extra={"stock_code": stock_code, "error": str(e)})
-        return None
     except Exception as e:
         logger.warning("QMT 分时数据获取异常", extra={"stock_code": stock_code, "error": str(e)})
         return None

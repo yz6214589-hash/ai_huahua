@@ -38,8 +38,9 @@ class GridEngine:
         if price <= 0:
             return 0
         shares = int(self.capital_per_grid / price)
-        shares = (shares // 100) * 100
-        return max(100, shares) if shares > 0 else 0
+        if shares <= 0:
+            return 0
+        return max(100, (shares // 100) * 100)
 
     def update(self, price: float) -> list[GridSignal]:
         price = float(price)

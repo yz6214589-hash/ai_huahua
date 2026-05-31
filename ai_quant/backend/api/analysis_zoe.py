@@ -10,10 +10,11 @@ import json
 import os
 import time
 import uuid
-from datetime import date
+from datetime import date, datetime as dt, timedelta
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from fastapi import Body, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
@@ -1296,3 +1297,189 @@ def run_param_search(req: ParamSearchReq = Body(...)) -> dict[str, Any]:
         "best_by_return": result.best_by_return,
         "best_by_sharpe": result.best_by_sharpe,
     }
+
+
+# ============== 行情预览辅助函数 ==============
+
+def _calc_adx(df: pd.DataFrame, period: int = 14):
+    """计算ADX指标（纯pandas实现）"""
+    close = df['close']
+    high = df['high'].copy()
+    low = df['low'].copy()
+    # 当 high/low 为 NaN 时（如指数数据），使用 close 作为回退值
+    if high.isna().any():
+        high = high.fillna(close)
+    if low.isna().any():
+        low = low.fillna(close)
+    # True Range
+    tr1 = high - low
+    tr2 = abs(high - close.shift(1))
+    tr3 = abs(low - close.shift(1))
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    # +DM / -DM
+    up_move = high - high.shift(1)
+    down_move = low.shift(1) - low
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+    # 平滑处理
+    atr = tr.rolling(period).mean()
+    plus_di = 100 * pd.Series(plus_dm, index=df.index).rolling(period).mean() / atr
+    minus_di = 100 * pd.Series(minus_dm, index=df.index).rolling(period).mean() / atr
+    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+    adx = dx.rolling(period).mean()
+    return adx, plus_di, minus_di
+
+
+def _calc_boll_width(df: pd.DataFrame, period: int = 20, devfactor: float = 2.0):
+    """计算布林带宽度"""
+    mid = df['close'].rolling(period).mean()
+    std = df['close'].rolling(period).std()
+    upper = mid + devfactor * std
+    lower = mid - devfactor * std
+    width = (upper - lower) / mid
+    return width, upper, lower, mid
+
+
+# ============== 行情预览请求模型 ==============
+
+class MarketPreviewReq(BaseModel):
+    stock_code: str = Field(..., description="股票代码，如 000001")
+    start_date: str = Field(..., description="开始日期，如 2024-01-01")
+    end_date: str = Field(..., description="结束日期，如 2025-01-01")
+    detector_type: str = Field(default="adx", description="行情判别方式: adx/ma/boll")
+    adx_period: int = Field(default=14, description="ADX周期")
+    adx_trend_threshold: float = Field(default=25.0, description="ADX趋势阈值")
+    adx_range_threshold: float = Field(default=20.0, description="ADX震荡阈值")
+    det_ma_fast: int = Field(default=10, description="快均线周期")
+    det_ma_slow: int = Field(default=30, description="慢均线周期")
+    det_boll_period: int = Field(default=20, description="布林带周期")
+    det_boll_devfactor: float = Field(default=2.0, description="布林带标准差倍数")
+
+
+# ============== 行情预览路由 ==============
+
+@router.post("/market-preview")
+def market_preview(req: MarketPreviewReq = Body(...)) -> dict[str, Any]:
+    """行情预览：根据指定方式判别每日行情类型（趋势/震荡/中性）"""
+    code = req.stock_code.strip().upper()
+    if "." not in code:
+        if code.startswith("6"):
+            code += ".SH"
+        elif code.startswith(("0", "3")):
+            code += ".SZ"
+    # 计算预热开始日期：从请求起始日期往前推90天，用于 ADX 等指标的预热计算
+    warmup_start = req.start_date
+    try:
+        start_dt = dt.strptime(req.start_date, "%Y-%m-%d")
+        warmup_start = (start_dt - timedelta(days=90)).strftime("%Y-%m-%d")
+    except ValueError:
+        pass
+
+    # 加载包含预热数据的完整数据
+    df = _load_daily(code, warmup_start, req.end_date)
+    if df.empty:
+        return {
+            "dates": [],
+            "closes": [],
+            "indicator_values": [],
+            "indicator_name": "",
+            "market_types": [],
+            "stock_name": "",
+        }
+
+    # 获取股票名称
+    stock_name = ""
+    if "stock_name" in df.columns and not df["stock_name"].dropna().empty:
+        stock_name = str(df["stock_name"].dropna().iloc[-1])
+
+    indicator_values = []
+    indicator_name = ""
+    market_types = []
+
+    if req.detector_type == "adx":
+        indicator_name = "ADX"
+        adx, plus_di, minus_di = _calc_adx(df, period=req.adx_period)
+        indicator_values = [round(v, 2) if pd.notna(v) else None for v in adx]
+        for v in adx:
+            if pd.isna(v):
+                market_types.append("neutral")
+            elif v >= req.adx_trend_threshold:
+                market_types.append("trend")
+            elif v <= req.adx_range_threshold:
+                market_types.append("range")
+            else:
+                market_types.append("neutral")
+
+    elif req.detector_type == "ma":
+        indicator_name = "MA_diff"
+        ma_fast = df["close"].rolling(req.det_ma_fast).mean()
+        ma_slow = df["close"].rolling(req.det_ma_slow).mean()
+        diff = ma_fast - ma_slow
+        indicator_values = [round(v, 4) if pd.notna(v) else None for v in diff]
+        for v in diff:
+            if pd.isna(v):
+                market_types.append("neutral")
+            elif v > 0:
+                market_types.append("trend")
+            else:
+                market_types.append("range")
+
+    elif req.detector_type == "boll":
+        indicator_name = "BOLL_width"
+        width, upper, lower, mid = _calc_boll_width(df, period=req.det_boll_period, devfactor=req.det_boll_devfactor)
+        indicator_values = [round(v, 4) if pd.notna(v) else None for v in width]
+        close = df["close"]
+        for i in range(len(df)):
+            w = width.iloc[i]
+            c = close.iloc[i]
+            u = upper.iloc[i]
+            l = lower.iloc[i]
+            if pd.isna(w) or pd.isna(u) or pd.isna(l):
+                market_types.append("neutral")
+            elif c > u or c < l:
+                market_types.append("trend")
+            else:
+                market_types.append("range")
+
+    else:
+        raise HTTPException(status_code=400, detail=f"unsupported_detector_type: {req.detector_type}")
+
+    # 裁剪到请求的日期范围（去除预热数据）
+    mask = df["trade_date"] >= pd.Timestamp(req.start_date)
+    df = df[mask].reset_index(drop=True)
+    indicator_values = [indicator_values[i] for i in range(len(indicator_values)) if mask.iloc[i]]
+    market_types = [market_types[i] for i in range(len(market_types)) if mask.iloc[i]]
+
+    dates = [str(d.date()) if hasattr(d, "date") else str(d) for d in df["trade_date"]]
+    closes = df["close"].round(2).tolist()
+
+    return {
+        "dates": dates,
+        "closes": closes,
+        "indicator_values": indicator_values,
+        "indicator_name": indicator_name,
+        "market_types": market_types,
+        "stock_name": stock_name,
+    }
+
+
+# ============== 股票指数列表路由 ==============
+
+@router.get("/indices")
+def list_indices() -> dict[str, Any]:
+    """获取所有可用的股票指数列表"""
+    try:
+        cfg = load_mysql_config()
+        conn = connect(cfg)
+    except Exception:
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+    try:
+        rows = query_dict(
+            conn,
+            "SELECT stock_code, stock_name FROM trade_stock_master WHERE asset_type = %s ORDER BY stock_code ASC",
+            ("index",),
+        )
+        indices = [{"stock_code": r["stock_code"], "stock_name": r["stock_name"]} for r in rows]
+        return {"indices": indices}
+    finally:
+        conn.close()

@@ -18,7 +18,7 @@ class StrategyMeta:
     group: str = "basic"  # 策略分组 "basic" | "optimized" | "combo"
 
 
-def _p_int(label: str, help: str, min_v: int | None = None, max_v: int | None = None, *, section: str | None = None) -> dict[str, Any]:
+def _p_int(label: str, help: str, min_v: int | None = None, max_v: int | None = None, *, section: str | None = None, show_if: dict | None = None) -> dict[str, Any]:
     d: dict[str, Any] = {"type": "int", "label": label, "help": help}
     if min_v is not None:
         d["min"] = int(min_v)
@@ -26,6 +26,8 @@ def _p_int(label: str, help: str, min_v: int | None = None, max_v: int | None = 
         d["max"] = int(max_v)
     if section is not None:
         d["section"] = section
+    if show_if is not None:
+        d["show_if"] = show_if
     return d
 
 
@@ -37,6 +39,7 @@ def _p_float(
     step: float | None = None,
     *,
     section: str | None = None,
+    show_if: dict | None = None,
 ) -> dict[str, Any]:
     d: dict[str, Any] = {"type": "float", "label": label, "help": help}
     if min_v is not None:
@@ -47,34 +50,44 @@ def _p_float(
         d["step"] = float(step)
     if section is not None:
         d["section"] = section
+    if show_if is not None:
+        d["show_if"] = show_if
     return d
 
 
-def _p_bool(label: str, help: str, *, section: str | None = None) -> dict[str, Any]:
+def _p_bool(label: str, help: str, *, section: str | None = None, show_if: dict | None = None) -> dict[str, Any]:
     d: dict[str, Any] = {"type": "bool", "label": label, "help": help}
     if section is not None:
         d["section"] = section
+    if show_if is not None:
+        d["show_if"] = show_if
     return d
 
 
-def _p_select(label: str, help: str, options: list[dict], *, section: str | None = None) -> dict[str, Any]:
+def _p_select(label: str, help: str, options: list[dict], *, section: str | None = None, show_if: dict | None = None) -> dict[str, Any]:
     d: dict[str, Any] = {"type": "select", "label": label, "help": help, "options": options}
     if section is not None:
         d["section"] = section
+    if show_if is not None:
+        d["show_if"] = show_if
     return d
 
 
-def _p_enum(label: str, help: str, values: list[str], *, section: str | None = None) -> dict[str, Any]:
+def _p_enum(label: str, help: str, values: list[str], *, section: str | None = None, show_if: dict | None = None) -> dict[str, Any]:
     d: dict[str, Any] = {"type": "enum", "label": label, "help": help, "values": list(values)}
     if section is not None:
         d["section"] = section
+    if show_if is not None:
+        d["show_if"] = show_if
     return d
 
 
-def _p_object(label: str, help: str, *, section: str | None = None) -> dict[str, Any]:
+def _p_object(label: str, help: str, *, section: str | None = None, show_if: dict | None = None) -> dict[str, Any]:
     d: dict[str, Any] = {"type": "object", "label": label, "help": help}
     if section is not None:
         d["section"] = section
+    if show_if is not None:
+        d["show_if"] = show_if
     return d
 
 
@@ -1730,63 +1743,186 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
             name="自定义组合策略",
             description="基于行情判别（ADX/MA/布林带）自动切换趋势与震荡模式，分别匹配不同的买入/卖出条件，支持自定义参数。",
             params_schema={
-                "detector_type": _p_select("行情判别方式", "选择判断趋势/震荡的方法：ADX指标、MA均线、布林带", [
+                # ── 行情判别 ──
+                "detector_type": _p_select("行情判别方式", "选择判断趋势/震荡的方法", [
                     {"value": "adx", "label": "ADX指标"},
                     {"value": "ma", "label": "MA均线"},
                     {"value": "boll", "label": "布林带"},
                 ], section="行情判别"),
-                "adx_period": _p_int("ADX周期", "ADX计算周期（常用14）。", 2, 200, section="行情判别"),
-                "adx_trend_threshold": _p_float("趋势阈值", "ADX大于该值判定为趋势行情（常用25）。", 1, 100, 1, section="行情判别"),
-                "adx_range_threshold": _p_float("震荡阈值", "ADX小于该值判定为震荡行情（常用20）。", 1, 100, 1, section="行情判别"),
-                "det_ma_fast": _p_int("判别快均线", "MA判别模式的快均线周期。", 2, 200, section="行情判别"),
-                "det_ma_slow": _p_int("判别慢均线", "MA判别模式的慢均线周期。", 3, 400, section="行情判别"),
-                "det_boll_period": _p_int("判别布林周期", "布林带判别模式的中轨周期。", 5, 250, section="行情判别"),
-                "det_boll_devfactor": _p_float("判别布林倍数", "布林带判别模式的标准差倍数。", 0.5, 6.0, 0.1, section="行情判别"),
+                # ADX 子参数——仅当 detector_type == "adx" 时显示
+                "adx_period": _p_int("ADX周期", "ADX计算周期（常用14）。", 2, 200, section="行情判别",
+                                     show_if={"field": "detector_type", "value": "adx"}),
+                "adx_range_threshold": _p_float("震荡阈值", "ADX < 该值，判定为震荡行情（常用20）。", 1, 100, 1, section="行情判别",
+                                                show_if={"field": "detector_type", "value": "adx"}),
+                "adx_trend_threshold": _p_float("趋势阈值", "ADX > 该值，判定为趋势行情（常用25）。阈值之间的区间为过渡行情。", 1, 100, 1, section="行情判别",
+                                                show_if={"field": "detector_type", "value": "adx"}),
+                # MA 子参数——仅当 detector_type == "ma" 时显示
+                "det_ma_fast": _p_int("判别快均线", "MA判别模式的快均线周期。", 2, 200, section="行情判别",
+                                      show_if={"field": "detector_type", "value": "ma"}),
+                "det_ma_slow": _p_int("判别慢均线", "MA判别模式的慢均线周期。", 3, 400, section="行情判别",
+                                      show_if={"field": "detector_type", "value": "ma"}),
+                # 布林带 子参数——仅当 detector_type == "boll" 时显示
+                "det_boll_period": _p_int("判别布林周期", "布林带判别模式的中轨周期。", 5, 250, section="行情判别",
+                                          show_if={"field": "detector_type", "value": "boll"}),
+                "det_boll_devfactor": _p_float("判别布林倍数", "布林带判别模式的标准差倍数。", 0.5, 6.0, 0.1, section="行情判别",
+                                                show_if={"field": "detector_type", "value": "boll"}),
+
+                # ── 趋势买入 ──
                 "trend_buy": _p_select("趋势买入条件", "趋势行情下的买入信号", [
+                    {"value": "empty", "label": "空仓"},
                     {"value": "macd_cross", "label": "MACD金叉"},
                     {"value": "ma_cross", "label": "MA交叉"},
                     {"value": "breakout", "label": "突破新高"},
                 ], section="趋势买入"),
-                "tb_macd_fast": _p_int("趋势MACD快线", "趋势买入MACD快线周期。", 2, 200, section="趋势买入"),
-                "tb_macd_slow": _p_int("趋势MACD慢线", "趋势买入MACD慢线周期。", 3, 400, section="趋势买入"),
-                "tb_macd_signal": _p_int("趋势MACD信号线", "趋势买入MACD信号线周期。", 2, 200, section="趋势买入"),
-                "tb_ma_fast": _p_int("趋势MA快线", "趋势买入MA交叉快线周期。", 2, 200, section="趋势买入"),
-                "tb_ma_slow": _p_int("趋势MA慢线", "趋势买入MA交叉慢线周期。", 3, 400, section="趋势买入"),
-                "tb_breakout_period": _p_int("突破回看周期", "趋势买入突破新高的回看周期。", 2, 400, section="趋势买入"),
+                # MACD金叉 子参数
+                "tb_macd_fast": _p_int("MACD快线", "MACD快线周期。", 2, 200, section="趋势买入",
+                                       show_if={"field": "trend_buy", "value": "macd_cross"}),
+                "tb_macd_slow": _p_int("MACD慢线", "MACD慢线周期。", 3, 400, section="趋势买入",
+                                       show_if={"field": "trend_buy", "value": "macd_cross"}),
+                "tb_macd_signal": _p_int("MACD信号线", "MACD信号线周期。", 2, 200, section="趋势买入",
+                                         show_if={"field": "trend_buy", "value": "macd_cross"}),
+                # MA交叉 子参数
+                "tb_ma_fast": _p_int("MA快线", "MA交叉快线周期。", 2, 200, section="趋势买入",
+                                     show_if={"field": "trend_buy", "value": "ma_cross"}),
+                "tb_ma_slow": _p_int("MA慢线", "MA交叉慢线周期。", 3, 400, section="趋势买入",
+                                     show_if={"field": "trend_buy", "value": "ma_cross"}),
+                # 突破新高 子参数
+                "tb_breakout_period": _p_int("突破回看周期", "突破新高的回看周期。", 2, 400, section="趋势买入",
+                                             show_if={"field": "trend_buy", "value": "breakout"}),
+
+                # ── 趋势卖出 ──
                 "trend_sell": _p_select("趋势卖出条件", "趋势行情下的卖出信号", [
+                    {"value": "empty", "label": "空仓"},
                     {"value": "macd_dead_cross", "label": "MACD死叉"},
                     {"value": "atr_stop", "label": "ATR跟踪止损"},
                     {"value": "profit_lock", "label": "利润锁定"},
                 ], section="趋势卖出"),
-                "ts_macd_fast": _p_int("卖出MACD快线", "趋势卖出MACD快线周期。", 2, 200, section="趋势卖出"),
-                "ts_macd_slow": _p_int("卖出MACD慢线", "趋势卖出MACD慢线周期。", 3, 400, section="趋势卖出"),
-                "ts_macd_signal": _p_int("卖出MACD信号线", "趋势卖出MACD信号线周期。", 2, 200, section="趋势卖出"),
-                "ts_atr_period": _p_int("卖出ATR周期", "趋势卖出ATR计算周期。", 2, 200, section="趋势卖出"),
-                "ts_atr_mult": _p_float("卖出ATR倍数", "趋势卖出ATR止损距离倍数。", 0.1, 10.0, 0.1, section="趋势卖出"),
-                "ts_profit_trigger": _p_float("利润触发(%)", "利润锁定模式下，收益率达到该阈值后启动锁定。", 0.1, 200, 0.1, section="趋势卖出"),
-                "ts_trail_pct": _p_float("回撤锁定(%)", "利润锁定模式下，从最高价回撤超过该比例时卖出。", 0.1, 50, 0.1, section="趋势卖出"),
+                # MACD死叉 子参数
+                "ts_macd_fast": _p_int("MACD快线", "MACD快线周期。", 2, 200, section="趋势卖出",
+                                       show_if={"field": "trend_sell", "value": "macd_dead_cross"}),
+                "ts_macd_slow": _p_int("MACD慢线", "MACD慢线周期。", 3, 400, section="趋势卖出",
+                                       show_if={"field": "trend_sell", "value": "macd_dead_cross"}),
+                "ts_macd_signal": _p_int("MACD信号线", "MACD信号线周期。", 2, 200, section="趋势卖出",
+                                         show_if={"field": "trend_sell", "value": "macd_dead_cross"}),
+                # ATR跟踪止损 子参数
+                "ts_atr_period": _p_int("ATR周期", "ATR计算周期。", 2, 200, section="趋势卖出",
+                                        show_if={"field": "trend_sell", "value": "atr_stop"}),
+                "ts_atr_mult": _p_float("ATR倍数", "ATR止损距离：最高价 - ATR倍数 * ATR。", 0.1, 10.0, 0.1, section="趋势卖出",
+                                        show_if={"field": "trend_sell", "value": "atr_stop"}),
+                # 利润锁定 子参数
+                "ts_profit_trigger": _p_float("利润触发(%)", "收益率达到该阈值后启动利润锁定。", 0.1, 200, 0.1, section="趋势卖出",
+                                              show_if={"field": "trend_sell", "value": "profit_lock"}),
+                "ts_trail_pct": _p_float("回撤锁定(%)", "从最高价回撤超过该比例时卖出。", 0.1, 50, 0.1, section="趋势卖出",
+                                         show_if={"field": "trend_sell", "value": "profit_lock"}),
+
+                # ── 震荡买入 ──
                 "range_buy": _p_select("震荡买入条件", "震荡行情下的买入信号", [
+                    {"value": "empty", "label": "空仓"},
                     {"value": "rsi_oversold", "label": "RSI超卖"},
                     {"value": "boll_lower", "label": "布林下轨"},
                     {"value": "bias_low", "label": "乖离率低"},
                 ], section="震荡买入"),
-                "rb_rsi_period": _p_int("震荡RSI周期", "震荡买入RSI计算周期。", 2, 200, section="震荡买入"),
-                "rb_rsi_oversold": _p_float("RSI超卖阈值", "震荡买入RSI低于该值触发。", 1, 60, 1, section="震荡买入"),
-                "rb_boll_period": _p_int("震荡布林周期", "震荡买入布林带周期。", 5, 250, section="震荡买入"),
-                "rb_boll_devfactor": _p_float("震荡布林倍数", "震荡买入布林带标准差倍数。", 0.5, 6.0, 0.1, section="震荡买入"),
-                "rb_bias_period": _p_int("震荡乖离率周期", "震荡买入乖离率的均线周期。", 2, 250, section="震荡买入"),
-                "rb_bias_threshold": _p_float("乖离率阈值(%)", "震荡买入乖离率低于该值触发（负值）。", -50, 0, 0.1, section="震荡买入"),
+                # RSI超卖 子参数
+                "rb_rsi_period": _p_int("RSI周期", "RSI计算周期。", 2, 200, section="震荡买入",
+                                        show_if={"field": "range_buy", "value": "rsi_oversold"}),
+                "rb_rsi_oversold": _p_float("RSI超卖阈值", "RSI < 该值时触发买入。", 1, 60, 1, section="震荡买入",
+                                             show_if={"field": "range_buy", "value": "rsi_oversold"}),
+                # 布林下轨 子参数
+                "rb_boll_period": _p_int("布林周期", "布林带中轨周期。", 5, 250, section="震荡买入",
+                                         show_if={"field": "range_buy", "value": "boll_lower"}),
+                "rb_boll_devfactor": _p_float("布林倍数", "布林带标准差倍数。", 0.5, 6.0, 0.1, section="震荡买入",
+                                               show_if={"field": "range_buy", "value": "boll_lower"}),
+                # 乖离率低 子参数
+                "rb_bias_period": _p_int("乖离率周期", "乖离率的均线周期。", 2, 250, section="震荡买入",
+                                         show_if={"field": "range_buy", "value": "bias_low"}),
+                "rb_bias_threshold": _p_float("乖离率阈值(%)", "乖离率 < 该值时触发买入（负值）。", -50, 0, 0.1, section="震荡买入",
+                                               show_if={"field": "range_buy", "value": "bias_low"}),
+
+                # ── 震荡卖出 ──
                 "range_sell": _p_select("震荡卖出条件", "震荡行情下的卖出信号", [
+                    {"value": "empty", "label": "空仓"},
                     {"value": "rsi_overbought", "label": "RSI超买"},
                     {"value": "boll_upper", "label": "布林上轨"},
                 ], section="震荡卖出"),
-                "rs_rsi_period": _p_int("卖出RSI周期", "震荡卖出RSI计算周期。", 2, 200, section="震荡卖出"),
-                "rs_rsi_overbought": _p_float("RSI超买阈值", "震荡卖出RSI高于该值触发。", 40, 99, 1, section="震荡卖出"),
-                "rs_boll_period": _p_int("卖出布林周期", "震荡卖出布林带周期。", 5, 250, section="震荡卖出"),
-                "rs_boll_devfactor": _p_float("卖出布林倍数", "震荡卖出布林带标准差倍数。", 0.5, 6.0, 0.1, section="震荡卖出"),
+                # RSI超买 子参数
+                "rs_rsi_period": _p_int("RSI周期", "RSI计算周期。", 2, 200, section="震荡卖出",
+                                        show_if={"field": "range_sell", "value": "rsi_overbought"}),
+                "rs_rsi_overbought": _p_float("RSI超买阈值", "RSI > 该值时触发卖出。", 40, 99, 1, section="震荡卖出",
+                                               show_if={"field": "range_sell", "value": "rsi_overbought"}),
+                # 布林上轨 子参数
+                "rs_boll_period": _p_int("布林周期", "布林带中轨周期。", 5, 250, section="震荡卖出",
+                                         show_if={"field": "range_sell", "value": "boll_upper"}),
+                "rs_boll_devfactor": _p_float("布林倍数", "布林带标准差倍数。", 0.5, 6.0, 0.1, section="震荡卖出",
+                                               show_if={"field": "range_sell", "value": "boll_upper"}),
+
+                # ── 过渡买入 ──
+                "trans_buy": _p_select("过渡买入条件", "过渡行情下的买入信号（默认空仓，即过渡期不操作）", [
+                    {"value": "empty", "label": "空仓"},
+                    {"value": "macd_cross", "label": "MACD金叉"},
+                    {"value": "ma_cross", "label": "MA交叉"},
+                    {"value": "breakout", "label": "突破新高"},
+                    {"value": "rsi_oversold", "label": "RSI超卖"},
+                    {"value": "boll_lower", "label": "布林下轨"},
+                ], section="过渡买入"),
+                "trb_macd_fast": _p_int("MACD快线", "MACD快线周期。", 2, 200, section="过渡买入",
+                                         show_if={"field": "trans_buy", "value": "macd_cross"}),
+                "trb_macd_slow": _p_int("MACD慢线", "MACD慢线周期。", 3, 400, section="过渡买入",
+                                         show_if={"field": "trans_buy", "value": "macd_cross"}),
+                "trb_macd_signal": _p_int("MACD信号线", "MACD信号线周期。", 2, 200, section="过渡买入",
+                                           show_if={"field": "trans_buy", "value": "macd_cross"}),
+                "trb_ma_fast": _p_int("MA快线", "MA交叉快线周期。", 2, 200, section="过渡买入",
+                                      show_if={"field": "trans_buy", "value": "ma_cross"}),
+                "trb_ma_slow": _p_int("MA慢线", "MA交叉慢线周期。", 3, 400, section="过渡买入",
+                                      show_if={"field": "trans_buy", "value": "ma_cross"}),
+                "trb_breakout_period": _p_int("突破回看周期", "突破新高的回看周期。", 2, 400, section="过渡买入",
+                                              show_if={"field": "trans_buy", "value": "breakout"}),
+                "trb_rsi_period": _p_int("RSI周期", "RSI计算周期。", 2, 200, section="过渡买入",
+                                         show_if={"field": "trans_buy", "value": "rsi_oversold"}),
+                "trb_rsi_oversold": _p_float("RSI超卖阈值", "RSI < 该值时触发买入。", 1, 60, 1, section="过渡买入",
+                                             show_if={"field": "trans_buy", "value": "rsi_oversold"}),
+                "trb_boll_period": _p_int("布林周期", "布林带中轨周期。", 5, 250, section="过渡买入",
+                                          show_if={"field": "trans_buy", "value": "boll_lower"}),
+                "trb_boll_devfactor": _p_float("布林倍数", "布林带标准差倍数。", 0.5, 6.0, 0.1, section="过渡买入",
+                                               show_if={"field": "trans_buy", "value": "boll_lower"}),
+
+                # ── 过渡卖出 ──
+                "trans_sell": _p_select("过渡卖出条件", "过渡行情下的卖出信号（默认空仓，即过渡期不操作）", [
+                    {"value": "empty", "label": "空仓"},
+                    {"value": "macd_dead_cross", "label": "MACD死叉"},
+                    {"value": "atr_stop", "label": "ATR跟踪止损"},
+                    {"value": "profit_lock", "label": "利润锁定"},
+                    {"value": "rsi_overbought", "label": "RSI超买"},
+                    {"value": "boll_upper", "label": "布林上轨"},
+                ], section="过渡卖出"),
+                "trs_macd_fast": _p_int("MACD快线", "MACD快线周期。", 2, 200, section="过渡卖出",
+                                         show_if={"field": "trans_sell", "value": "macd_dead_cross"}),
+                "trs_macd_slow": _p_int("MACD慢线", "MACD慢线周期。", 3, 400, section="过渡卖出",
+                                         show_if={"field": "trans_sell", "value": "macd_dead_cross"}),
+                "trs_macd_signal": _p_int("MACD信号线", "MACD信号线周期。", 2, 200, section="过渡卖出",
+                                           show_if={"field": "trans_sell", "value": "macd_dead_cross"}),
+                "trs_atr_period": _p_int("ATR周期", "ATR计算周期。", 2, 200, section="过渡卖出",
+                                         show_if={"field": "trans_sell", "value": "atr_stop"}),
+                "trs_atr_mult": _p_float("ATR倍数", "ATR止损距离：最高价 - ATR倍数 * ATR。", 0.1, 10.0, 0.1, section="过渡卖出",
+                                         show_if={"field": "trans_sell", "value": "atr_stop"}),
+                "trs_profit_trigger": _p_float("利润触发(%)", "收益率达到该阈值后启动利润锁定。", 0.1, 200, 0.1, section="过渡卖出",
+                                               show_if={"field": "trans_sell", "value": "profit_lock"}),
+                "trs_trail_pct": _p_float("回撤锁定(%)", "从最高价回撤超过该比例时卖出。", 0.1, 50, 0.1, section="过渡卖出",
+                                          show_if={"field": "trans_sell", "value": "profit_lock"}),
+                "trs_rsi_period": _p_int("RSI周期", "RSI计算周期。", 2, 200, section="过渡卖出",
+                                         show_if={"field": "trans_sell", "value": "rsi_overbought"}),
+                "trs_rsi_overbought": _p_float("RSI超买阈值", "RSI > 该值时触发卖出。", 40, 99, 1, section="过渡卖出",
+                                               show_if={"field": "trans_sell", "value": "rsi_overbought"}),
+                "trs_boll_period": _p_int("布林周期", "布林带中轨周期。", 5, 250, section="过渡卖出",
+                                          show_if={"field": "trans_sell", "value": "boll_upper"}),
+                "trs_boll_devfactor": _p_float("布林倍数", "布林带标准差倍数。", 0.5, 6.0, 0.1, section="过渡卖出",
+                                               show_if={"field": "trans_sell", "value": "boll_upper"}),
+
+                # ── 通用止损 ──
                 "use_atr_stop": _p_bool("启用ATR止损", "持仓期间使用ATR跟踪止损作为通用止损保护。", section="通用止损"),
-                "atr_stop_period": _p_int("止损ATR周期", "通用止损ATR计算周期。", 2, 200, section="通用止损"),
-                "atr_stop_mult": _p_float("止损ATR倍数", "通用止损距离：close - atr_stop_mult * ATR。", 0.1, 10.0, 0.1, section="通用止损"),
+                "atr_stop_period": _p_int("止损ATR周期", "通用止损ATR计算周期。", 2, 200, section="通用止损",
+                                          show_if={"field": "use_atr_stop", "value": True}),
+                "atr_stop_mult": _p_float("止损ATR倍数", "止损距离：收盘价 - 倍数 * ATR。", 0.1, 10.0, 0.1, section="通用止损",
+                                          show_if={"field": "use_atr_stop", "value": True}),
             },
             default_params={
                 "detector_type": "adx",
@@ -1808,6 +1944,18 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
                 "range_sell": "rsi_overbought",
                 "rs_rsi_period": 14, "rs_rsi_overbought": 70.0,
                 "rs_boll_period": 20, "rs_boll_devfactor": 2.0,
+                "trans_buy": "empty",
+                "trb_macd_fast": 12, "trb_macd_slow": 26, "trb_macd_signal": 9,
+                "trb_ma_fast": 5, "trb_ma_slow": 20,
+                "trb_breakout_period": 20,
+                "trb_rsi_period": 14, "trb_rsi_oversold": 30.0,
+                "trb_boll_period": 20, "trb_boll_devfactor": 2.0,
+                "trans_sell": "empty",
+                "trs_macd_fast": 12, "trs_macd_slow": 26, "trs_macd_signal": 9,
+                "trs_atr_period": 14, "trs_atr_mult": 2.5,
+                "trs_profit_trigger": 5.0, "trs_trail_pct": 3.0,
+                "trs_rsi_period": 14, "trs_rsi_overbought": 70.0,
+                "trs_boll_period": 20, "trs_boll_devfactor": 2.0,
                 "use_atr_stop": True,
                 "atr_stop_period": 14, "atr_stop_mult": 2.0,
             },
