@@ -9,6 +9,7 @@ import os
 from typing import Any
 
 import pymysql
+import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -31,8 +32,6 @@ class StockSelectRequest(BaseModel):
     revenue_growth_max: float | None = None
     profit_growth_min: float | None = None
     profit_growth_max: float | None = None
-    market_cap_min: float | None = None
-    market_cap_max: float | None = None
     gross_margin_min: float | None = None
     gross_margin_max: float | None = None
     net_margin_min: float | None = None
@@ -57,6 +56,7 @@ class StockSelectRequest(BaseModel):
     ev_ebitda_min: float | None = None
     ev_ebitda_max: float | None = None
     industries: list[str] | None = None
+    exclude_types: list[str] | None = None
 
 
 FILTER_FIELD_MAPPING: dict[str, str] = {
@@ -65,7 +65,6 @@ FILTER_FIELD_MAPPING: dict[str, str] = {
     "roe": "roe",
     "revenue_growth": "revenue_growth_yoy",
     "profit_growth": "profit_growth_yoy",
-    "market_cap": "market_cap",
     "gross_margin": "gross_margin",
     "operating_margin": "operating_margin",
     "debt_ratio": "debt_ratio",
@@ -78,8 +77,35 @@ FILTER_FIELD_MAPPING: dict[str, str] = {
     "net_margin": "net_margin",
 }
 
-# 数据库中存储为比率的字段（0.10 表示 10%），前端传入百分比值（10 表示 10%），
-# 查询时需要将前端值除以 100 转换为比率
+# 巨潮资讯网 API 请求头
+_CNINFO_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json, text/javascript, */*",
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "Referer": "http://www.cninfo.com.cn/new/commonUrl?url=disclosure/list/notice",
+}
+
+
+def _get_cninfo_orgid(stock_code: str) -> str:
+    """通过巨潮 API 查询股票对应的机构ID"""
+    url = "http://www.cninfo.com.cn/new/information/topSearch/query"
+    data = {"keyWord": stock_code, "maxSecNum": 10, "maxListNum": 5}
+    try:
+        resp = requests.post(url, data=data, headers=_CNINFO_HEADERS, timeout=10)
+        result = resp.json()
+        items = result if isinstance(result, list) else result.get("keyBoardList", [])
+        for item in items:
+            if item.get("code") == stock_code:
+                return item.get("orgId", "")
+        if items:
+            return items[0].get("orgId", "")
+    except Exception:
+        pass
+    return ""
+
+
+# 数据库中存储为百分比形式（45.29 表示 45.29%），前端传入也是百分比值（10 表示 10%），
+# 查询时直接比较即可，无需转换
 RATIO_FIELDS: set[str] = {
     "roe", "gross_margin", "net_margin", "operating_margin",
     "revenue_growth", "profit_growth", "dividend_yield",
@@ -95,15 +121,11 @@ def _build_where_clause(params: dict[str, Any]) -> tuple[str, list[Any]]:
         min_val = params.get(f"{prefix}_min")
         if min_val is not None:
             conditions.append(f"f.{db_column} >= %s")
-            if prefix in RATIO_FIELDS:
-                min_val = min_val / 100.0
             values.append(min_val)
 
         max_val = params.get(f"{prefix}_max")
         if max_val is not None:
             conditions.append(f"f.{db_column} <= %s")
-            if prefix in RATIO_FIELDS:
-                max_val = max_val / 100.0
             values.append(max_val)
 
     if params.get("report_date"):
@@ -116,6 +138,21 @@ def _build_where_clause(params: dict[str, Any]) -> tuple[str, list[Any]]:
         placeholders = ",".join(["%s"] * len(industries))
         conditions.append(f"m.sector_level1 IN ({placeholders})")
         values.extend(industries)
+
+    # 排除特定股票类型（科创板、创业板、ST股）
+    exclude_types = params.get("exclude_types")
+    if exclude_types:
+        exclude_conditions = []
+        for t in exclude_types:
+            if t == "kcb":
+                exclude_conditions.append("m.stock_code NOT LIKE '688%%'")
+            elif t == "cyb":
+                exclude_conditions.append("m.stock_code NOT LIKE '300%%'")
+                exclude_conditions.append("m.stock_code NOT LIKE '301%%'")
+            elif t == "st":
+                exclude_conditions.append("(m.stock_name IS NULL OR (m.stock_name NOT LIKE '%%ST%%' AND m.stock_name NOT LIKE '%%退市%%'))")
+        if exclude_conditions:
+            conditions.append("(" + " AND ".join(exclude_conditions) + ")")
 
     where = " AND ".join(conditions) if conditions else "1=1"
     return where, values
@@ -149,6 +186,17 @@ _LATEST_REPORT_SUBQUERY = """
     ) latest ON f2.stock_code = latest.stock_code AND f2.report_date = latest.latest_date
 """
 
+_LATEST_ANNUAL_ROE_SUBQUERY = """
+    SELECT f2.stock_code, f2.roe as annual_roe
+    FROM trade_stock_financial f2
+    INNER JOIN (
+        SELECT stock_code, MAX(report_date) as latest_annual
+        FROM trade_stock_financial
+        WHERE report_date LIKE '%%-12-31'
+        GROUP BY stock_code
+    ) annual ON f2.stock_code = annual.stock_code AND f2.report_date = annual.latest_annual
+"""
+
 
 @router.post("/query")
 def stock_select(body: StockSelectRequest) -> dict[str, Any]:
@@ -156,7 +204,7 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
     基于财务指标筛选股票
 
     支持的筛选指标：
-    - 估值指标：pe_ttm, pb, market_cap
+    - 估值指标：pe_ttm, pb
     - 盈利指标：roe, gross_margin
     - 成长指标：revenue_growth_yoy, profit_growth_yoy
     - 财务健康：debt_ratio
@@ -196,8 +244,6 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
             "revenue_growth_max": body.revenue_growth_max,
             "profit_growth_min": body.profit_growth_min,
             "profit_growth_max": body.profit_growth_max,
-            "market_cap_min": body.market_cap_min,
-            "market_cap_max": body.market_cap_max,
             "gross_margin_min": body.gross_margin_min,
             "gross_margin_max": body.gross_margin_max,
             "net_margin_min": body.net_margin_min,
@@ -220,12 +266,13 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
             "ev_ebitda_max": body.ev_ebitda_max,
             "report_date": body.report_date,
             "industries": body.industries,
+            "exclude_types": body.exclude_types,
         }
 
         where, values = _build_where_clause(params)
 
         page = max(body.page, 1)
-        page_size = min(max(body.page_size, 1), 200)
+        page_size = max(body.page_size, 1)
         offset = (page - 1) * page_size
 
         # 统计总数（使用子查询确保每只股票只计算一次）
@@ -248,8 +295,7 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
                 f.report_date,
                 f.pe_ttm,
                 f.pb,
-                f.market_cap,
-                f.roe,
+                COALESCE(ar.annual_roe, f.roe) as roe,
                 f.gross_margin,
                 f.operating_margin,
                 f.net_margin,
@@ -267,18 +313,29 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
                 f.ev_ebitda
             FROM ({_LATEST_REPORT_SUBQUERY}) f
             LEFT JOIN trade_stock_master m ON f.stock_code = m.stock_code
+            LEFT JOIN ({_LATEST_ANNUAL_ROE_SUBQUERY}) ar ON f.stock_code = ar.stock_code
             WHERE {where}
-            ORDER BY f.roe DESC
+            ORDER BY COALESCE(ar.annual_roe, f.roe) DESC
             LIMIT %s OFFSET %s
         """
         rows = query_dict(conn, data_sql, tuple(values + [page_size, offset]))
 
-        # 将比率字段转回百分比，方便前端展示
+        # 数据库中比率字段已存储为百分比形式，直接保留原值（如 roe=45.29 表示 45.29%）
+        # 只需确保数值格式正确即可
         ratio_db_columns = {FILTER_FIELD_MAPPING[k] for k in RATIO_FIELDS}
         for row in rows:
             for col in ratio_db_columns:
                 if col in row and row[col] is not None:
-                    row[col] = round(row[col] * 100, 4)
+                    row[col] = round(float(row[col]), 4)
+
+        # 为每只股票获取巨潮资讯网的 orgId，用于生成个股链接
+        for row in rows:
+            stock_code_raw = row.get("stock_code", "")
+            if stock_code_raw:
+                code_num = stock_code_raw.split(".")[0]
+                if code_num:
+                    org_id = _get_cninfo_orgid(code_num)
+                    row["org_id"] = org_id
 
         logger.info("股票筛选完成", extra={
             "total": total,
@@ -296,7 +353,6 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
                 "roe": {"min": body.roe_min, "max": body.roe_max},
                 "revenue_growth": {"min": body.revenue_growth_min, "max": body.revenue_growth_max},
                 "profit_growth": {"min": body.profit_growth_min, "max": body.profit_growth_max},
-                "market_cap": {"min": body.market_cap_min, "max": body.market_cap_max},
                 "gross_margin": {"min": body.gross_margin_min, "max": body.gross_margin_max},
                 "operating_margin": {"min": body.operating_margin_min, "max": body.operating_margin_max},
                 "quick_ratio": {"min": body.quick_ratio_min, "max": body.quick_ratio_max},
@@ -306,6 +362,7 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
                 "ebitda": {"min": body.ebitda_min, "max": body.ebitda_max},
                 "ev_ebitda": {"min": body.ev_ebitda_min, "max": body.ev_ebitda_max},
                 "debt_ratio": {"max": body.debt_ratio_max},
+                "exclude_types": body.exclude_types or [],
             }
         }
     except Exception as e:
@@ -327,7 +384,7 @@ def get_filter_criteria() -> dict[str, Any]:
         "criteria": [
             {
                 "name": "pe_ttm",
-                "label": "市盈率TTM",
+                "label": "PE（市盈率）",
                 "unit": "",
                 "description": "市盈率越低，估值越便宜",
                 "range": {"min": 0, "max": 100},
@@ -335,7 +392,7 @@ def get_filter_criteria() -> dict[str, Any]:
             },
             {
                 "name": "pb",
-                "label": "市净率",
+                "label": "PB（市净率）",
                 "unit": "",
                 "description": "市净率越低，估值越便宜",
                 "range": {"min": 0, "max": 10},
@@ -363,14 +420,6 @@ def get_filter_criteria() -> dict[str, Any]:
                 "unit": "%",
                 "description": "净利润增长率越高成长性越好",
                 "range": {"min": -50, "max": 100},
-                "type": "range"
-            },
-            {
-                "name": "market_cap",
-                "label": "总市值",
-                "unit": "亿",
-                "description": "公司总市值规模",
-                "range": {"min": 0, "max": 10000},
                 "type": "range"
             },
             {
@@ -482,7 +531,6 @@ FACTOR_FIELD_MAPPING: dict[str, str] = {
     "roe": "roe",
     "revenue_growth": "revenue_growth_yoy",
     "profit_growth": "profit_growth_yoy",
-    "market_cap": "market_cap",
     "gross_margin": "gross_margin",
     "operating_margin": "operating_margin",
     "net_margin": "net_margin",

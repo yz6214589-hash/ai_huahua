@@ -674,6 +674,12 @@ def rag_query(
 
 
 def resolve_stock_name_by_code(code: str) -> str | None:
+    """
+    根据股票代码从 RAG 索引中解析中文名称。
+
+    异常保护：底层 sqlite 出现故障（如目录无写权限、文件被锁、磁盘满等）
+    时返回 None 而非抛出异常，避免阻塞上游 API（如创建研报任务）。
+    """
     c = str(code or "").strip()
     if not c:
         return None
@@ -682,8 +688,11 @@ def resolve_stock_name_by_code(code: str) -> str | None:
     if not (c.isdigit() and len(c) == 6):
         return None
 
-    s = get_rag_settings()
-    conn = _connect_db(s.db_path)
+    try:
+        s = get_rag_settings()
+        conn = _connect_db(s.db_path)
+    except Exception:
+        return None
     try:
         _init_db(conn)
         row = conn.execute(
@@ -699,6 +708,11 @@ def resolve_stock_name_by_code(code: str) -> str | None:
         if row and row[0]:
             return str(row[0])
         return None
+    except Exception:
+        return None
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 

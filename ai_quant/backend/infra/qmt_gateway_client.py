@@ -7,14 +7,15 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import urllib.request
 import urllib.error
 import urllib.parse
 from typing import Any
 
-logger = logging.getLogger("qmt_gateway_client")
+from infra.storage.logging_service import get_logger
+
+logger = get_logger("qmt_gateway_client")
 
 
 def _base_url() -> str:
@@ -39,11 +40,15 @@ def request_json(
     account_type: str | None = None,
 ) -> Any:
     base = _base_url()
+    tok = _token()
+    logger.info(f"QMT请求: method={method}, path={path}, base_url={base}, token_set={bool(tok)}, data_keys={list(data.keys()) if data else None}")
+    
     if not base:
+        logger.error("AI_QUANT_QMT_GATEWAY_BASE 未配置")
         raise ConnectionError("AI_QUANT_QMT_GATEWAY_BASE 未配置")
+    
     url = f"{base}{path}{_account_query(account_type)}"
     hdrs = {"Content-Type": "application/json"}
-    tok = _token()
     if tok:
         hdrs["X-API-Token"] = tok
     body = json.dumps(data).encode("utf-8") if data is not None else None
@@ -53,9 +58,12 @@ def request_json(
             raw = resp.read().decode("utf-8")
             return json.loads(raw)
     except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")
-        logger.error("QMT Gateway HTTP %s %s: %s", e.code, url, detail)
-        raise ConnectionError(f"QMT Gateway {e.code}: {detail[:200]}")
+        body = e.read().decode("utf-8", errors="replace")
+        logger.warning("QMT Gateway HTTP %s %s", e.code, url)
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            raise ConnectionError(f"QMT Gateway {e.code}: {body[:200]}")
     except urllib.error.URLError as e:
         logger.error("QMT Gateway 不可达 %s: %s", url, e)
         raise ConnectionError(f"QMT Gateway 不可达: {e}")

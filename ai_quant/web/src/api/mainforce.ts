@@ -2,200 +2,90 @@
  * 主力识别API客户端
  */
 
-import { fetchJson } from './client'
+import { postJson, fetchJson } from './client'
 
-// 主力活动接口
-export interface MainForceActivity {
-  id?: string
-  date: string
+// 时间范围类型
+export type TimeRange = 'today' | 'yesterday' | 'last_5_days'
+
+// 单股主力行为分析结果接口
+export interface MainForceAnalysis {
   stock_code: string
   stock_name: string
-  activity_type: 'BUY' | 'SELL'
-  volume: number
-  amount: number
-  price: number
-  ratio: number
-  mainforce_type: 'institution' | 'hot_money' | 'retail'
-  description?: string
-  indicators?: any
-  is_anomaly?: number
-  alert_status?: 'none' | 'pending' | 'triggered'
-}
-
-// 告警规则接口
-export interface MainForceRule {
-  id: string
-  name: string
-  rule_type: 'volume_anomaly' | 'large_order' | 'netflow' | 'position_change'
-  description?: string
-  enabled: boolean
-  threshold: number
-  threshold_unit?: string
-  condition?: any
-  action?: string
-  priority?: number
-  alert_template?: string
-}
-
-// K线标注接口
-export interface KlineMarker {
-  id?: string
-  stock_code: string
-  stock_name: string
-  marker_date: string
-  marker_price: number
-  marker_type: 'BUY' | 'SELL'
-  volume?: number
-  amount?: number
-  mainforce_type?: 'institution' | 'hot_money' | 'retail'
-  source?: 'auto' | 'manual'
-  activity_id?: string
-  description?: string
-  is_visible?: number
-}
-
-// 统计摘要接口
-export interface MainForceSummary {
-  today: {
-    total_count: number
-    buy_count: number
-    sell_count: number
-    total_buy_amount: number
-    total_sell_amount: number
-    net_flow: number
-    institution_count: number
-    hot_money_count: number
+  analysis_date: string
+  time_range: TimeRange
+  time_range_label: string
+  data_bars?: number
+  actual_bars?: number
+  expected_bars?: number
+  data_complete?: boolean
+  warning?: string
+  features: Record<string, number>
+  classification: {
+    primary_type: 'institution' | 'hot_money' | 'retail'
+    confidence: number
+    type_scores: Record<string, number>
+    direction: 'strong_buy' | 'weak_buy' | 'neutral' | 'weak_sell' | 'strong_sell'
+    direction_score: number
+    ofi_signed: number
+    ofi_signed_recent: number
   }
-  week: {
-    total_count: number
-    total_amount: number
+  indicators: {
+    volume_trend: string
+    price_trend: string
+    capital_flow: string
+    activity_level: string
   }
-  active_rules: number
+  signals: Array<{
+    date: string
+    type: string
+    strength: number
+    description: string
+  }>
+  summary: string
+  error?: string
 }
 
-// 获取主力活动列表
-export async function getMainForceActivities(params?: {
-  stock_code?: string
-  activity_type?: string
-  mainforce_type?: string
-  start_date?: string
-  end_date?: string
-  alert_status?: string
-  page?: number
-  page_size?: number
-}): Promise<{ data: MainForceActivity[], total: number }> {
-  const searchParams = new URLSearchParams()
-  
-  if (params?.stock_code) searchParams.append('stock_code', params.stock_code)
-  if (params?.activity_type) searchParams.append('activity_type', params.activity_type)
-  if (params?.mainforce_type) searchParams.append('mainforce_type', params.mainforce_type)
-  if (params?.start_date) searchParams.append('start_date', params.start_date)
-  if (params?.end_date) searchParams.append('end_date', params.end_date)
-  if (params?.alert_status) searchParams.append('alert_status', params.alert_status)
-  if (params?.page) searchParams.append('page', String(params.page))
-  if (params?.page_size) searchParams.append('page_size', String(params.page_size))
-  
-  const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
-  const data = await fetchJson<MainForceActivity[]>(`/api/mainforce/activities${query}`)
-  
-  return { data, total: data.length }
-}
-
-// 创建主力活动
-export async function createMainForceActivity(activity: MainForceActivity): Promise<{ id: string }> {
-  return fetchJson('/api/mainforce/activities', {
-    method: 'POST',
-    body: JSON.stringify(activity)
-  })
-}
-
-// 获取单个主力活动
-export async function getMainForceActivity(id: string): Promise<MainForceActivity> {
-  return fetchJson<MainForceActivity>(`/api/mainforce/activities/${id}`)
-}
-
-// 获取告警规则列表
-export async function getMainForceRules(enabled?: boolean): Promise<MainForceRule[]> {
-  const query = enabled !== undefined ? `?enabled=${enabled}` : ''
-  return fetchJson<MainForceRule[]>(`/api/mainforce/rules${query}`)
-}
-
-// 更新告警规则
-export async function updateMainForceRule(
-  ruleId: string, 
-  rule: Partial<MainForceRule>
-): Promise<{ message: string }> {
-  return fetchJson(`/api/mainforce/rules/${ruleId}`, {
-    method: 'PUT',
-    body: JSON.stringify(rule)
-  })
-}
-
-// 触发规则检查
-export async function triggerMainForceRule(
-  ruleId: string,
+// 触发单股主力行为分析
+export async function analyzeMainForce(
   stockCode: string,
-  stockName: string,
-  value: number
-): Promise<{
-  triggered: boolean
-  rule_name: string
-  threshold: number
-  actual_value: number
-  message: string | null
-}> {
-  const params = new URLSearchParams({
+  timeRange: TimeRange = 'today'
+): Promise<MainForceAnalysis> {
+  return postJson<MainForceAnalysis>('/api/v1/mainforce/analyze', {
     stock_code: stockCode,
-    stock_name: stockName,
-    value: String(value)
-  })
-  
-  return fetchJson(`/api/mainforce/rules/${ruleId}/trigger?${params.toString()}`, {
-    method: 'POST'
+    time_range: timeRange,
   })
 }
 
-// 获取K线标注列表
-export async function getKlineMarkers(params?: {
-  stock_code?: string
-  marker_type?: string
-  start_date?: string
-  end_date?: string
-}): Promise<KlineMarker[]> {
-  const searchParams = new URLSearchParams()
-  
-  if (params?.stock_code) searchParams.append('stock_code', params.stock_code)
-  if (params?.marker_type) searchParams.append('marker_type', params.marker_type)
-  if (params?.start_date) searchParams.append('start_date', params.start_date)
-  if (params?.end_date) searchParams.append('end_date', params.end_date)
-  
-  const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
-  return fetchJson<KlineMarker[]>(`/api/mainforce/markers${query}`)
+// 获取单股分析结果
+export async function getMainForceAnalysis(
+  stockCode: string,
+  timeRange: TimeRange = 'today'
+): Promise<MainForceAnalysis> {
+  return fetchJson<MainForceAnalysis>(
+    `/api/v1/mainforce/analysis/${encodeURIComponent(stockCode)}?time_range=${timeRange}`
+  )
 }
 
-// 创建K线标注
-export async function createKlineMarker(marker: KlineMarker): Promise<{ id: string }> {
-  return fetchJson('/api/mainforce/markers', {
-    method: 'POST',
-    body: JSON.stringify(marker)
-  })
-}
-
-// 获取统计摘要
-export async function getMainForceSummary(): Promise<MainForceSummary> {
-  return fetchJson<MainForceSummary>('/api/mainforce/summary')
-}
-
-// 获取统计列表
-export async function getMainForceStatistics(params?: {
-  start_date?: string
-  end_date?: string
-}): Promise<any[]> {
-  const searchParams = new URLSearchParams()
+// 数据完整性检查
+export function checkDataCompleteness(analysis: MainForceAnalysis): {
+  complete: boolean
+  warning: string | null
+  actualVsExpected: string
+} {
+  const actual = analysis.actual_bars ?? analysis.data_bars ?? 0
+  const expected = analysis.expected_bars ?? 0
   
-  if (params?.start_date) searchParams.append('start_date', params.start_date)
-  if (params?.end_date) searchParams.append('end_date', params.end_date)
+  const ratio = expected > 0 ? (actual / expected) * 100 : 100
+  const complete = ratio >= 90
   
-  const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
-  return fetchJson<any[]>(`/api/mainforce/statistics${query}`)
+  let warning: string | null = analysis.warning ?? null
+  if (!complete && !warning) {
+    warning = `数据缺失一部分（实际${actual}条/期望${expected}条），分析结果可能有误请谨慎对待`
+  }
+  
+  return {
+    complete,
+    warning,
+    actualVsExpected: `${actual}/${expected}`,
+  }
 }

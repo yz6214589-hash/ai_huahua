@@ -5,7 +5,7 @@
  */
 
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { ChartCandlestick, ChevronLeft, ChevronRight, Download, ExternalLink, Gauge, GitBranch, Shield, Star, Target, Workflow, Zap } from 'lucide-react'
+import { Brain, ChartCandlestick, ChevronLeft, ChevronRight, Download, ExternalLink, Gauge, GitBranch, Settings, Shield, Star, Target, Workflow, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { AssistantDrawer } from '@/components/AssistantDrawer'
@@ -49,6 +49,7 @@ const Sidebar = memo(function Sidebar({ collapsed, onToggle }: { collapsed: bool
     { to: '/strategy', label: '策略分析', icon: ChartCandlestick },
     { to: '/stock-select', label: '选股', icon: Target },
     { to: '/opportunity', label: '机会捕捉', icon: Zap },
+    { to: '/ml-training', label: 'ML训练', icon: Brain },
     { to: '/risk', label: '风控中心', icon: Shield },
     { to: '/execution', label: '交易终端', icon: Workflow },
     { to: '/workflow', label: '工作流', icon: GitBranch },
@@ -133,6 +134,8 @@ const Topbar = memo(function Topbar() {
     if (location.pathname.startsWith('/opportunity')) return '机会捕捉'
     if (location.pathname.startsWith('/watchlist')) return '自选股'
     if (location.pathname.startsWith('/performance')) return '绩效报告'
+    if (location.pathname.startsWith('/ml-training')) return 'ML训练'
+    if (location.pathname.startsWith('/admin')) return '管理后台'
     if (location.pathname.startsWith('/stock/')) return '个股详情'
     return '首页'
   }, [location.pathname])

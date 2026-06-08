@@ -62,7 +62,7 @@ def run_param_search(
     df: pd.DataFrame,
     strategy_cls: Any,
     param_grid: dict,
-    initial_cash: float = 100000.0,
+    initial_cash: float = 1000000.0,
     **kwargs: Any,
 ) -> ParamSearchResult:
     """

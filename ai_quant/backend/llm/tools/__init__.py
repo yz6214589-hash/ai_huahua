@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -17,7 +18,7 @@ def _backend_root() -> Path:
 
 
 def _skills_root() -> Path:
-    return _backend_root() / "llm" / "skills"
+    return _backend_root() / "backend" / "llm" / "skills"
 
 
 def _read_text(path: Path) -> str:
@@ -26,12 +27,18 @@ def _read_text(path: Path) -> str:
 
 def _run_skill_script(script: str, args: list[str] | None = None, *, timeout: int = 300) -> str:
     base = _backend_root()
-    rel = f"llm/skills/{script.lstrip('/')}"
+
+    # 拆分内联参数：第一个 token 是脚本路径，后续是内联参数
+    parts = script.strip().split()
+    script_rel = parts[0]
+    inline_args = parts[1:]
+
+    rel = f"backend/llm/skills/{script_rel.lstrip('/')}"
     script_path = (base / rel).resolve()
     if base not in script_path.parents:
         raise ValueError("script 路径不允许跳出项目目录")
     if not script_path.exists():
-        raise FileNotFoundError(f"script 不存在: {script}")
+        raise FileNotFoundError(f"script 不存在: {script_rel}")
     if script_path.suffix.lower() != ".py":
         raise ValueError("仅允许执行 .py 脚本")
 
@@ -39,9 +46,10 @@ def _run_skill_script(script: str, args: list[str] | None = None, *, timeout: in
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
 
-    cmd = [sys.executable, str(script_path)]
-    if args:
-        cmd.extend([str(x) for x in args])
+    # 合并内联参数和显式参数
+    all_args = inline_args + (list(args) if args else [])
+
+    cmd = [sys.executable, str(script_path)] + all_args
 
     result = subprocess.run(
         cmd,
@@ -279,16 +287,15 @@ _TOOL_DEFS: list[dict[str, Any]] = [
     {
         "name": "write_report",
         "title": "生成研报",
-        "description": "按照五步法框架生成深度投资研报",
+        "description": "使用国泰君安五步法（信息差->逻辑差->预期差->催化剂->结论+风险闭环）自动生成深度投资研报。通义千问会自动联网搜索公司最新信息，无需本地数据。只需提供公司名称一步即可完成。",
         "target": "skills.write-report",
         "tags": ["research", "report"],
         "input_schema": {
             "type": "object",
             "properties": {
-                "stock": {"type": "string", "description": "股票代码"},
-                "template": {"type": "string", "description": "研报模板 - five_step/custom", "default": "five_step"},
+                "stock_name": {"type": "string", "description": "公司名称，如：海南发展、贵州茅台"},
             },
-            "required": ["stock"],
+            "required": ["stock_name"],
         },
     },
     {
@@ -338,56 +345,74 @@ def run_tool(tool_name: str, payload: dict[str, Any]) -> dict[str, Any]:
     if tool_name == "web_search":
         query = str(payload.get("query") or "")
         search_type = str(payload.get("type") or "general")
-        script = f"web-search-qwen/scripts/search_market.py --query {query} --type {search_type}"
-        return {"script": script, "output": _run_skill_script(script, timeout=120)}
+        if not query:
+            return {"error": "请提供搜索关键词（query）"}
+        # 使用 args 列表传参，避免含空格的 query 被 split 错误分割
+        script = "web-search-qwen/scripts/search_market.py"
+        return {"script": script, "output": _run_skill_script(script, args=["--query", query, "--type", search_type], timeout=120)}
     if tool_name == "web_search_universal":
         query = str(payload.get("query") or "")
         topic = str(payload.get("topic") or "general")
         max_results = int(payload.get("max_results") or 5)
-        script = (
-            f"web-search-universal/scripts/search.py --query {query} "
-            f"--topic {topic} --max-results {max_results}"
-        )
-        return {"script": script, "output": _run_skill_script(script, timeout=120)}
+        if not query:
+            return {"error": "请提供搜索关键词（query）"}
+        # 使用 args 列表传参，避免含空格的 query 被 split 错误分割
+        script = "web-search-universal/scripts/search.py"
+        return {"script": script, "output": _run_skill_script(script, args=["--query", query, "--topic", topic, "--max-results", str(max_results)], timeout=120)}
     if tool_name == "query_pdf":
         query = str(payload.get("query") or "")
         stock = str(payload.get("stock") or "")
-        script = f"read-pdf/scripts/query_report.py --query {query}"
+        if not query:
+            return {"error": "请提供查询问题（query）"}
+        script = "read-pdf/scripts/query_report.py"
+        pdf_args = ["--query", query]
         if stock:
-            script += f" --stock {stock}"
-        return {"script": script, "output": _run_skill_script(script, timeout=120)}
+            pdf_args.extend(["--stock", stock])
+        return {"script": script, "output": _run_skill_script(script, args=pdf_args, timeout=120)}
     if tool_name == "stock_price":
         code = str(payload.get("code") or "")
         period = str(payload.get("period") or "1d")
         count = int(payload.get("count") or 20)
-        script = f"stock-price/scripts/get_kline.py {code} {period} {count}"
-        return {"script": script, "output": _run_skill_script(script, timeout=60)}
+        if not code:
+            return {"error": "请提供股票代码（code）"}
+        script = "stock-price/scripts/get_kline.py"
+        return {"script": script, "output": _run_skill_script(script, args=[code, period, str(count)], timeout=60)}
     if tool_name == "financial_analysis":
         stock = str(payload.get("stock") or "")
         years = int(payload.get("years") or 5)
-        script = f"financial-analysis/scripts/ratio_analysis.py --stock {stock} --years {years}"
-        return {"script": script, "output": _run_skill_script(script, timeout=120)}
+        if not stock:
+            return {"error": "请提供股票代码（stock）"}
+        script = "financial-analysis/scripts/ratio_analysis.py"
+        return {"script": script, "output": _run_skill_script(script, args=["--stock", stock, "--years", str(years)], timeout=120)}
     if tool_name == "compare_reports_period":
         stock = str(payload.get("stock") or "")
         topics = str(payload.get("topics") or "营收,净利润,毛利率,经营情况")
-        script = f"compare-reports/scripts/cross_period.py --stock {stock} --topics {topics}"
-        return {"script": script, "output": _run_skill_script(script, timeout=120)}
+        if not stock:
+            return {"error": "请提供股票代码（stock）"}
+        script = "compare-reports/scripts/cross_period.py"
+        return {"script": script, "output": _run_skill_script(script, args=["--stock", stock, "--topics", topics], timeout=120)}
     if tool_name == "compare_reports_company":
         stocks = str(payload.get("stocks") or "")
         topic = str(payload.get("topic") or "经营状况和盈利能力")
-        script = f"compare-reports/scripts/cross_company.py --stocks {stocks} --topic {topic}"
-        return {"script": script, "output": _run_skill_script(script, timeout=120)}
+        if not stocks:
+            return {"error": "请提供股票代码列表（stocks）"}
+        script = "compare-reports/scripts/cross_company.py"
+        return {"script": script, "output": _run_skill_script(script, args=["--stocks", stocks, "--topic", topic], timeout=120)}
     if tool_name == "sentiment_analysis":
         query = str(payload.get("query") or "")
         source = str(payload.get("source") or "news")
-        script = f"sentiment-analysis/scripts/sentiment_scorer.py --query {query} --source {source}"
-        return {"script": script, "output": _run_skill_script(script, timeout=120)}
+        if not query:
+            return {"error": "请提供查询关键词（query）"}
+        script = "sentiment-analysis/scripts/sentiment_scorer.py"
+        return {"script": script, "output": _run_skill_script(script, args=["--query", query, "--source", source], timeout=120)}
     if tool_name == "strategy_backtest":
         code = str(payload.get("code") or "")
         strategy = str(payload.get("strategy") or "macd")
         count = int(payload.get("count") or 250)
-        script = f"strategy-backtest/scripts/run_backtest.py --code {code} --strategy {strategy} --count {count}"
-        return {"script": script, "output": _run_skill_script(script, timeout=180)}
+        if not code:
+            return {"error": "请提供股票代码（code）"}
+        script = "strategy-backtest/scripts/run_backtest.py"
+        return {"script": script, "output": _run_skill_script(script, args=["--code", code, "--strategy", strategy, "--count", str(count)], timeout=180)}
     if tool_name == "trade_order":
         action = str(payload.get("action") or "")
         if action == "place_order":
@@ -395,17 +420,34 @@ def run_tool(tool_name: str, payload: dict[str, Any]) -> dict[str, Any]:
             price = float(payload.get("price") or 0)
             qty = int(payload.get("qty") or 0)
             side = str(payload.get("side") or "buy")
-            script = f"trade-order/scripts/place_order.py --symbol {symbol} --price {price} --qty {qty} --side {side}"
+            script = "trade-order/scripts/place_order.py"
+            return {"script": script, "output": _run_skill_script(script, args=["--symbol", symbol, "--price", str(price), "--qty", str(qty), "--side", side], timeout=60)}
         elif action == "query_account":
             script = "trade-order/scripts/query_account.py"
+            return {"script": script, "output": _run_skill_script(script, timeout=60)}
         else:
             raise ValueError(f"未知的交易操作: {action}")
-        return {"script": script, "output": _run_skill_script(script, timeout=60)}
     if tool_name == "write_report":
-        stock = str(payload.get("stock") or "")
-        template = str(payload.get("template") or "five_step")
-        script = f"write-report/scripts/report_generator.py --stock {stock} --template {template}"
-        return {"script": script, "output": _run_skill_script(script, timeout=300)}
+        # 兼容多种参数名：stock_name / company_name / stock / company / name
+        stock_name = (
+            str(payload.get("stock_name") or "")
+            or str(payload.get("company_name") or "")
+            or str(payload.get("stock") or "")
+            or str(payload.get("company") or "")
+            or str(payload.get("name") or "")
+        )
+        if not stock_name:
+            return {"error": "请提供公司名称（stock_name），如：海南发展、贵州茅台"}
+        # 调用自包含的研报生成脚本（联网搜索 + 五步法 + LLM，无需 RAG/FAISS）
+        result = _run_skill_script("write-report/scripts/generate_report.py", args=["--stock_name", stock_name, "--model", "qwen-plus"], timeout=180)
+        try:
+            data = json.loads(result)
+            if data.get("status") == "success":
+                return {"status": "success", "stock_name": stock_name, "report": data["report"]}
+            return data
+        except (json.JSONDecodeError, KeyError):
+            # 如果 JSON 解析失败，返回原始结果
+            return {"status": "generated", "stock_name": stock_name, "raw_output": result}
     if tool_name == "skills.exec":
         script = str(payload.get("script") or "").strip()
         if not script:

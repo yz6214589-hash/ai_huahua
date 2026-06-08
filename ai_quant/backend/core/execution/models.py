@@ -7,59 +7,29 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Side(str, Enum):
-    buy = "buy"
-    sell = "sell"
-
-
-class StrategyType(str, Enum):
-    twap = "twap"
-    vwap = "vwap"
-    rl = "rl"
-
-
-class CancelRetryRule(BaseModel):
-    max_retries: int = Field(default=0, ge=0, le=20)
-    wait_seconds: float = Field(default=2.0, ge=0.0, le=120.0)
-
-
-class ExecutionConstraints(BaseModel):
-    max_participation_rate: float = Field(default=0.1, gt=0.0, le=1.0)
-    max_single_order_qty: int = Field(default=10_000, ge=100)
-    cancel_retry: CancelRetryRule = Field(default_factory=CancelRetryRule)
-    slippage_alert_bps: float = Field(default=50.0, ge=0.0, le=10_000.0)
+    """交易方向枚举"""
+    buy = "buy"    # 买入
+    sell = "sell"  # 卖出
 
 
 class ExecutionTaskCreate(BaseModel):
-    symbol: str
-    side: Side
-    total_qty: int = Field(ge=100)
-    num_steps: int = Field(default=48, ge=1, le=390)
-    strategy: StrategyType
-    rl_model_path: str | None = None
-    impact_eta: float = Field(default=0.1, ge=0.0, le=10.0)
-    impact_gamma: float = Field(default=0.05, ge=0.0, le=10.0)
-    adv: float | None = Field(default=None, gt=0.0)
-    constraints: ExecutionConstraints = Field(default_factory=ExecutionConstraints)
+    """创建执行任务的请求模型"""
+    symbol: str                                                    # 股票代码
+    side: Side                                                     # 交易方向
+    total_qty: int = Field(ge=100)                                 # 总委托数量，最小100股
 
 
 class ExecutionTask(BaseModel):
+    """执行任务的完整数据模型"""
     model_config = ConfigDict(protected_namespaces=())
 
-    id: str
-    symbol: str
-    side: Side
-    total_qty: int
-    num_steps: int
-    strategy: StrategyType
-    rl_model_path: str | None
-    impact_eta: float
-    impact_gamma: float
-    adv: float
-    constraints: ExecutionConstraints
-    status: Literal["draft", "running", "stopped", "finished", "failed"]
-    created_at: str
-    started_at: str | None = None
-    finished_at: str | None = None
-    error: str | None = None
-    meta: dict[str, Any] = Field(default_factory=dict)
-
+    id: str                                                        # 任务唯一标识UUID
+    symbol: str                                                    # 股票代码
+    side: Side                                                     # 交易方向
+    total_qty: int                                                 # 总委托数量
+    status: Literal["draft", "running", "stopped", "finished", "failed"]  # 任务状态
+    created_at: str                                                # 创建时间（ISO格式）
+    started_at: str | None = None                                  # 开始执行时间
+    finished_at: str | None = None                                 # 完成时间
+    error: str | None = None                                       # 错误信息（仅failed状态有值）
+    meta: dict[str, Any] = Field(default_factory=dict)             # 扩展元数据

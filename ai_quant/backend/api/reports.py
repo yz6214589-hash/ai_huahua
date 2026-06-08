@@ -199,13 +199,16 @@ def _check_llm_available(mode: str) -> str | None:
 def _resolve_stock_names(stock_codes: list[str]) -> list[str]:
     """
     根据股票代码列表解析对应的中文名称
-    
+
     优先从RAG服务获取股票名称，若未命中则通过search_stocks查询
     确保返回的名称列表与输入的代码列表长度一致
-    
+
+    异常保护：RAG 数据库或 search_stocks 任一环节失败都优雅降级，
+    保证创建研报任务的核心流程不被阻塞。
+
     Args:
         stock_codes: 股票代码列表
-        
+
     Returns:
         对应的中文名称列表
     """
@@ -214,19 +217,26 @@ def _resolve_stock_names(stock_codes: list[str]) -> list[str]:
         text = str(code or "").strip()
         if not text:
             continue
-        # 优先从RAG服务获取名称
-        rag_name = resolve_stock_name_by_code(text)
+        # 优先从RAG服务获取名称（RAG 内部已做异常保护）
+        rag_name = None
+        try:
+            rag_name = resolve_stock_name_by_code(text)
+        except Exception:
+            rag_name = None
         if rag_name:
             names.append(rag_name)
             continue
-        # 通过搜索服务查询名称
-        r = search_stocks(q=text, limit=1)
-        items = r.get("items") if isinstance(r, dict) else None
-        name = None
-        if isinstance(items, list) and items:
-            first = items[0] if isinstance(items[0], dict) else {}
-            name = first.get("name")
-        names.append(str(name or text))
+        # 通过搜索服务查询名称（DB 故障时降级为返回原始代码）
+        try:
+            r = search_stocks(q=text, limit=1)
+            items = r.get("items") if isinstance(r, dict) else None
+            name = None
+            if isinstance(items, list) and items:
+                first = items[0] if isinstance(items[0], dict) else {}
+                name = first.get("name")
+            names.append(str(name or text))
+        except Exception:
+            names.append(text)
     # 确保名称列表长度与代码列表一致
     while len(names) < len(stock_codes):
         names.append(str(stock_codes[len(names)]))
@@ -788,16 +798,38 @@ def _process_task(task_id: str) -> None:
         _default_out_dir = _project_root() / ".ai_quant" / "report_outputs"
         _env_out_dir = Path(str(os.getenv("AI_QUANT_REPORT_OUTPUT_DIR", "") or "").strip())
         out_dir = _env_out_dir if str(_env_out_dir) not in (".", "") else _default_out_dir
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_file = out_dir / f"report_{date_str}_{task_id}.md"
 
+        # 输出目录创建失败（无写权限、磁盘满等）时依次降级到默认目录 / 系统临时目录
+        # 避免因目录问题导致整个研报生成任务失败
+        out_file: Path | None = None
+        candidate_dirs: list[Path] = []
+        if str(_env_out_dir) not in (".", ""):
+            candidate_dirs.append(_env_out_dir)
+        candidate_dirs.append(_default_out_dir)
         try:
-            out_file.write_text(report_md, encoding="utf-8")
-        except PermissionError:
-            out_dir = _default_out_dir
-            out_dir.mkdir(parents=True, exist_ok=True)
-            out_file = out_dir / f"report_{date_str}_{task_id}.md"
-            out_file.write_text(report_md, encoding="utf-8")
+            import tempfile
+            tmp_dir = Path(tempfile.gettempdir()) / "ai_quant_reports"
+            candidate_dirs.append(tmp_dir)
+        except Exception:
+            pass
+
+        for cand in candidate_dirs:
+            try:
+                cand.mkdir(parents=True, exist_ok=True)
+                out_file = cand / f"report_{date_str}_{task_id}.md"
+                out_file.write_text(report_md, encoding="utf-8")
+                out_dir = cand
+                break
+            except Exception as e:
+                logger.warning("研报输出目录写入失败，尝试降级目录", extra={
+                    "task_id": task_id,
+                    "out_dir": str(cand),
+                    "error": str(e),
+                })
+                out_file = None
+                continue
+        if out_file is None:
+            raise RuntimeError("所有候选输出目录均不可写，请检查磁盘空间与目录权限")
 
         file_size = len(report_md.encode("utf-8"))
         logger.info("研报保存成功", extra={
@@ -969,16 +1001,18 @@ def reports_list_tasks(
 def reports_create_task(req: ReportTaskCreateRequest) -> dict[str, Any]:
     """
     创建研报生成任务
-    
+
     - model：支持qwen-max/deepseek两种LLM模型
     - stock_codes：至少选择一只股票
     - 内部会先通过RAG或search_stocks解析股票中文名称
     - 任务创建前检查 LLM 环境配置是否就绪，避免轮询超时
     - 任务创建后立即推入后台队列异步生成，返回任务记录（含task_id）
-    
+    - 全局异常保护：捕获未预料的运行时错误（如依赖服务不可用、磁盘满等），
+      转换为 500 错误并返回用户友好的错误信息
+
     Args:
         req: 任务创建请求参数
-        
+
     Returns:
         dict: 包含创建的任务记录
     """
@@ -997,15 +1031,32 @@ def reports_create_task(req: ReportTaskCreateRequest) -> dict[str, Any]:
         logger.error("创建任务前 LLM 检查失败", extra={"mode": mode_val, "error": check_result})
         raise HTTPException(status_code=400, detail=check_result)
 
-    stock_names = _resolve_stock_names(stock_codes)
-    rec = create_task(
-        model=model,
-        stock_codes=stock_codes,
-        stock_names=stock_names,
-        use_rag=bool(req.use_rag),
-        mode=mode_val,
-        use_web=(mode_val == "deepseek_with_web"),
-    )
+    try:
+        stock_names = _resolve_stock_names(stock_codes)
+    except Exception as e:
+        # 兜底：股票名称解析失败时用原始代码填充，保证任务可创建
+        logger.warning("解析股票名称异常，使用原始代码兜底", extra={"error": str(e)})
+        stock_names = list(stock_codes)
+
+    try:
+        rec = create_task(
+            model=model,
+            stock_codes=stock_codes,
+            stock_names=stock_names,
+            use_rag=bool(req.use_rag),
+            mode=mode_val,
+            use_web=(mode_val == "deepseek_with_web"),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 任务创建失败（DB 连接、磁盘满等）转换为友好的 500 错误
+        logger.error("创建研报任务失败", extra={"error": str(e), "traceback": traceback.format_exc()})
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建研报任务失败：{type(e).__name__}: {str(e)[:200] or '未知错误'}",
+        )
+
     payload = dict(rec.__dict__)
     _enqueue_task(rec.task_id)
     return ok({"task": payload})

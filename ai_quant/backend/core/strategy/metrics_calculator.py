@@ -357,14 +357,26 @@ def enhance_metrics(
 
     # 盈亏比、平均盈亏和连续盈亏
     trades_pnl = base_metrics.get("_trades_pnl", [])
-    if trades_pnl:
-        won_pnl = sum(p for p in trades_pnl if p > 0)
-        lost_pnl = sum(p for p in trades_pnl if p < 0)
+    # 过滤掉 pnlcomm=0 的买入记录，避免打断连亏/连盈计数
+    trade_pnls = [p for p in trades_pnl if p != 0] if trades_pnl else []
+    if trade_pnls:
+        won_pnl = sum(p for p in trade_pnls if p > 0)
+        lost_pnl = sum(p for p in trade_pnls if p < 0)
         enhanced["profit_factor"] = round(calc_profit_factor(won_pnl, lost_pnl), 6)
-        enhanced["avg_profit_loss"] = round(sum(trades_pnl) / len(trades_pnl), 2)
-        max_win, max_loss = calc_max_consecutive(trades_pnl)
+        enhanced["avg_profit_loss"] = round(sum(trade_pnls) / len(trade_pnls), 2)
+        max_win, max_loss = calc_max_consecutive(trade_pnls)
         enhanced["max_consecutive_wins"] = max_win
         enhanced["max_consecutive_losses"] = max_loss
+        # 盈亏比 (payoff ratio) = 平均盈利 / 平均亏损
+        won_list = [p for p in trade_pnls if p > 0]
+        lost_list = [p for p in trade_pnls if p < 0]
+        if won_list and lost_list:
+            enhanced["payoff_ratio"] = round(
+                (sum(won_list) / len(won_list)) / abs(sum(lost_list) / len(lost_list)),
+                6,
+            )
+        else:
+            enhanced["payoff_ratio"] = None
     else:
         # 从基础指标中的 won/lost 和 trades 推算
         won = base_metrics.get("won", 0)

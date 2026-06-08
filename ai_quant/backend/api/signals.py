@@ -9,11 +9,20 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
+import numpy as np
+import pandas as pd
 from fastapi import APIRouter, Query, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from core.db import connect, load_mysql_config, query_dict, execute
-from core.analysis.tech_signals import generate_signals as _compute_tech_signals
+from core.analysis.ml_signals import (
+    FEATURE_COLS,
+    build_training_samples,
+    train_and_predict,
+    probability_to_signal,
+    build_top_reasons,
+    _compute_features_row,
+)
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("signals")
@@ -513,31 +522,45 @@ async def delete_signal_by_id(signal_id: str) -> dict[str, str]:
         conn.close()
 
 
-# ============ 规则引擎信号生成 ============
+# ============ 机器学习模型信号生成 ============
 
 class RuleBasedSignalRequest(BaseModel):
-    """规则引擎信号生成请求"""
-    model: str = Field(default="rule_engine", description="模型名称")
-    rules: list[str] = Field(default_factory=lambda: ["rsi", "macd", "ma"], description="需要应用的规则列表")
+    """机器学习选股信号生成请求"""
+    model: str = Field(default="lightgbm", description="模型名称: lightgbm / xgboost")
+    forward_days: int = Field(default=5, ge=2, le=20, description="预测未来N日涨跌")
+    threshold_pct: float = Field(default=2.0, ge=0.5, le=10.0, description="正例涨幅阈值(%)")
+    train_window: int = Field(default=250, ge=60, le=500, description="训练数据回溯天数")
+    sample_step: int = Field(default=3, ge=1, le=10, description="训练样本采样步长")
+    buy_threshold: float = Field(default=0.6, ge=0.5, le=0.95, description="BUY 信号概率阈值")
+    sell_threshold: float = Field(default=0.3, ge=0.05, le=0.5, description="SELL 信号概率阈值")
 
 
 @router.post("/rule-based")
 async def rule_based_signals(request: RuleBasedSignalRequest) -> dict[str, Any]:
     """
-    基于规则引擎的选股信号生成。
+    基于机器学习模型（LightGBM / XGBoost）的选股信号生成。
 
-    从 trade_stock_daily 获取近期K线数据，基于技术指标（RSI/MACD/MA）
-    计算出买卖持有信号。复用 core/analysis/tech_signals.py 中的计算逻辑。
+    股票池：trade_stock_master 中所有 status=active 且非 ST 的股票，无数量限制。
+    训练数据：每只股票最近 train_window 个交易日的K线，按 sample_step 采样，
+              标签为未来 forward_days 日涨幅是否超过 threshold_pct。
+    预测：对每只股票最新一个交易日计算特征，输入训练好的模型得到上涨概率，
+          根据阈值映射为 BUY / HOLD / SELL 信号。
 
     Args:
-        request: 包含模型名称和规则列表的请求体
+        request: 包含模型类型及训练/预测参数的请求体
 
     Returns:
         dict: 包含 items（信号列表）和 total（总数）
     """
-    logger.info("规则引擎信号请求", extra={
-        "model": request.model,
-        "rules": request.rules,
+    model_type = (request.model or "lightgbm").lower()
+    if model_type not in ("lightgbm", "xgboost"):
+        model_type = "lightgbm"
+
+    logger.info("ML选股信号请求", extra={
+        "model": model_type,
+        "forward_days": request.forward_days,
+        "threshold_pct": request.threshold_pct,
+        "train_window": request.train_window,
     })
 
     conn = _get_conn()
@@ -557,98 +580,175 @@ async def rule_based_signals(request: RuleBasedSignalRequest) -> dict[str, Any]:
         else:
             latest_date = str(max_dt)
 
-        # 获取活跃股票池（取有流通市值且非 ST 的股票，限制最多200只）
+        # 获取所有活跃且非 ST 的股票池 - 无数量限制
         pool_sql = """
-            SELECT m.stock_code, m.stock_name
-            FROM trade_stock_master m
-            JOIN trade_stock_daily d ON m.stock_code = d.stock_code AND d.trade_date = %s
-            WHERE m.status = 'active' AND (m.is_st IS NULL OR m.is_st = 0)
-              AND d.close_price IS NOT NULL AND d.close_price > 0
-            GROUP BY m.stock_code
-            ORDER BY d.amount DESC
-            LIMIT 200
+            SELECT stock_code, stock_name
+            FROM trade_stock_master
+            WHERE status = 'active' AND (is_st IS NULL OR is_st = 0)
+              AND (asset_type IS NULL OR asset_type = 'stock')
         """
-        pool_rows = query_dict(conn, pool_sql, (latest_date,))
+        pool_rows = query_dict(conn, pool_sql, ())
         if not pool_rows:
             return {"items": [], "total": 0}
 
         logger.info("获取股票池完成", extra={"count": len(pool_rows), "date": latest_date})
 
-        # 对每只股票，获取最近60个交易日的日K线数据
-        items: list[dict[str, Any]] = []
+        # 拉取每只股票的训练窗口K线
+        stock_data: dict[str, dict[str, np.ndarray]] = {}
+        latest_features: dict[str, dict[str, float]] = {}
+        latest_indicators: dict[str, dict[str, Any]] = {}
 
         for pool_item in pool_rows:
             stock_code = pool_item["stock_code"]
-            stock_name = pool_item["stock_name"] or stock_code
+            stock_name = pool_item.get("stock_name") or stock_code
 
             try:
-                # 获取近60日K线数据用于计算指标
                 kline_rows = query_dict(
                     conn,
-                    """SELECT trade_date, close_price FROM trade_stock_daily
-                       WHERE stock_code = %s AND trade_date <= %s AND close_price IS NOT NULL
+                    """SELECT trade_date, close_price, amount
+                       FROM trade_stock_daily
+                       WHERE stock_code = %s AND trade_date <= %s
+                         AND close_price IS NOT NULL AND close_price > 0
                        ORDER BY trade_date ASC
-                       LIMIT 60""",
-                    (stock_code, latest_date)
+                       LIMIT %s""",
+                    (stock_code, latest_date, request.train_window + 20),
                 )
-
-                if len(kline_rows) < 30:
+                if len(kline_rows) < 70 + request.forward_days:
                     continue
 
-                trade_dates = [str(r["trade_date"]) for r in kline_rows]
-                closes = [float(r["close_price"]) for r in kline_rows]
+                closes = np.array([float(r["close_price"]) for r in kline_rows], dtype=np.float64)
+                amounts = np.array(
+                    [float(r.get("amount") or 0.0) for r in kline_rows],
+                    dtype=np.float64,
+                )
+                stock_data[stock_code] = {
+                    "close": closes,
+                    "amount": amounts,
+                }
 
-                # 使用 tech_signals 模块生成信号
-                signals = _compute_tech_signals(trade_dates, closes)
-
-                if not signals:
+                # 最新一日特征用于预测
+                last_idx = len(closes) - 1
+                feat = _compute_features_row(closes, amounts, last_idx)
+                if feat is None:
                     continue
-
-                # 取最新的一条信号
-                latest_signal = signals[-1]
-                signal_type = latest_signal.get("signal", "HOLD")
-                score_val = float(latest_signal.get("score", 50))
-                reasons = latest_signal.get("reasons", [])
-                snapshot = latest_signal.get("snapshot", {})
-
-                # 计算置信度
-                confidence = round(score_val / 100.0, 2)
-
-                items.append({
-                    "code": stock_code,
+                latest_features[stock_code] = feat
+                latest_indicators[stock_code] = {
                     "name": stock_name,
-                    "signal": signal_type,
-                    "confidence": confidence,
-                    "reasons": reasons,
-                    "indicators": {
-                        "rsi": snapshot.get("rsi14"),
-                        "macd": snapshot.get("macd_hist"),
-                        "ma20": snapshot.get("ma20"),
-                        "close": snapshot.get("close"),
-                    },
-                })
-
+                    "close": float(closes[-1]),
+                    "rsi": feat.get("rsi_14"),
+                    "macd": feat.get("macd_hist"),
+                    "ma20": float(np.mean(closes[-20:])),
+                }
             except Exception as e:
-                logger.warning("处理股票信号异常",
+                logger.warning("拉取K线异常",
                                extra={"stock_code": stock_code, "error": str(e)})
                 continue
 
-        # 按信号强度排序（BUY优先于SELL，BUY中按置信度降序）
+        if not stock_data or not latest_features:
+            return {"items": [], "total": 0}
+
+        logger.info("K线拉取完成", extra={
+            "stocks_with_data": len(stock_data),
+            "stocks_to_predict": len(latest_features),
+        })
+
+        # 构造训练样本
+        X_train_df, y_train, _sources = build_training_samples(
+            stock_data,
+            forward_days=request.forward_days,
+            threshold_pct=request.threshold_pct,
+            sample_step=request.sample_step,
+        )
+        if len(X_train_df) < 50:
+            logger.warning("训练样本不足", extra={"samples": len(X_train_df)})
+            return {"items": [], "total": 0}
+
+        # 构造预测样本（按 stock_code 顺序）
+        predict_codes = list(latest_features.keys())
+        X_predict_df = pd.DataFrame(
+            [latest_features[code] for code in predict_codes],
+            columns=FEATURE_COLS,
+        )
+
+        # 训练和预测
+        probas: np.ndarray = np.array([])
+        used_engines: list[str] = []
+        trained_models: list[Any] = []
+
+        try:
+            model, probas, engine_name = train_and_predict(
+                X_train_df, y_train, X_predict_df, model_type=model_type,
+            )
+            if model is not None:
+                trained_models = [model]
+                used_engines = [engine_name]
+        except Exception as e:
+            logger.error("模型训练/预测失败", extra={"error": str(e), "model": model_type})
+            return {"items": [], "total": 0}
+
+        if len(probas) == 0:
+            return {"items": [], "total": 0}
+
+        # 组装返回结果
+        items: list[dict[str, Any]] = []
+        primary_model = trained_models[0] if trained_models else None
+
+        for code, prob in zip(predict_codes, probas):
+            prob_f = float(prob)
+            signal = probability_to_signal(
+                prob_f,
+                buy_threshold=request.buy_threshold,
+                sell_threshold=request.sell_threshold,
+            )
+            indicator = latest_indicators.get(code, {})
+            feat_dict = latest_features.get(code, {})
+
+            reasons = build_top_reasons(feat_dict, primary_model, FEATURE_COLS, top_k=3)
+            if not reasons:
+                if signal == "BUY":
+                    reasons = [f"模型预测上涨概率 {prob_f:.1%}，超过买入阈值"]
+                elif signal == "SELL":
+                    reasons = [f"模型预测上涨概率 {prob_f:.1%}，低于卖出阈值"]
+                else:
+                    reasons = [f"模型预测上涨概率 {prob_f:.1%}，处于观望区间"]
+
+            items.append({
+                "code": code,
+                "name": indicator.get("name", code),
+                "signal": signal,
+                "confidence": round(prob_f, 4),
+                "reasons": reasons,
+                "indicators": {
+                    "rsi": indicator.get("rsi"),
+                    "macd": indicator.get("macd"),
+                    "ma20": indicator.get("ma20"),
+                    "close": indicator.get("close"),
+                },
+            })
+
+        # 排序：BUY 优先，再按上涨概率降序
         def _sort_key(item: dict) -> tuple:
-            signal_order = {"BUY": 0, "SELL": 1, "HOLD": 2}
-            return (signal_order.get(item["signal"], 3), -item.get("confidence", 0))
+            order = {"BUY": 0, "HOLD": 1, "SELL": 2}
+            return (order.get(item["signal"], 3), -item.get("confidence", 0.0))
 
         items.sort(key=_sort_key)
 
-        logger.info("规则引擎信号生成完成",
-                    extra={"total": len(items), "buys": sum(1 for i in items if i["signal"] == "BUY")})
+        logger.info("ML选股信号生成完成", extra={
+            "model": model_type,
+            "engines": used_engines,
+            "total": len(items),
+            "buys": sum(1 for i in items if i["signal"] == "BUY"),
+            "sells": sum(1 for i in items if i["signal"] == "SELL"),
+            "train_samples": len(X_train_df),
+            "positive_rate": float(y_train.mean()) if len(y_train) else 0.0,
+        })
 
         return {
             "items": items,
             "total": len(items),
         }
     except Exception as e:
-        logger.error("规则引擎信号生成失败", extra={"error": str(e)})
+        logger.error("ML选股信号生成失败", extra={"error": str(e)})
         return {"items": [], "total": 0}
     finally:
         conn.close()

@@ -90,7 +90,7 @@ def run_walk_forward(
     strategy_cls: Any,
     strategy_params: dict[str, Any],
     windows: list[dict[str, Any]],
-    initial_cash: float = 100000.0,
+    initial_cash: float = 1000000.0,
     **kwargs: Any,
 ) -> WalkForwardResult:
     """

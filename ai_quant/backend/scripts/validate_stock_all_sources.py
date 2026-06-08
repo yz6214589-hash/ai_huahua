@@ -208,7 +208,7 @@ def fetch_tushare_stock_list():
     """从 TuShare 获取股票列表 {代码: 名称}"""
     PROGRESS.print_step(3, TOTAL_STEPS, "获取 TuShare 股票列表...")
     try:
-        token = os.getenv("AI_QUANT_TUSHARE_TOKEN") or "9b10f24a59e5ca6a9bea43cbb8d141db0ba4483e21f307ea22cd5457"
+        token = os.getenv("AI_QUANT_TUSHARE_TOKEN") or "e72ed2b49c50facc5169ab83dc2873d4217bce94244768449742e870"
         pro = ts.pro_api(token)
         pro._DataApi__http_url = "http://a.sszhixia.cn/"
         log("   正在通过 TuShare API 获取股票列表...")

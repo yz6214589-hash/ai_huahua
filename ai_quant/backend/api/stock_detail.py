@@ -544,8 +544,9 @@ def stock_fundamentals(code: str) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="database unavailable")
     try:
         fin_rows = qd(conn,
-            """SELECT report_date, revenue, net_profit, eps, roe, roa, gross_margin,
-                      net_margin, debt_ratio, current_ratio, operating_cashflow, total_assets, total_equity
+            """SELECT report_date, revenue, net_profit, roe, roa, gross_margin,
+                      net_margin, debt_ratio, current_ratio, total_assets, total_equity,
+                      pe_ttm, pb, revenue_growth_yoy, profit_growth_yoy
                FROM trade_stock_financial
                WHERE stock_code=%s ORDER BY report_date DESC LIMIT 2""",
             (c,))
@@ -559,9 +560,15 @@ def stock_fundamentals(code: str) -> dict[str, Any]:
                 v = _safe_float(latest.get(key))
                 if v is not None and unit == "亿":
                     v = round(v / 100000000, 4)
+                elif v is not None and unit == "%":
+                    # 数据库中已存储为百分比形式（如 32.00 表示 32.00%），直接保留原值
+                    v = round(float(v), 2)
                 pv = _safe_float(prev.get(key)) if prev else None
                 if pv is not None and unit == "亿":
                     pv = round(pv / 100000000, 4)
+                elif pv is not None and unit == "%":
+                    # 数据库中已存储为百分比形式，直接保留原值
+                    pv = round(float(pv), 2)
                 delta = round(float(v - pv), 4) if v is not None and pv is not None else None
                 dir_ = "up" if delta is not None and delta > 0 else "down" if delta is not None and delta < 0 else None
                 items.append({"key": key, "label": label, "unit": unit, "tooltip": tooltip,
@@ -569,16 +576,18 @@ def stock_fundamentals(code: str) -> dict[str, Any]:
 
             _fin("revenue", "营业总收入", "亿", "当年营业总收入")
             _fin("net_profit", "净利润", "亿", "归母净利润")
-            _fin("eps", "EPS", "元", "每股收益")
-            _fin("roe", "ROE", "%", "净资产收益率")
-            _fin("roa", "ROA", "%", "资产收益率")
+            _fin("roe", "ROE（净资产收益率）", "%", "净资产收益率(%)")
+            _fin("roa", "ROA（总资产收益率）", "%", "总资产报酬率(%)")
+            _fin("pe_ttm", "PE（市盈率）", "", "滚动市盈率TTM")
+            _fin("pb", "PB（市净率）", "", "市净率")
+            _fin("revenue_growth_yoy", "营收增速", "%", "营收同比增长率")
+            _fin("profit_growth_yoy", "利润增速", "%", "净利润同比增长率")
             _fin("gross_margin", "毛利率", "%", "主营业务利润率")
             _fin("net_margin", "净利率", "%", "净利润率")
             _fin("debt_ratio", "资产负债率", "%", "总负债/总资产")
             _fin("total_assets", "总资产", "亿", "企业总资产规模")
             _fin("total_equity", "净资产", "亿", "归属母公司股东权益")
             _fin("current_ratio", "流动比率", "", "流动资产/流动负债")
-            _fin("operating_cashflow", "经营现金流", "亿", "经营活动产生的现金流量净额")
 
             return {
                 "stock_code": c,

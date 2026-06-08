@@ -46,6 +46,7 @@ class ReportGenerateRequest(BaseModel):
     strategy_name: Optional[str] = None
     strategy_params: Optional[str] = None
     backtest_id: Optional[str] = None
+    backtest_ids: Optional[list[str]] = None
     initial_cash: Optional[float] = None
     benchmark_code: Optional[str] = None
     # 真实回测数据字段（Optional，用于替代随机假数据）
@@ -74,6 +75,88 @@ async def generate_report(request: ReportGenerateRequest) -> dict[str, Any]:
         start = request.start_date or (datetime.now().replace(day=1).strftime("%Y-%m-%d"))
         end = request.end_date or datetime.now().strftime("%Y-%m-%d")
         initial_cash = request.initial_cash or 1000000.0
+
+        # 如果前端传入了 backtest_ids，则从数据库拉取多条回测记录并合并数据
+        merged_nav_log: list[dict] = []
+        merged_trades: list[dict] = []
+        merged_metrics: dict[str, Any] = {}
+        if request.backtest_ids:
+            for bid in request.backtest_ids:
+                try:
+                    rows = query_dict(conn, """
+                        SELECT backtest_id, strategy_id, stock_code, initial_cash,
+                               metrics_json, trades_json, benchmark_nav_json,
+                               drawdown_log_json, monthly_returns_json
+                        FROM backtest_records WHERE backtest_id = %s
+                    """, (bid,))
+                    if not rows:
+                        continue
+                    row = rows[0]
+                    # 合并净值日志（从 backtest_nav_log 表查询）
+                    nav_rows = query_dict(conn,
+                        "SELECT log_date, nav FROM backtest_nav_log WHERE backtest_id = %s ORDER BY log_date",
+                        (bid,))
+                    for nr in nav_rows:
+                        merged_nav_log.append({"date": nr["log_date"], "nav": float(nr["nav"])})
+                    # 合并交易记录
+                    trades_str = row.get("trades_json")
+                    if trades_str:
+                        try:
+                            tlist = json.loads(trades_str) if isinstance(trades_str, str) else trades_str
+                            if isinstance(tlist, list):
+                                merged_trades.extend(tlist)
+                        except Exception:
+                            pass
+                    # 合并指标（取平均）
+                    metrics_str = row.get("metrics_json")
+                    if metrics_str:
+                        try:
+                            m = json.loads(metrics_str) if isinstance(metrics_str, str) else metrics_str
+                            if isinstance(m, dict):
+                                for key in ("total_return", "annual_return", "max_drawdown",
+                                            "volatility", "sharpe", "calmar", "win_rate",
+                                            "profit_factor", "num_trades", "total_trades",
+                                            "winning_trades", "losing_trades", "trading_days",
+                                            "avg_profit_loss"):
+                                    val = m.get(key)
+                                    if val is not None:
+                                        try:
+                                            merged_metrics.setdefault(key, 0)
+                                            merged_metrics[key] = merged_metrics.get(key, 0) + float(val)
+                                        except (ValueError, TypeError):
+                                            pass
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            # 如果有合并数据，覆盖到请求中
+            if merged_nav_log:
+                # 去重并排序
+                seen = set()
+                deduped = []
+                for item in sorted(merged_nav_log, key=lambda x: x["date"]):
+                    if item["date"] not in seen:
+                        seen.add(item["date"])
+                        deduped.append(item)
+                request.nav_log = deduped
+            if merged_trades:
+                request.trades = merged_trades
+            if merged_metrics:
+                # 将累加值取平均
+                count = len(request.backtest_ids)
+                for k in list(merged_metrics.keys()):
+                    merged_metrics[k] = merged_metrics[k] / count
+                # 回填到 request.metrics
+                if request.metrics is None:
+                    request.metrics = {}
+                request.metrics.update(merged_metrics)
+                # 如果前端传了 initial_cash 则使用，否则取第一条记录的 initial_cash
+                if not request.initial_cash:
+                    first_row = query_dict(conn,
+                        "SELECT initial_cash FROM backtest_records WHERE backtest_id = %s LIMIT 1",
+                        (request.backtest_ids[0],))
+                    if first_row:
+                        initial_cash = float(first_row[0]["initial_cash"])
 
         # 初始化指标字典（默认值 0，当有真实数据时覆盖）
         metrics: dict[str, Any] = {}
@@ -165,7 +248,7 @@ async def generate_report(request: ReportGenerateRequest) -> dict[str, Any]:
                 request.account_id,
                 request.strategy_name,
                 request.strategy_params,
-                request.backtest_id,
+                ",".join(request.backtest_ids) if request.backtest_ids else request.backtest_id,
                 start,
                 end,
                 initial_cash,

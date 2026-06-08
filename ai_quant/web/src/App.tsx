@@ -35,6 +35,7 @@ import StrategyBacktest from '@/pages/StrategyBacktest'
 import BacktestHistory from '@/pages/BacktestHistory'
 import WalkForwardPanel from '@/components/WalkForwardPanel'
 import ParamOptimizer from '@/pages/ParamOptimizer'
+import MlTraining from '@/pages/MlTraining'
 import StockSelect from '@/pages/StockSelect'
 import StockSelectFundamental from '@/pages/StockSelectFundamental'
 import StockSelectFactor from '@/pages/StockSelectFactor'
@@ -54,10 +55,41 @@ import MainForceIdentification from '@/pages/MainForceIdentification'
 import SimAccount from '@/pages/SimAccount'
 import NotFound from '@/pages/NotFound'
 
+// 管理后台
+import AdminLayout from '@/components/admin/AdminLayout'
+import AdminConversations from '@/pages/admin/Conversations'
+import AdminApiKeys from '@/pages/admin/ApiKeys'
+import AdminDashboard from '@/pages/admin/Dashboard'
+import AdminNotFound from '@/pages/admin/NotFound'
+import AdminModels from '@/pages/admin/Models'
+import AdminTools from '@/pages/admin/Tools'
+import AdminPrompts from '@/pages/admin/Prompts'
+import AdminAgents from '@/pages/admin/Agents'
+import AdminFeishu from '@/pages/admin/Feishu'
+import AdminSettings from '@/pages/admin/Settings'
+import AdminMonitor from '@/pages/admin/Monitor'
+import AdminScheduledJobs from '@/pages/admin/ScheduledJobs'
+
 export default function App() {
   return (
     <Router>
       <Routes>
+        {/* 管理后台独立路由 - 不与 AppShell 集成，仅通过 URL 访问 */}
+        <Route path="/ai-admin" element={<AdminLayout />}>
+          <Route index element={<Navigate to="conversations" replace />} />
+          <Route path="conversations" element={<AdminConversations />} />
+          <Route path="models" element={<AdminModels />} />
+          <Route path="tools" element={<AdminTools />} />
+          <Route path="prompts" element={<AdminPrompts />} />
+          <Route path="agents" element={<AdminAgents />} />
+          <Route path="feishu" element={<AdminFeishu />} />
+          <Route path="api-keys" element={<AdminApiKeys />} />
+          <Route path="settings" element={<AdminSettings />} />
+          <Route path="monitor" element={<AdminMonitor />} />
+          <Route path="scheduled-jobs" element={<AdminScheduledJobs />} />
+          <Route path="*" element={<AdminNotFound />} />
+        </Route>
+
         {/* AppShell 作为布局容器，包含侧边栏和顶部栏 */}
         <Route element={<AppShell />}>
           <Route path="/" element={<Navigate to="/home" replace />} />
@@ -102,6 +134,7 @@ export default function App() {
             <Route path="performance" element={<PerformanceReport />} />
             <Route path="performance/:reportId" element={<PerformanceReportDetail />} />
           </Route>
+          <Route path="/ml-training" element={<MlTraining />} />
           <Route path="/stock-select" element={<StockSelect />}>
             <Route index element={<Navigate to="fundamental" replace />} />
             <Route path="fundamental" element={<StockSelectFundamental />} />

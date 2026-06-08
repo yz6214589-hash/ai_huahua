@@ -206,6 +206,13 @@ class MiniQMTTrader:
                     {"order_id": getattr(response, "order_id", None), "seq": getattr(response, "seq", None)},
                 )
 
+        # 停止旧的 trader 实例（如果存在），避免共享内存冲突
+        if self._trader is not None:
+            try:
+                self._trader.stop()
+            except Exception:
+                pass
+
         # 创建交易者实例并注册回调
         self._trader = self._XtQuantTrader(self.qmt_path, self.session_id)
         self._trader.register_callback(_Cb())
@@ -299,17 +306,21 @@ class MiniQMTTrader:
             )
         return out
 
-    def query_orders(self) -> list[dict[str, Any]]:
+    def query_orders(self, start_date: str = "", end_date: str = "") -> list[dict[str, Any]]:
         """
-        查询当日订单记录
+        查询订单记录
+
+        Args:
+            start_date: 开始日期（可选），YYYY-MM-DD 格式
+            end_date: 结束日期（可选），YYYY-MM-DD 格式
 
         Returns:
-            订单列表，包含订单号、股票代码、委托数量、成交数量等
+            订单列表
         """
         if not self._connected:
             return []
         orders = self._trader.query_stock_orders(self._account) or []
-        return [
+        result = [
             {
                 "order_id": getattr(o, "order_id", None),
                 "stock_code": getattr(o, "stock_code", None),
@@ -322,18 +333,23 @@ class MiniQMTTrader:
             }
             for o in orders
         ]
+        return self._filter_by_date(result, "order_time", start_date, end_date)
 
-    def query_trades(self) -> list[dict[str, Any]]:
+    def query_trades(self, start_date: str = "", end_date: str = "") -> list[dict[str, Any]]:
         """
-        查询当日成交记录
+        查询成交记录
+
+        Args:
+            start_date: 开始日期（可选），YYYY-MM-DD 格式
+            end_date: 结束日期（可选），YYYY-MM-DD 格式
 
         Returns:
-            成交列表，包含成交ID、股票代码、成交价格、成交量等
+            成交列表
         """
         if not self._connected:
             return []
         trades = self._trader.query_stock_trades(self._account) or []
-        return [
+        result = [
             {
                 "traded_id": getattr(t, "traded_id", None),
                 "stock_code": getattr(t, "stock_code", None),
@@ -345,6 +361,34 @@ class MiniQMTTrader:
             }
             for t in trades
         ]
+        return self._filter_by_date(result, "traded_time", start_date, end_date)
+
+    @staticmethod
+    def _filter_by_date(items: list[dict[str, Any]], time_field: str, start_date: str, end_date: str) -> list[dict[str, Any]]:
+        """按日期范围过滤列表数据"""
+        if not start_date and not end_date:
+            return items
+        filtered: list[dict[str, Any]] = []
+        for item in items:
+            ts = item.get(time_field)
+            if ts is None:
+                filtered.append(item)
+                continue
+            ts_str = str(ts)
+            if not ts_str or len(ts_str) < 8:
+                filtered.append(item)
+                continue
+            date_part = ts_str[:8] if len(ts_str) >= 8 and not ts_str.startswith("20") else ts_str[:10].replace("-", "")
+            if start_date:
+                sd = start_date.replace("-", "")
+                if date_part < sd:
+                    continue
+            if end_date:
+                ed = end_date.replace("-", "")
+                if date_part > ed:
+                    continue
+            filtered.append(item)
+        return filtered
 
     def _check_risk(self, stock_code: str, volume: int, price: float) -> bool:
         """

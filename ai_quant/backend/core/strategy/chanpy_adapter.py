@@ -5,6 +5,12 @@ chan.py 开源库适配器
 封装开源 chan.py 库的调用，将分析结果转换为统一的
 chan_signal / chan_zg / chan_zd 格式，并提取可视化数据。
 
+与参考代码 chanpy_wrapper.chan_to_signal_df 逻辑保持一致：
+- 使用 bsp_signal_map 映射买卖点信号
+- 先填充中枢区间内的 ZG/ZD
+- 在信号点也填充对应中枢的 ZG/ZD
+- 最后使用 ffill() 做简单前向填充
+
 chan.py 库可能未安装，所有调用均做 try/except 降级处理。
 """
 
@@ -31,22 +37,45 @@ def analyze_chanpy(df: pd.DataFrame, symbol: str = "stock") -> pd.DataFrame | No
     try:
         import sys
         import os
-        # chan.py 库路径（参考代码目录）
-        chanpy_path = os.path.abspath(os.path.join(
-            os.path.dirname(__file__), '..', '..', '..',
-            '参考代码', '未命名文件夹', 'week5', '课程代码-20260314',
-            'CASE-缠论精华量化', 'chan.py'
-        ))
-        if os.path.isdir(chanpy_path) and chanpy_path not in sys.path:
+        _base_dir = os.path.dirname(os.path.abspath(__file__))
+        _project_root = os.path.abspath(os.path.join(_base_dir, '..', '..', '..'))
+        _workspace = os.path.abspath(os.path.join(_project_root, '..'))
+        _desktop = os.path.abspath(os.path.join(_workspace, '..'))
+
+        chanpy_search_paths = [
+            os.path.join(_desktop, '参考代码', '笔记', '第五周 缠论及网格交易', '课程代码-20260318', 'chan.py'),
+            os.path.join(_desktop, '参考代码', 'ai_huahua-agents', 'lesson', 'week5', '课程代码-20260318', 'chan.py'),
+            os.path.join(_workspace, '参考代码', '笔记', '第五周 缠论及网格交易', '课程代码-20260318', 'chan.py'),
+            os.path.join(_workspace, '参考代码', 'ai_huahua-agents', 'lesson', 'week5', '课程代码-20260318', 'chan.py'),
+            os.path.join(_project_root, '参考代码', '笔记', '第五周 缠论及网格交易', '课程代码-20260318', 'chan.py'),
+            os.path.join(_project_root, '参考代码', 'ai_huahua-agents', 'lesson', 'week5', '课程代码-20260318', 'chan.py'),
+            os.path.join(_project_root, '参考代码', '未命名文件夹', 'week5', '课程代码-20260314', 'CASE-缠论精华量化', 'chan.py'),
+        ]
+        chanpy_path = None
+        for p in chanpy_search_paths:
+            if os.path.isdir(p):
+                chanpy_path = p
+                break
+
+        if chanpy_path and chanpy_path not in sys.path:
             sys.path.insert(0, chanpy_path)
 
-        # chanpy_wrapper.py 所在目录也需要加入路径
-        wrapper_path = os.path.abspath(os.path.join(
-            os.path.dirname(__file__), '..', '..', '..',
-            '参考代码', '未命名文件夹', 'week5', '课程代码-20260314',
-            'CASE-缠论精华量化'
-        ))
-        if os.path.isdir(wrapper_path) and wrapper_path not in sys.path:
+        wrapper_search_paths = [
+            os.path.join(_desktop, '参考代码', '笔记', '第五周 缠论及网格交易', '课程代码-20260318', 'CASE-网格与多因子'),
+            os.path.join(_desktop, '参考代码', 'ai_huahua-agents', 'lesson', 'week5', '课程代码-20260318', 'CASE-网格与多因子'),
+            os.path.join(_workspace, '参考代码', '笔记', '第五周 缠论及网格交易', '课程代码-20260318', 'CASE-网格与多因子'),
+            os.path.join(_workspace, '参考代码', 'ai_huahua-agents', 'lesson', 'week5', '课程代码-20260318', 'CASE-网格与多因子'),
+            os.path.join(_project_root, '参考代码', '笔记', '第五周 缠论及网格交易', '课程代码-20260318', 'CASE-网格与多因子'),
+            os.path.join(_project_root, '参考代码', 'ai_huahua-agents', 'lesson', 'week5', '课程代码-20260318', 'CASE-网格与多因子'),
+            os.path.join(_project_root, '参考代码', '未命名文件夹', 'week5', '课程代码-20260314', 'CASE-缠论精华量化'),
+        ]
+        wrapper_path = None
+        for p in wrapper_search_paths:
+            if os.path.isdir(p):
+                wrapper_path = p
+                break
+
+        if wrapper_path and wrapper_path not in sys.path:
             sys.path.insert(0, wrapper_path)
 
         from chanpy_wrapper import run_chan
@@ -81,10 +110,18 @@ def _chan_to_signal_df(df: pd.DataFrame, chan_data: dict) -> pd.DataFrame:
     """
     将 chan.py 的分析结果转换为包含 chan_signal / chan_zg / chan_zd 的 DataFrame
 
+    与参考代码 chanpy_wrapper.chan_to_signal_df 逻辑保持一致：
+    - 使用 bsp_signal_map 映射买卖点信号
+    - 先填充中枢区间内的 ZG/ZD
+    - 在信号点也填充对应中枢的 ZG/ZD
+    - 最后使用 ffill() 做简单前向填充
+
     信号定义：
-        3.0  = 第三类买点（价格向上突破中枢 ZG 后确认）
-        -1.0 = 向下跌破中枢 ZD
-        -3.0 = 第三类卖点（价格向下跌破中枢 ZD 后确认）
+        3.0  = 第三类买点
+        -3.0 = 第三类卖点
+        2.0  = 第二类买点
+        1.0  = 第一类买点
+        -1.0 = 第一类卖点
         0.0  = 无信号
 
     Args:
@@ -94,87 +131,73 @@ def _chan_to_signal_df(df: pd.DataFrame, chan_data: dict) -> pd.DataFrame:
     Returns:
         包含 chan_signal, chan_zg, chan_zd 列的 DataFrame
     """
-    n = len(df)
-    signals = np.zeros(n, dtype=float)
-    zgs = np.full(n, np.nan)
-    zds = np.full(n, np.nan)
+    result = pd.DataFrame(index=df.index)
+    result["chan_signal"] = 0.0
+    result["chan_zg"] = np.nan
+    result["chan_zd"] = np.nan
 
-    # 从买卖点列表中提取信号
     bsp_list = chan_data.get("bsp_list", [])
     zs_list = chan_data.get("zs_list", [])
 
-    # 填充中枢 ZG/ZD 数据
+    # 买卖点信号映射表（与参考代码 chanpy_wrapper 一致）
+    bsp_signal_map = {
+        "1": (1, True), "2": (2, True), "2s": (2, True), "3": (3, True),
+        "1s": (-1, False), "2_sell": (-2, False), "3_sell": (-3, False),
+        "3a": (3, True),
+    }
+
+    # 映射买卖点信号
+    for bi in bsp_list:
+        bsp_type = bi.get("bsp_type")
+        bsp_date = bi.get("bsp_date")
+        if bsp_date is None or bsp_type is None:
+            continue
+        if bsp_date not in result.index:
+            continue
+
+        # bsp_type 可能是逗号分隔的多个类型，取优先级最高的
+        best_signal = 0
+        for t in bsp_type.split(","):
+            t = t.strip()
+            if t in bsp_signal_map:
+                sig_val, _is_buy = bsp_signal_map[t]
+                if abs(sig_val) > abs(best_signal):
+                    best_signal = sig_val
+
+        if best_signal != 0:
+            result.loc[bsp_date, "chan_signal"] = best_signal
+
+    # 填充中枢区间内的 ZG/ZD
     for zs in zs_list:
         start_date = zs.get("start_date")
         end_date = zs.get("end_date")
         zg = zs.get("ZG", 0)
         zd = zs.get("ZD", 0)
-        if zg <= 0 or zd <= 0:
+        if start_date is None or end_date is None:
             continue
-        # 将中枢区间内的 ZG/ZD 填入对应日期
-        for i in range(n):
-            dt = df.index[i]
-            if start_date is not None and end_date is not None:
-                if start_date <= dt <= end_date:
-                    zgs[i] = zg
-                    zds[i] = zd
+        mask = (result.index >= start_date) & (result.index <= end_date)
+        result.loc[mask, "chan_zg"] = result.loc[mask, "chan_zg"].fillna(zg)
+        result.loc[mask, "chan_zd"] = result.loc[mask, "chan_zd"].fillna(zd)
 
-    # 从买卖点提取信号
-    for bsp in bsp_list:
-        bsp_date = bsp.get("bsp_date")
-        is_buy = bsp.get("bsp_is_buy")
-        bsp_type = bsp.get("bsp_type", "")
-
-        if bsp_date is None:
+    # 在信号点也填充对应中枢的 ZG/ZD
+    for bi in bsp_list:
+        bsp_date = bi.get("bsp_date")
+        if bsp_date is None or bsp_date not in result.index:
             continue
-
-        # 查找对应日期的索引
-        for i in range(n):
-            dt = df.index[i]
-            if dt == bsp_date or (hasattr(dt, 'date') and hasattr(bsp_date, 'date') and dt.date() == bsp_date.date()):
-                if is_buy and '3' in str(bsp_type):
-                    signals[i] = 3.0
-                elif not is_buy and '3' in str(bsp_type):
-                    signals[i] = -3.0
-                elif is_buy:
-                    signals[i] = 1.0
-                elif not is_buy:
-                    signals[i] = -1.0
+        # 找到该信号对应的中枢（取最近的已结束中枢）
+        for zs in reversed(zs_list):
+            zs_end = zs.get("end_date")
+            if zs_end and bsp_date >= zs_end:
+                if pd.isna(result.loc[bsp_date, "chan_zg"]):
+                    result.loc[bsp_date, "chan_zg"] = zs.get("ZG", 0)
+                if pd.isna(result.loc[bsp_date, "chan_zd"]):
+                    result.loc[bsp_date, "chan_zd"] = zs.get("ZD", 0)
                 break
 
-    # 将中枢 ZG/ZD 延续到中枢结束后的位置（直到下一个中枢开始）
-    if zs_list:
-        for zs in zs_list:
-            end_date = zs.get("end_date")
-            zg = zs.get("ZG", 0)
-            zd = zs.get("ZD", 0)
-            if zg <= 0 or zd <= 0 or end_date is None:
-                continue
-            # 从中枢结束日期开始，延续 ZG/ZD 直到价格突破
-            start_idx = None
-            for i in range(n):
-                dt = df.index[i]
-                if dt > end_date or (hasattr(dt, 'date') and hasattr(end_date, 'date') and dt.date() > end_date.date()):
-                    start_idx = i
-                    break
-            if start_idx is not None:
-                for i in range(start_idx, n):
-                    if not np.isnan(zgs[i]):
-                        # 已经被下一个中枢覆盖
-                        break
-                    zgs[i] = zg
-                    zds[i] = zd
-                    # 价格突破中枢上沿或下沿时停止延续
-                    close_val = float(df.iloc[i]["close"])
-                    if close_val > zg:
-                        break
-                    if close_val < zd:
-                        break
+    # 使用 ffill() 做简单前向填充（与参考代码一致）
+    result["chan_zg"] = result["chan_zg"].ffill()
+    result["chan_zd"] = result["chan_zd"].ffill()
 
-    result = pd.DataFrame(index=df.index)
-    result["chan_signal"] = signals
-    result["chan_zg"] = zgs
-    result["chan_zd"] = zds
     return result
 
 

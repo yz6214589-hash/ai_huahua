@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import pymysql
 from datetime import datetime
 from typing import Any
 
@@ -71,7 +72,14 @@ def _get_latest_update_time(table: str, date_column: str) -> str | None:
             return None
 
         cfg = load_mysql_config()
-        conn = connect(cfg)
+        # 使用直接连接加长超时，避免大表 COUNT DISTINCT 超时
+        conn = pymysql.connect(
+            host=cfg.host, port=cfg.port, user=cfg.user,
+            password=cfg.password, database=cfg.database,
+            charset="utf8mb4", autocommit=True,
+            connect_timeout=5, read_timeout=30, write_timeout=10,
+            cursorclass=pymysql.cursors.DictCursor,
+        )
         try:
             # 虽然table和date_column经过白名单验证，但仍使用参数化查询
             sql = f"SELECT MAX({date_column}) as latest FROM {table}"
@@ -90,6 +98,61 @@ def _get_latest_update_time(table: str, date_column: str) -> str | None:
         return None
 
 
+def _get_table_stats(table: str) -> dict[str, Any]:
+    """
+    获取表的统计信息：最新日期、股票数量、数据条数
+
+    统计标准:
+      - 行情(stock_daily): 全市场有行情记录的去重股票总数
+      - 财务(stock_financial): 全市场有财报数据的去重股票总数
+      - 数据条数: 表内总记录数
+
+    Args:
+        table: 表名（必须在 ALLOWED_TABLES 白名单中）
+
+    Returns:
+        dict: 包含 latest_date、stock_count、data_count 的字典
+    """
+    result = {"latest_date": None, "stock_count": 0, "data_count": 0}
+    try:
+        if table not in ALLOWED_TABLES:
+            return result
+
+        date_column = ALLOWED_TABLES[table]
+        if not _is_valid_identifier(table) or not _is_valid_identifier(date_column):
+            return result
+
+        cfg = load_mysql_config()
+        conn = pymysql.connect(
+            host=cfg.host, port=cfg.port, user=cfg.user,
+            password=cfg.password, database=cfg.database,
+            charset="utf8mb4", autocommit=True,
+            connect_timeout=5, read_timeout=60, write_timeout=10,
+            cursorclass=pymysql.cursors.DictCursor,
+        )
+        try:
+            rows = query_dict(conn, f"SELECT MAX({date_column}) as latest FROM {table}", ())
+            if rows and rows[0].get("latest"):
+                latest = rows[0]["latest"]
+                if isinstance(latest, datetime):
+                    result["latest_date"] = latest.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    result["latest_date"] = str(latest)
+
+            # 全表去重统计：行情统计所有有行情记录的股票，财务统计所有有财报的股票
+            count_rows = query_dict(conn,
+                f"SELECT COUNT(DISTINCT stock_code) as stock_count, COUNT(*) as data_count FROM {table}", ())
+            if count_rows:
+                result["stock_count"] = count_rows[0].get("stock_count") or 0
+                result["data_count"] = count_rows[0].get("data_count") or 0
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"查询表 {table} 统计信息失败: {e}")
+
+    return result
+
+
 @router.get("/data/status")
 def data_status() -> dict[str, Any]:
     """
@@ -100,20 +163,19 @@ def data_status() -> dict[str, Any]:
     Returns:
         dict: 包含stock_daily、stock_financial、timestamp的对象
     """
-    market_update = _get_latest_update_time("trade_stock_daily", "trade_date")
-    financial_update = _get_latest_update_time("trade_stock_financial", "report_date")
-    index_update = _get_latest_update_time("trade_index_daily", "trade_date")
+    market_stats = _get_table_stats("trade_stock_daily")
+    financial_stats = _get_table_stats("trade_stock_financial")
 
     return {
         "stock_daily": {
-            "latest_date": market_update,
-            "stock_count": 0,
-            "data_count": 0
+            "latest_date": market_stats["latest_date"],
+            "stock_count": market_stats["stock_count"],
+            "data_count": market_stats["data_count"],
         },
         "stock_financial": {
-            "latest_date": financial_update,
-            "stock_count": 0,
-            "data_count": 0
+            "latest_date": financial_stats["latest_date"],
+            "stock_count": financial_stats["stock_count"],
+            "data_count": financial_stats["data_count"],
         },
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }

@@ -16,12 +16,32 @@ def _require_dashscope_key() -> None:
         raise RuntimeError("缺少环境变量 DASHSCOPE_API_KEY")
 
 
+def _get_enabled_tool_names() -> set[str]:
+    """从 admin_tools 表获取已启用的工具名称集"""
+    try:
+        from api.admin_db import get_admin_db
+
+        conn, lock = get_admin_db()
+        with lock:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM admin_tools WHERE enabled = 1")
+            result = {row["name"] for row in cur.fetchall()}
+            conn.close()
+            return result
+    except Exception:
+        return set()
+
+
 def _tool_catalog() -> dict[str, dict[str, Any]]:
     items = list_tool_defs()
+    enabled_names = _get_enabled_tool_names()
     out: dict[str, dict[str, Any]] = {}
     for it in items:
         name = str(it.get("name") or "").strip()
         if not name:
+            continue
+        # 如果 admin_tools 表有数据，只包含已启用的工具
+        if enabled_names and name not in enabled_names:
             continue
         out[name] = dict(it)
     return out
@@ -53,6 +73,14 @@ def _trim_thread(msgs: list[dict[str, str]], *, max_messages: int = 20) -> None:
 
 
 def _system_prompt(tool_catalog: dict[str, dict[str, Any]]) -> str:
+    # 尝试从 PromptManager 获取系统提示词基础内容
+    try:
+        from llm.prompt_manager import PromptManager
+
+        base_prompt = PromptManager.get_system_prompt()
+    except Exception:
+        base_prompt = None
+
     tool_lines = []
     for name, it in tool_catalog.items():
         title = str(it.get("title") or "")
@@ -64,6 +92,101 @@ def _system_prompt(tool_catalog: dict[str, dict[str, Any]]) -> str:
     weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     weekday_str = weekday_names[datetime.now().weekday()]
 
+    # 如果 PromptManager 提供了基础提示词，在其基础上追加动态内容
+    if base_prompt:
+        return (
+            f"{base_prompt}\n"
+            "\n"
+            f"=== 重要: 当前时间 ===\n"
+            f"今天是 {today_str} {weekday_str}。\n"
+            f"你必须以此日期为基准来理解时间:\n"
+            f"- 2024年及之前的数据属于历史数据\n"
+            f"- 2025年的数据属于近期已发生的数据（不是未来）\n"
+            f"- 在撰写研报时，请确保时间表述准确，不要把已经过去的时间当作未来\n"
+            "\n"
+            "=== 可用工具 ===\n"
+            f"{tools_text}\n"
+            "\n"
+            "=== 常用股票代码 ===\n"
+            "- 中芯国际 688981.SH\n"
+            "- 贵州茅台 600519.SH\n"
+            "- 五粮液 000858.SZ\n"
+            "- 比亚迪 002594.SZ\n"
+            "- 宁德时代 300750.SZ\n"
+            "\n"
+            "=== 核心工作方法论 ===\n"
+            "当用户要求写研报、深度分析、五步法分析时，请直接调用 write_report 工具（只需1步即可完成）。\n"
+            "\n"
+            "第一步：调用 write_report(stock_name='公司名称') 生成完整研报。\n"
+            "  write_report 内部会自动联网搜索公司最新信息，并按五步法框架生成完整的深度研报。\n"
+            "  用法示例: write_report(stock_name='海南发展')、write_report(stock_name='贵州茅台')\n"
+            "  注意: 只需提供公司名称即可，无需缓存数据或其他准备工作。\n"
+            "\n"
+            "第二步：将 write_report 返回的研报（report 字段）直接展示给用户。\n"
+            "  如果 write_report 返回了 error，使用 web_search 搜索公司信息后自己生成 Markdown 格式研报。\n"
+            "\n"
+            '核心方法论: 国泰君安"五步法"（信息差 -> 逻辑差 -> 预期差 -> 催化剂 -> 结论+风险闭环）。\n'
+            "\n"
+            "--- 手动分析模式（仅当 write_report 工具不可用时回退使用） ---\n"
+            "使用 web_search 为主要信息来源，通过多轮搜索逐步积累分析素材:\n"
+            "- 第一轮: 搜索公司/行业的基本面概况\n"
+            "- 分析结果: 从搜索结果中发现新线索、新问题\n"
+            "- 第二轮: 针对发现的线索追加搜索\n"
+            "- 继续迭代: 直到五步法每一步都有足够的数据支撑\n"
+            "\n"
+            "辅助信息来源（按需使用）:\n"
+            "- query_pdf: 本地 RAG，精确的财报附注数据（仅当有该股票本地数据时）\n"
+            "- financial_analysis: 结构化的 ROE/毛利率/负债率等趋势\n"
+            "- stock_price: 实时行情和 K 线走势\n"
+            "- compare_reports_period / compare_reports_company: 跨期或跨公司对比\n"
+            "- strategy_backtest: 技术指标信号和胜率\n"
+            "\n"
+            "五步法思考链（每步必须回答核心问题）:\n"
+            "\n"
+            'Step 1 信息差 -- 市场还不知道/忽视了什么？\n'
+            "  重点: 财报附注中的隐藏数据、非经常性损益、新业务增长信号、现金流与利润的背离\n"
+            "  输出: 3-5个被市场忽视的关键数据点，附具体数字\n"
+            "\n"
+            'Step 2 逻辑差 -- 市场的推理错在哪里？\n'
+            "  重点: 识别市场的线性思维误区，构建正确的因果逻辑链\n"
+            "  输出: 市场误读 vs 正确逻辑的对比\n"
+            "\n"
+            'Step 3 预期差 -- 一致预期 vs 实际偏离多大？\n'
+            "  重点: 量化偏离幅度，判断是一次性还是可持续的\n"
+            "  输出: 预期差对比表（指标/一致预期/我的预测/偏离幅度）\n"
+            "\n"
+            'Step 4 催化剂 -- 什么事件会引爆重估？\n'
+            "  重点: 短期(1-3月)、中期(3-12月)催化剂时间轴 + 潜在风险催化\n"
+            "  输出: 按时间排序的催化剂清单\n"
+            "\n"
+            'Step 5 结论+风险闭环 -- 最终判断 + 哪里可能出错？\n'
+            "  重点: 明确投资评级，关键假设\n"
+            '  风险闭环: 必须指出"哪个假设出错会导致整个结论崩塌"\n'
+            "  输出: 核心观点 + 投资逻辑 + 失效条件\n"
+            "\n"
+            "=== 五种研报场景 ===\n"
+            "\n"
+            "场景1 - 个股深度: 直接 write_report(stock_name='公司名')\n"
+            "场景2 - 季报速评: 直接 write_report(stock_name='公司名')\n"
+            "场景3 - 行业比较: 分别 write_report 各公司后对比\n"
+            "场景4 - 事件驱动: web_search 为主 -> 分析 -> write_report 完善\n"
+            "场景5 - 财务异常: financial_analysis -> web_search -> write_report 完善\n"
+            "\n"
+            "=== 输出协议 ===\n"
+            "请严格按以下 JSON 协议输出（只输出 JSON，不要输出任何其它文字）：\n"
+            "1) 调用工具：\n"
+            '{"action":"tool","tool_name":"<name>","args":{...}}\n'
+            "2) 最终回答：\n"
+            '{"action":"final","text":"<answer>"}\n'
+            "\n"
+            "=== 规则 ===\n"
+            "- 优先选择最匹配的工具；工具的 args 必须符合其 input_schema。\n"
+            "- 如需执行脚本类技能，使用工具 skills.exec。\n"
+            "- 最终回答必须是中文，并且不要输出表情符号。\n"
+            "- 投资建议需附带风险提示。\n"
+        )
+
+    # 原有的完整系统提示词（fallback）
     return (
         f"你是 AI 量化投资助手，负责数据查询、研报分析、舆情监控、策略回测与交易辅助。\n"
         "\n"
@@ -86,7 +209,7 @@ def _system_prompt(tool_catalog: dict[str, dict[str, Any]]) -> str:
         "\n"
         "=== 核心工作方法论 ===\n"
         "当用户要求写研报、深度分析、五步法分析时，你应该自己做研究和分析。\n"
-        "核心方法论: 国泰君安\"五步法\"（信息差 -> 逻辑差 -> 预期差 -> 催化剂 -> 结论+风险闭环）。\n"
+        '核心方法论: 国泰君安"五步法"（信息差 -> 逻辑差 -> 预期差 -> 催化剂 -> 结论+风险闭环）。\n'
         "\n"
         "--- 第一阶段: 规划 ---\n"
         "先思考再行动:\n"
@@ -114,25 +237,25 @@ def _system_prompt(tool_catalog: dict[str, dict[str, Any]]) -> str:
         "\n"
         "五步法思考链（每步必须回答核心问题）:\n"
         "\n"
-        "Step 1 信息差 -- 市场还不知道/忽视了什么？\n"
+        'Step 1 信息差 -- 市场还不知道/忽视了什么？\n'
         "  重点: 财报附注中的隐藏数据、非经常性损益、新业务增长信号、现金流与利润的背离\n"
         "  输出: 3-5个被市场忽视的关键数据点，附具体数字\n"
         "\n"
-        "Step 2 逻辑差 -- 市场的推理错在哪里？\n"
+        'Step 2 逻辑差 -- 市场的推理错在哪里？\n'
         "  重点: 识别市场的线性思维误区，构建正确的因果逻辑链\n"
         "  输出: 市场误读 vs 正确逻辑的对比\n"
         "\n"
-        "Step 3 预期差 -- 一致预期 vs 实际偏离多大？\n"
+        'Step 3 预期差 -- 一致预期 vs 实际偏离多大？\n'
         "  重点: 量化偏离幅度，判断是一次性还是可持续的\n"
         "  输出: 预期差对比表（指标/一致预期/我的预测/偏离幅度）\n"
         "\n"
-        "Step 4 催化剂 -- 什么事件会引爆重估？\n"
+        'Step 4 催化剂 -- 什么事件会引爆重估？\n'
         "  重点: 短期(1-3月)、中期(3-12月)催化剂时间轴 + 潜在风险催化\n"
         "  输出: 按时间排序的催化剂清单\n"
         "\n"
-        "Step 5 结论+风险闭环 -- 最终判断 + 哪里可能出错？\n"
+        'Step 5 结论+风险闭环 -- 最终判断 + 哪里可能出错？\n'
         "  重点: 明确投资评级，关键假设\n"
-        "  风险闭环: 必须指出\"哪个假设出错会导致整个结论崩塌\"\n"
+        '  风险闭环: 必须指出"哪个假设出错会导致整个结论崩塌"\n'
         "  输出: 核心观点 + 投资逻辑 + 失效条件\n"
         "\n"
         "=== 五种研报场景 ===\n"
@@ -158,12 +281,58 @@ def _system_prompt(tool_catalog: dict[str, dict[str, Any]]) -> str:
     )
 
 
-def run_deepagent(user_input: str, *, thread_id: str = "default", max_steps: int = 6) -> DeepAgentResult:
+def _try_direct_report(user_input: str, llm) -> DeepAgentResult | None:
+    """前置意图识别：如果是研报/分析请求，直接调用 write_report 并返回（不进 ReAct 循环）。"""
+    report_keywords = ["研报", "五步法", "深度分析", "研究报告", "投资分析", "调研报告"]
+    if not any(kw in user_input for kw in report_keywords):
+        return None
+
+    # 用 LLM 提取公司名称（1 次调用）
+    extract_msgs = [
+        {"role": "system", "content": "你是一个参数提取助手。从用户问题中提取要分析的股票或公司名称。"},
+        {"role": "user",
+         "content": f"用户问题：{user_input}\n\n请只输出公司或股票名称（如：海南发展、贵州茅台），不要输出任何其他内容。如果没有提到任何具体公司，输出：unknown"},
+    ]
+    try:
+        res = llm.invoke(extract_msgs)
+        stock_name = str(getattr(res, "content", "") or "").strip().strip("'\"")
+        if not stock_name or stock_name == "unknown":
+            return None
+
+        # 直接调用 write_report 工具
+        tool_res = run_tool("write_report", {"stock_name": stock_name})
+        if isinstance(tool_res, dict) and tool_res.get("status") == "success":
+            report = tool_res.get("report", "")
+            return DeepAgentResult(
+                text=report,
+                steps=[
+                    {"type": "tool", "tool": "write_report", "args": {"stock_name": stock_name}, "result": tool_res},
+                    {"type": "final", "text": report},
+                ],
+            )
+    except Exception:
+        return None
+
+    return None
+
+
+def run_deepagent(user_input: str, *, thread_id: str = "default", max_steps: int = 6, source: str = "system") -> DeepAgentResult:
     _require_dashscope_key()
     catalog = _tool_catalog()
     sys_prompt = _system_prompt(catalog)
 
-    llm = ChatTongyi(model=os.environ.get("AI_QUANT_AGENT_MODEL", "qwen-plus"))
+    # 尝试使用 ModelFactory 创建 LLM，失败则回退到 ChatTongyi
+    try:
+        from llm.model_factory import ModelFactory
+
+        llm = ModelFactory.get_deepagent_llm()
+    except Exception:
+        llm = ChatTongyi(model=os.environ.get("AI_QUANT_AGENT_MODEL", "qwen-plus"))
+
+    # 前置意图识别：如果是研报生成请求，直接处理（不进 ReAct 循环）
+    direct_result = _try_direct_report(user_input, llm)
+    if direct_result is not None:
+        return direct_result
 
     thread = _get_thread(thread_id)
     thread.append({"role": "user", "content": user_input})
@@ -224,7 +393,27 @@ def run_deepagent(user_input: str, *, thread_id: str = "default", max_steps: int
             working.append({"role": "assistant", "content": _compact_json(obj)})
             working.append({"role": "user", "content": "工具报错：" + _compact_json(tool_res)})
 
-    text = "已达到最大执行步数，仍未得到最终结论。请提供更明确的输入或缩小范围。"
+    # 步数耗尽时，让 LLM 基于已收集的信息汇总输出，而非返回固定错误信息
+    summary_prompt = (
+        "你已经完成了多轮工具调用，收集了以上信息。"
+        "现在请基于已收集的所有信息，直接给出最终回答。"
+        "不要调用任何工具，直接输出 JSON 格式的最终结论：\n"
+        '{"action":"final","text":"<基于已收集信息的综合回答>"}'
+    )
+    working.append({"role": "user", "content": summary_prompt})
+    try:
+        raw = _invoke(working)
+        obj = json.loads(raw)
+        if obj.get("action") == "final":
+            text = str(obj.get("text") or "").strip()
+        else:
+            text = raw
+    except Exception:
+        text = raw
+
+    if not text or not text.strip():
+        text = "已达到最大执行步数，但仍未能生成完整结论。请提供更明确的输入或缩小范围。"
+
     thread.append({"role": "assistant", "content": text})
     _trim_thread(thread)
     steps.append({"type": "final", "text": text})

@@ -222,6 +222,8 @@ def create_app() -> FastAPI:
             }
         except Exception as exc:
             logger.error("连接失败: account_type=%s error=%s", account_type, exc)
+            # 连接失败时清除缓存，下次连接时重新创建 trader 实例
+            _TRADERS.pop(account_type, None)
             raise HTTPException(status_code=400, detail=str(exc))
 
     @api.post("/api/trading/disconnect")
@@ -620,6 +622,11 @@ def create_app() -> FastAPI:
                         pd_val = _normalize_timetag(rec.get('m_timetag'))
                         if pd_val:
                             pm[pd_val] = rec
+            elif hasattr(data_list, 'iterrows'):
+                for _, row in data_list.iterrows():
+                    pd_val = _normalize_timetag(row.get('m_timetag'))
+                    if pd_val:
+                        pm[pd_val] = row.to_dict()
             return pm
 
         pershare_map = _build_map(stock_data.get('PershareIndex', []))
@@ -634,6 +641,19 @@ def create_app() -> FastAPI:
         ))
 
         rows = []
+
+        def _pi(rec, field_names, default=0):
+            for name in field_names:
+                val = rec.get(name)
+                if val is not None:
+                    try:
+                        v = float(val)
+                        if v != 0:
+                            return v
+                    except (ValueError, TypeError):
+                        pass
+            return default
+
         for period in all_periods[-max_rows:]:
             pi = pershare_map.get(period, {})
             bi = balance_map.get(period, {})
@@ -641,23 +661,23 @@ def create_app() -> FastAPI:
             ci = cashflow_map.get(period, {})
             cap = capital_map.get(period, {})
 
-            n_oe = float(ii.get('operating_revenue', 0) or 0) if ii.get('operating_revenue') else bi.get('total_operating_income', 0) or 0
-            net_profit = float(ii.get('net_profit', 0) or 0)
+            n_oe = _pi(ii, ['revenue_inc', 'operating_revenue', 'total_operating_income'])
+            net_profit = _pi(ii, ['net_profit_incl_min_int_inc', 'net_profit_excl_min_int_inc', 'net_profit'])
 
             rows.append({
                 "报告期": period,
-                "基本每股收益": float(pi.get('eps', 0) or 0),
-                "每股净资产": float(pi.get('bps', 0) or 0),
-                "每股经营现金流": float(pi.get('ocfps', 0) or 0),
+                "基本每股收益": _pi(pi, ['s_fa_eps_basic', 'eps']),
+                "每股净资产": _pi(pi, ['s_fa_bps', 'bps']),
+                "每股经营现金流": _pi(pi, ['s_fa_ocfps', 'ocfps']),
                 "营业收入": float(n_oe),
                 "净利润": float(net_profit),
-                "总资产": float(bi.get('total_assets', 0) or 0),
-                "净资产": float(bi.get('total_equity', 0) or bi.get('total_owner_equity', 0) or 0),
-                "ROE": float(pi.get('roe', 0) or 0),
-                "毛利率": float(ii.get('gross_profit_margin', 0) or 0) if ii.get('gross_profit_margin') else 0,
+                "总资产": _pi(bi, ['tot_assets', 'total_assets']),
+                "净资产": _pi(bi, ['total_equity', 'total_owner_equity', 'tot_shrhldr_eqy_incl_min_int']),
+                "ROE": _pi(pi, ['du_return_on_equity', 'roe', 'net_roe']),
+                "毛利率": _pi(pi, ['sales_gross_profit', 'gross_profit_margin']),
                 "净利率": float(ii.get('net_profit_margin', 0) or 0) if ii.get('net_profit_margin') else (net_profit / n_oe if n_oe else 0),
-                "总股本": float(cap.get('totalshares', 0) or 0),
-                "流通股本": float(cap.get('outstanding_shares', 0) or 0),
+                "总股本": _pi(cap, ['total_capital', 'totalShares', 'totalCapital', 'total_shares', 'totalshares']),
+                "流通股本": _pi(cap, ['circulating_capital', 'outstanding_shares', 'free_shares']),
             })
 
         return {"rows": rows}

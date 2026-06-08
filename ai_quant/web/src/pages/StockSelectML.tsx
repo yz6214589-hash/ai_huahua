@@ -34,10 +34,8 @@ interface SignalApiItem {
 }
 
 const MODEL_OPTIONS = [
-  { key: 'lstm', label: 'LSTM 神经网络', desc: '适合捕捉时序依赖，能学习股价波动的长期模式' },
-  { key: 'xgboost', label: 'XGBoost', desc: '擅长特征交叉，对基本面因子效果较好' },
-  { key: 'ensemble', label: 'LSTM+XGBoost集成', desc: '结合两者优势，综合预测最稳定' },
-  { key: 'transformer', label: 'Transformer', desc: '注意力机制，擅长多因子长序列预测（开发中）' },
+  { key: 'lightgbm', label: 'LightGBM', desc: '梯度提升树，训练快、对特征交叉敏感，适合中高频因子' },
+  { key: 'xgboost', label: 'XGBoost', desc: '极端梯度提升，正则化强，对基本面因子拟合稳定' },
 ]
 
 const SIGNAL_MAP: Record<string, string> = {
@@ -59,7 +57,7 @@ function SignalBadge({ signal }: { signal: string }) {
 }
 
 export default function StockSelectML() {
-  const [selectedModel, setSelectedModel] = useState('ensemble')
+  const [selectedModel, setSelectedModel] = useState('lightgbm')
   const [running, setRunning] = useState(false)
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [loading, setLoading] = useState(false)
@@ -104,18 +102,15 @@ export default function StockSelectML() {
       <Card>
         <CardHeader title="模型选择" />
         <CardBody>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {MODEL_OPTIONS.map((m) => {
-              const disabled = m.key === 'transformer'
               return (
                 <div
                   key={m.key}
-                  onClick={() => !disabled && setSelectedModel(m.key)}
+                  onClick={() => setSelectedModel(m.key)}
                   className={`cursor-pointer rounded-lg border p-4 transition ${
                     selectedModel === m.key
                       ? 'border-blue-300 bg-blue-50'
-                      : disabled
-                      ? 'cursor-not-allowed border-zinc-100 bg-zinc-50 opacity-50'
                       : 'border-zinc-100 hover:border-zinc-300'
                   }`}
                 >
@@ -142,7 +137,7 @@ export default function StockSelectML() {
       </Card>
 
       <Card>
-        <CardHeader title="规则引擎信号结果" />
+        <CardHeader title="机器学习模型信号结果" />
         <CardBody className="p-0">
           {loading && predictions.length === 0 ? (
             <Loading className="py-8" />
@@ -216,7 +211,7 @@ export default function StockSelectML() {
         <CardHeader title="模型说明" />
         <CardBody>
           <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 text-sm text-zinc-600">
-            <p>本模块使用规则引擎对股票进行走势预测。模型基于过去120个交易日的 OHLCV 数据、动量指标、技术指标（RSI、MACD、布林带等）以及基本面数据（PE、PB、ROE 等）进行训练。</p>
+            <p>本模块使用 LightGBM / XGBoost 机器学习模型对股票进行走势预测。股票池为所有活跃且非 ST 的 A 股个股，无数量限制；训练数据基于过去 250 个交易日的动量、均线偏离度、波动率、RSI、MACD、布林带位置、成交额变化等 19 个特征，标签为未来 5 个交易日涨幅是否超过 2%。</p>
             <p className="mt-2">预测结果仅供参考，不构成投资建议。实际交易需结合市场环境、政策变化、资金管理等因素综合判断。</p>
           </div>
         </CardBody>

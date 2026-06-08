@@ -366,6 +366,237 @@ def export_data(body: dict[str, Any]) -> Response:
     return StreamingResponse(iter_csv(), media_type="text/csv; charset=utf-8", headers=headers)
 
 
+@router.get("/macro/latest")
+def macro_latest() -> dict[str, Any]:
+    """
+    获取宏观指标最新数据
+    返回CPI、PPI、PMI、LPR、恐惧贪婪指数等宏观指标的最新值
+    """
+    from core.db import load_mysql_config
+    import pymysql
+    
+    cfg = load_mysql_config()
+    conn = pymysql.connect(
+        host=cfg.host, port=int(cfg.port or 3306),
+        user=cfg.user, password=cfg.password,
+        database=cfg.database
+    )
+    
+    try:
+        # 查询宏观指标最新数据
+        cur = conn.cursor(pymysql.cursors.DictCursor)
+        
+        # 查询宏观指标表最新记录
+        cur.execute("""
+            SELECT indicator_date, cpi_yoy, ppi_yoy, pmi, m2_yoy, shrzgm, lpr_1y, lpr_5y
+            FROM trade_macro_indicator
+            ORDER BY indicator_date DESC
+            LIMIT 1
+        """)
+        macro_row = cur.fetchone()
+        
+        # 查询恐惧贪婪指数（从trade_rate_daily表获取）
+        cur.execute("""
+            SELECT rate_date, fear_greed, vix, ovx, gvz, ivix, us10y
+            FROM trade_rate_daily
+            ORDER BY rate_date DESC
+            LIMIT 1
+        """)
+        rate_row = cur.fetchone()
+        
+        cur.close()
+        
+        indicators = []
+        
+        if macro_row:
+            if macro_row.get('cpi_yoy') is not None:
+                indicators.append({
+                    'indicator': 'CPI',
+                    'name': 'CPI（居民消费价格指数）',
+                    'value': macro_row['cpi_yoy'],
+                    'date': str(macro_row['indicator_date']),
+                    'source': 'AkShare'
+                })
+            if macro_row.get('ppi_yoy') is not None:
+                indicators.append({
+                    'indicator': 'PPI',
+                    'name': 'PPI（生产价格指数）',
+                    'value': macro_row['ppi_yoy'],
+                    'date': str(macro_row['indicator_date']),
+                    'source': 'AkShare'
+                })
+            if macro_row.get('pmi') is not None:
+                indicators.append({
+                    'indicator': 'PMI',
+                    'name': 'PMI（采购经理指数）',
+                    'value': macro_row['pmi'],
+                    'date': str(macro_row['indicator_date']),
+                    'source': 'AkShare'
+                })
+            if macro_row.get('lpr_1y') is not None:
+                indicators.append({
+                    'indicator': 'LPR',
+                    'name': 'LPR（贷款市场报价利率）',
+                    'value': macro_row['lpr_1y'],
+                    'date': str(macro_row['indicator_date']),
+                    'source': 'AkShare'
+                })
+        
+        if rate_row:
+            if rate_row.get('fear_greed') is not None:
+                indicators.append({
+                    'indicator': 'FearGreed',
+                    'name': '恐惧贪婪指数',
+                    'value': rate_row['fear_greed'],
+                    'date': str(rate_row['rate_date']),
+                    'source': 'Alternative.me'
+                })
+            if rate_row.get('vix') is not None:
+                indicators.append({
+                    'indicator': 'VIX',
+                    'name': 'VIX（CBOE波动率指数）',
+                    'value': rate_row['vix'],
+                    'date': str(rate_row['rate_date']),
+                    'source': 'CBOE'
+                })
+            if rate_row.get('ovx') is not None:
+                indicators.append({
+                    'indicator': 'OVX',
+                    'name': 'OVX（原油波动率指数）',
+                    'value': rate_row['ovx'],
+                    'date': str(rate_row['rate_date']),
+                    'source': 'CBOE'
+                })
+            if rate_row.get('gvz') is not None:
+                indicators.append({
+                    'indicator': 'GVZ',
+                    'name': 'GVZ（黄金波动率指数）',
+                    'value': rate_row['gvz'],
+                    'date': str(rate_row['rate_date']),
+                    'source': 'CBOE'
+                })
+            if rate_row.get('ivix') is not None:
+                indicators.append({
+                    'indicator': 'iVIX',
+                    'name': 'iVIX（中国波动率指数）',
+                    'value': rate_row['ivix'],
+                    'date': str(rate_row['rate_date']),
+                    'source': 'Wind'
+                })
+            if rate_row.get('us10y') is not None:
+                indicators.append({
+                    'indicator': 'US10Y',
+                    'name': '美国10年期国债收益率',
+                    'value': rate_row['us10y'],
+                    'date': str(rate_row['rate_date']),
+                    'source': 'Yahoo Finance'
+                })
+        
+        return {
+            'indicators': indicators,
+            'composite': {
+                'overall_sentiment': '中性',
+                'action_suggestion': '观望',
+                'timestamp': datetime.now().isoformat()
+            }
+        }
+    except Exception as e:
+        logger.warning("获取宏观数据失败", extra={"error": str(e)})
+        return {
+            'indicators': [],
+            'composite': {
+                'overall_sentiment': '未知',
+                'action_suggestion': '数据获取失败',
+                'timestamp': datetime.now().isoformat()
+            }
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/macro/history/{indicator}")
+def macro_history(indicator: str, days: int = 90) -> dict[str, Any]:
+    """
+    获取宏观指标历史数据
+    Args:
+        indicator: 指标名称（CPI/PPI/PMI/LPR/FearGreed/VIX/OVX/GVZ/iVIX/US10Y）
+        days: 回溯天数，默认90天
+    """
+    from core.db import load_mysql_config
+    import pymysql
+    
+    cfg = load_mysql_config()
+    conn = pymysql.connect(
+        host=cfg.host, port=int(cfg.port or 3306),
+        user=cfg.user, password=cfg.password,
+        database=cfg.database
+    )
+    
+    try:
+        days = max(1, min(days, 365))
+        table_map = {
+            'CPI': ('trade_macro_indicator', 'cpi_yoy', 'indicator_date'),
+            'PPI': ('trade_macro_indicator', 'ppi_yoy', 'indicator_date'),
+            'PMI': ('trade_macro_indicator', 'pmi', 'indicator_date'),
+            'LPR': ('trade_macro_indicator', 'lpr_1y', 'indicator_date'),
+            'FearGreed': ('trade_rate_daily', 'fear_greed', 'rate_date'),
+            'VIX': ('trade_rate_daily', 'vix', 'rate_date'),
+            'OVX': ('trade_rate_daily', 'ovx', 'rate_date'),
+            'GVZ': ('trade_rate_daily', 'gvz', 'rate_date'),
+            'iVIX': ('trade_rate_daily', 'ivix', 'rate_date'),
+            'US10Y': ('trade_rate_daily', 'us10y', 'rate_date'),
+        }
+        
+        table_info = table_map.get(indicator)
+        if not table_info:
+            return {'indicator': indicator, 'name': indicator, 'data': []}
+        
+        table, col, date_col = table_info
+        
+        cur = conn.cursor(pymysql.cursors.DictCursor)
+        cur.execute(f"""
+            SELECT {date_col} AS date, {col} AS value
+            FROM {table}
+            WHERE {col} IS NOT NULL
+            ORDER BY {date_col} DESC
+            LIMIT %s
+        """, (days,))
+        rows = cur.fetchall() or []
+        cur.close()
+        
+        data = [{
+            'date': str(r['date']),
+            'value': float(r['value']) if r['value'] else None
+        } for r in rows]
+        
+        # 按日期升序排列
+        data.reverse()
+        
+        indicator_labels = {
+            'CPI': 'CPI（居民消费价格指数）',
+            'PPI': 'PPI（生产价格指数）',
+            'PMI': 'PMI（采购经理指数）',
+            'LPR': 'LPR（贷款市场报价利率）',
+            'FearGreed': '恐惧贪婪指数',
+            'VIX': 'VIX（CBOE波动率指数）',
+            'OVX': 'OVX（原油波动率指数）',
+            'GVZ': 'GVZ（黄金波动率指数）',
+            'iVIX': 'iVIX（中国波动率指数）',
+            'US10Y': '美国10年期国债收益率',
+        }
+        
+        return {
+            'indicator': indicator,
+            'name': indicator_labels.get(indicator, indicator),
+            'data': data
+        }
+    except Exception as e:
+        logger.warning("获取宏观历史数据失败", extra={"error": str(e), "indicator": indicator})
+        return {'indicator': indicator, 'name': indicator, 'data': []}
+    finally:
+        conn.close()
+
+
 @router.get("/financial-hot")
 def financial_hot() -> dict[str, Any]:
     """

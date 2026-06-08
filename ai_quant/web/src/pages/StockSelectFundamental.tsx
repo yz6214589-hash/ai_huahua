@@ -1,23 +1,10 @@
 import { Loading } from '@/components/Loading'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchJson, postJson } from '@/api/client'
+import { postJson, fetchJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { Search, Clock, Database, TrendingUp, RefreshCw } from 'lucide-react'
-
-interface DataStatus {
-  stock_daily: {
-    latest_date: string | null
-    stock_count: number
-    data_count: number
-  } | null
-  stock_financial: {
-    latest_date: string | null
-    stock_count: number
-    data_count: number
-  } | null
-  timestamp: string
-}
+import { Search, Clock, Database, TrendingUp, RefreshCw, Filter, ChevronDown, Plus, Edit3, Trash2, X, Check, Save } from 'lucide-react'
+import { useDataStatus } from '@/context/DataStatusContext'
 
 interface StockResult {
   code: string
@@ -29,10 +16,10 @@ interface StockResult {
   roe: number
   gross_margin: number
   net_margin: number
-  market_cap: number
   revenue_growth: number
   profit_growth: number
   debt_ratio: number
+  org_id?: string
 }
 
 const SW_INDUSTRIES = [
@@ -45,45 +32,21 @@ const SW_INDUSTRIES = [
 ]
 
 const FILTER_CONFIG = [
-  { key: 'pe', label: '市盈率', unit: '', sliderMin: 0, sliderMax: 200, step: 1, defaultMin: 0, defaultMax: 200 },
-  { key: 'pb', label: '市净率', unit: '', sliderMin: 0, sliderMax: 20, step: 0.1, defaultMin: 0, defaultMax: 20 },
-  { key: 'roe', label: 'ROE', unit: '%', sliderMin: -50, sliderMax: 100, step: 0.5, defaultMin: -50, defaultMax: 100 },
-  { key: 'gross_margin', label: '毛利率', unit: '%', sliderMin: 0, sliderMax: 100, step: 0.5, defaultMin: 0, defaultMax: 100 },
-  { key: 'net_margin', label: '净利率', unit: '%', sliderMin: -50, sliderMax: 100, step: 0.5, defaultMin: -50, defaultMax: 100 },
-  { key: 'market_cap', label: '市值', unit: '亿', sliderMin: 0, sliderMax: 50000, step: 1, defaultMin: 0, defaultMax: 50000 },
+  { key: 'pe', label: 'PE（市盈率）', unit: '', sliderMin: 0, sliderMax: 500, step: 1, defaultMin: 0, defaultMax: 500 },
+  { key: 'pb', label: 'PB（市净率）', unit: '', sliderMin: 0, sliderMax: 20, step: 0.1, defaultMin: 0, defaultMax: 20 },
+  { key: 'roe', label: 'ROE', unit: '%', sliderMin: -20, sliderMax: 40, step: 0.5, defaultMin: -20, defaultMax: 40 },
+  { key: 'gross_margin', label: '毛利率', unit: '%', sliderMin: -10, sliderMax: 80, step: 0.5, defaultMin: -10, defaultMax: 80 },
+  { key: 'net_margin', label: '净利率', unit: '%', sliderMin: -50, sliderMax: 50, step: 0.5, defaultMin: -50, defaultMax: 50 },
   { key: 'revenue_growth', label: '营收增速', unit: '%', sliderMin: -100, sliderMax: 500, step: 1, defaultMin: -100, defaultMax: 500 },
   { key: 'profit_growth', label: '利润增速', unit: '%', sliderMin: -500, sliderMax: 1000, step: 1, defaultMin: -500, defaultMax: 1000 },
-  { key: 'debt_ratio', label: '负债率', unit: '%', sliderMin: 0, sliderMax: 100, step: 0.5, defaultMin: 0, defaultMax: 100 },
+  { key: 'debt_ratio', label: '资产负债率', unit: '%', sliderMin: 0, sliderMax: 100, step: 0.5, defaultMin: 0, defaultMax: 100 },
 ]
 
-function ScoreBar({ score }: { score: number }) {
-  const pct = Math.min(100, Math.max(0, score))
-  const cls = pct >= 70 ? 'bg-green-500' : pct >= 40 ? 'bg-amber-500' : 'bg-zinc-300'
-  return (
-    <div className="w-full">
-      <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-        <div className={`h-full rounded-full transition-all ${cls}`} style={{ width: `${pct}%` }} />
-      </div>
-      <div className="mt-0.5 text-right text-xs text-zinc-500">{score.toFixed(1)}</div>
-    </div>
-  )
-}
-
-function ScoreTag({ score }: { score: number }) {
-  const tone: 'success' | 'warning' | 'default' = score >= 70 ? 'success' : score >= 40 ? 'warning' : 'default'
-  return <Badge variant={tone}>{score.toFixed(1)}</Badge>
-}
-
-function calcScore(s: StockResult): number {
-  let score = 0
-  if (s.pe > 0 && s.pe <= 30) score += 20
-  if (s.roe >= 15) score += 30
-  else if (s.roe >= 10) score += 15
-  if (s.profit_growth > 0) score += 25
-  score += (s.gross_margin / 100) * 15
-  score += (s.net_margin / 100) * 10
-  return Math.min(100, Math.round(score))
-}
+const EXCLUDE_TYPE_OPTIONS = [
+  { value: 'kcb', label: '科创板' },
+  { value: 'cyb', label: '创业板' },
+  { value: 'st', label: 'ST股' },
+]
 
 /**
  * 将后端返回的原始数据库列名映射为前端 StockResult 格式
@@ -96,16 +59,297 @@ function mapRow(row: Record<string, any>): StockResult {
     name: row.stock_name || '',
     sector_level1: row.sector_level1 || '',
     sector_level2: row.sector_level2 || '',
-    pe: row.pe_ttm ?? 0,
-    pb: row.pb ?? 0,
-    roe: row.roe ?? 0,
-    gross_margin: row.gross_margin ?? 0,
-    net_margin: row.net_margin ?? 0,
-    market_cap: row.market_cap ?? 0,
-    revenue_growth: row.revenue_growth_yoy ?? 0,
-    profit_growth: row.profit_growth_yoy ?? 0,
-    debt_ratio: row.debt_ratio ?? 0,
+    pe: Number(row.pe_ttm) || 0,
+    pb: Number(row.pb) || 0,
+    roe: Number(row.roe) || 0,
+    gross_margin: Number(row.gross_margin) || 0,
+    net_margin: Number(row.net_margin) || 0,
+    revenue_growth: Number(row.revenue_growth_yoy) || 0,
+    profit_growth: Number(row.profit_growth_yoy) || 0,
+    debt_ratio: Number(row.debt_ratio) || 0,
+    org_id: row.org_id || undefined,
   }
+}
+
+function getCninfoUrl(code: string, orgId?: string): string {
+  const parts = code.split('.')
+  if (parts.length !== 2) return ''
+  const stockCode = parts[0]
+  const orgParam = orgId ? `orgId=${orgId}&` : ''
+  return `https://www.cninfo.com.cn/new/disclosure/stock?${orgParam}stockCode=${stockCode}#financialStatements`
+}
+
+interface PresetData {
+  id: number
+  name: string
+  filters: Record<string, { min: number; max: number }>
+  disabled_filters: string[]
+  disabled_boundaries: Record<string, { min: boolean; max: boolean }>
+  exclude_types: string[]
+  industries: string[]
+  created_at: string
+  updated_at: string
+}
+
+interface PresetManagerProps {
+  filterValues: Record<string, { min: number; max: number }>
+  disabledFilters: Set<string>
+  disabledBoundaries: Record<string, { min: boolean; max: boolean }>
+  excludeTypes: string[]
+  selectedIndustries: string[]
+  onLoadPreset: (data: PresetData) => void
+}
+
+function PresetManager({
+  filterValues, disabledFilters, disabledBoundaries, excludeTypes, selectedIndustries, onLoadPreset,
+}: PresetManagerProps) {
+  const [presets, setPresets] = useState<PresetData[]>([])
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [showManageModal, setShowManageModal] = useState(false)
+  const [saveName, setSaveName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const fetchPresets = async () => {
+    try {
+      const data = await fetchJson<PresetData[]>('/api/v1/stock-select/presets')
+      setPresets(data)
+    } catch {
+      //
+    }
+  }
+
+  const toggleDropdown = () => {
+    if (!showDropdown) {
+      fetchPresets()
+    }
+    setShowDropdown(!showDropdown)
+  }
+
+  const openSaveModal = () => {
+    const nextNum = presets.length + 1
+    setSaveName('预设 ' + nextNum)
+    setShowSaveModal(true)
+    setShowDropdown(false)
+  }
+
+  const handleSave = async () => {
+    const name = saveName.trim()
+    if (!name || saving) return
+    setSaving(true)
+    try {
+      const filters: Record<string, { min: number; max: number }> = {}
+      FILTER_CONFIG.forEach(fc => {
+        filters[fc.key] = {
+          min: filterValues[fc.key]?.min ?? fc.defaultMin,
+          max: filterValues[fc.key]?.max ?? fc.defaultMax,
+        }
+      })
+      await postJson('/api/v1/stock-select/presets', {
+        name,
+        filters,
+        disabled_filters: Array.from(disabledFilters),
+        disabled_boundaries: disabledBoundaries,
+        exclude_types: excludeTypes,
+        industries: selectedIndustries,
+      })
+      setShowSaveModal(false)
+      setSaveName('')
+      fetchPresets()
+    } catch {
+      //
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleLoad = (preset: PresetData) => {
+    onLoadPreset(preset)
+    setShowDropdown(false)
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('确认删除该条件？')) return
+    try {
+      await fetchJson(`/api/v1/stock-select/presets/${id}`, { method: 'DELETE' } as any)
+      fetchPresets()
+    } catch {
+      //
+    }
+  }
+
+  const handleUpdateName = async (id: number) => {
+    const name = editingName.trim()
+    if (!name) return
+    try {
+      await fetchJson(`/api/v1/stock-select/presets/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name }),
+      } as any)
+      setEditingId(null)
+      fetchPresets()
+    } catch {
+      //
+    }
+  }
+
+  const openManage = () => {
+    setShowManageModal(true)
+    setShowDropdown(false)
+    fetchPresets()
+  }
+
+  return (
+    <>
+      <div className="relative" ref={dropdownRef}>
+        <button
+          onClick={toggleDropdown}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 hover:shadow"
+        >
+          <Save className="h-3.5 w-3.5" />
+          条件管理
+          <ChevronDown className={`h-3 w-3 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
+        </button>
+
+        {showDropdown && (
+          <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg">
+            <button
+              onClick={openSaveModal}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50"
+            >
+              <Plus className="h-3.5 w-3.5 text-green-500" />
+              保存当前条件
+            </button>
+
+            {presets.length > 0 && <div className="my-1 border-t border-zinc-100" />}
+
+            {presets.map(p => (
+              <button
+                key={p.id}
+                onClick={() => handleLoad(p)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />
+                {p.name}
+              </button>
+            ))}
+
+            <div className="my-1 border-t border-zinc-100" />
+
+            <button
+              onClick={openManage}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-500 hover:bg-zinc-50"
+            >
+              <Edit3 className="h-3.5 w-3.5" />
+              管理条件
+            </button>
+          </div>
+        )}
+      </div>
+
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowSaveModal(false)}>
+          <div className="w-80 rounded-xl bg-white p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-4 text-sm font-medium text-zinc-800">保存筛选条件</div>
+            <input
+              type="text"
+              value={saveName}
+              onChange={e => setSaveName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSave()}
+              placeholder="输入条件名称"
+              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-800 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+              autoFocus
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="rounded-lg border border-zinc-200 px-4 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving || !saveName.trim()}
+                className="rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              >
+                {saving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showManageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowManageModal(false)}>
+          <div className="w-96 rounded-xl bg-white p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-sm font-medium text-zinc-800">管理筛选条件</span>
+              <button onClick={() => setShowManageModal(false)} className="text-zinc-400 hover:text-zinc-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {presets.length === 0 ? (
+              <div className="py-8 text-center text-xs text-zinc-400">暂无保存的条件</div>
+            ) : (
+              <div className="space-y-2">
+                {presets.map(p => (
+                  <div key={p.id} className="flex items-center gap-2 rounded-lg border border-zinc-100 px-3 py-2.5">
+                    {editingId === p.id ? (
+                      <>
+                        <input
+                          type="text"
+                          value={editingName}
+                          onChange={e => setEditingName(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleUpdateName(p.id)}
+                          className="flex-1 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800 focus:border-zinc-900 focus:outline-none"
+                          autoFocus
+                        />
+                        <button onClick={() => handleUpdateName(p.id)} className="text-green-600 hover:text-green-700">
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button onClick={() => setEditingId(null)} className="text-zinc-400 hover:text-zinc-600">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex-1 text-xs text-zinc-700">{p.name}</span>
+                        <button
+                          onClick={() => {
+                            setEditingId(p.id)
+                            setEditingName(p.name)
+                          }}
+                          className="text-zinc-400 hover:text-blue-500"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </button>
+                        <button onClick={() => handleDelete(p.id)} className="text-zinc-400 hover:text-red-500">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
 }
 
 function RangeSlider({
@@ -113,26 +357,42 @@ function RangeSlider({
   valueMin, valueMax,
   onChangeMin, onChangeMax,
   unit = '',
+  minDisabled = false,
+  maxDisabled = false,
+  mode = 'full',
 }: {
   min: number; max: number; step: number
   valueMin: number; valueMax: number
   onChangeMin: (v: number) => void
   onChangeMax: (v: number) => void
   unit?: string
+  minDisabled?: boolean
+  maxDisabled?: boolean
+  mode?: 'full' | 'track' | 'input'
 }) {
   const trackRef = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState<'min' | 'max' | null>(null)
+  const [inputMin, setInputMin] = useState(String(valueMin))
+  const [inputMax, setInputMax] = useState(String(valueMax))
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => { setInputMin(String(valueMin)) }, [valueMin])
+  useEffect(() => { setInputMax(String(valueMax)) }, [valueMax])
 
   const snap = (v: number) => {
     const s = Math.round((v - min) / step)
     return Math.min(max, Math.max(min, min + s * step))
   }
 
-  const pctMin = max === min ? 0 : ((valueMin - min) / (max - min)) * 100
-  const pctMax = max === min ? 100 : ((valueMax - min) / (max - min)) * 100
+  const pctMin = max === min || minDisabled ? 0 : ((valueMin - min) / (max - min)) * 100
+  const pctMax = max === min || maxDisabled ? 100 : ((valueMax - min) / (max - min)) * 100
 
   useEffect(() => {
     if (!dragging) return
+    if ((dragging === 'min' && minDisabled) || (dragging === 'max' && maxDisabled)) {
+      setDragging(null)
+      return
+    }
     const handleMove = (e: MouseEvent) => {
       if (!trackRef.current) return
       const rect = trackRef.current.getBoundingClientRect()
@@ -151,13 +411,22 @@ function RangeSlider({
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
     }
-  }, [dragging, min, max, step, valueMin, valueMax, onChangeMin, onChangeMax])
+  }, [dragging, min, max, step, valueMin, valueMax, onChangeMin, onChangeMax, minDisabled, maxDisabled])
 
   const handleTrackClick = (e: React.MouseEvent) => {
     if (!trackRef.current) return
     const rect = trackRef.current.getBoundingClientRect()
     const pct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100))
     const val = snap(min + (pct / 100) * (max - min))
+    if (minDisabled && maxDisabled) return
+    if (minDisabled) {
+      onChangeMax(Math.max(val, valueMin))
+      return
+    }
+    if (maxDisabled) {
+      onChangeMin(Math.min(val, valueMax))
+      return
+    }
     const distMin = Math.abs(val - valueMin)
     const distMax = Math.abs(val - valueMax)
     if (distMin <= distMax) {
@@ -167,119 +436,201 @@ function RangeSlider({
     }
   }
 
+  const validateAndCommit = (raw: string, field: 'min' | 'max') => {
+    setError(null)
+    const trimmed = raw.trim()
+    if (trimmed === '' || trimmed === '-') return
+    const num = Number(trimmed)
+    if (isNaN(num)) { setError(field === 'min' ? '下限请输入有效数字' : '上限请输入有效数字'); return }
+    if (num < min || num > max) { setError(`数值范围: ${min} ~ ${max}`); return }
+    if (field === 'min') {
+      if (num > valueMax) { setError('下限不能大于上限'); return }
+      onChangeMin(snap(num))
+    } else {
+      if (num < valueMin) { setError('上限不能小于下限'); return }
+      onChangeMax(snap(num))
+    }
+  }
+
+  const handleInputBlur = (field: 'min' | 'max') => {
+    if (field === 'min') {
+      validateAndCommit(inputMin, 'min')
+      setInputMin(String(valueMin))
+    } else {
+      validateAndCommit(inputMax, 'max')
+      setInputMax(String(valueMax))
+    }
+  }
+
+  const handleInputKeyDown = (e: React.KeyboardEvent, field: 'min' | 'max') => {
+    if (e.key === 'Enter') {
+      if (field === 'min') { validateAndCommit(inputMin, 'min'); setInputMin(String(valueMin)) }
+      else { validateAndCommit(inputMax, 'max'); setInputMax(String(valueMax)) }
+    }
+  }
+
+  const inputCls = "w-full rounded border border-zinc-200 px-2 py-1 text-xs text-right text-zinc-800 focus:border-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-900"
+
   return (
-    <div className="space-y-2">
-      <div
-        ref={trackRef}
-        className="relative h-6 cursor-pointer select-none"
-        onMouseDown={handleTrackClick}
-      >
-        <div className="absolute top-1/2 left-0 right-0 h-1.5 -translate-y-1/2 rounded-full bg-zinc-200" />
+    <div className={mode === 'input' ? '' : 'flex-1'}>
+      {mode !== 'input' && (
         <div
-          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-zinc-900"
-          style={{ left: `${pctMin}%`, right: `${100 - pctMax}%` }}
-        />
-        <div
-          className="absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-zinc-900 bg-white shadow-sm active:cursor-grabbing"
-          style={{ left: `${pctMin}%` }}
-          onMouseDown={(e) => { e.stopPropagation(); setDragging('min') }}
-        />
-        <div
-          className="absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-zinc-900 bg-white shadow-sm active:cursor-grabbing"
-          style={{ left: `${pctMax}%` }}
-          onMouseDown={(e) => { e.stopPropagation(); setDragging('max') }}
-        />
-      </div>
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-zinc-500">
-          下限: <strong className="text-zinc-800">{valueMin}</strong>{unit}
-        </span>
-        <span className="text-zinc-500">
-          上限: <strong className="text-zinc-800">{valueMax}</strong>{unit}
-        </span>
-      </div>
+          ref={trackRef}
+          className="relative h-6 cursor-pointer select-none"
+          onMouseDown={handleTrackClick}
+        >
+          <div className="absolute top-1/2 left-0 right-0 h-1.5 -translate-y-1/2 rounded-full bg-zinc-200" />
+          {(!minDisabled || !maxDisabled) && (
+            <div
+              className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-zinc-900"
+              style={{ left: `${pctMin}%`, right: `${100 - pctMax}%` }}
+            />
+          )}
+          {!minDisabled && (
+            <div
+              className="absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-zinc-900 bg-white shadow-sm active:cursor-grabbing"
+              style={{ left: `${pctMin}%` }}
+              onMouseDown={(e) => { e.stopPropagation(); setDragging('min') }}
+            />
+          )}
+          {!maxDisabled && (
+            <div
+              className="absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-zinc-900 bg-white shadow-sm active:cursor-grabbing"
+              style={{ left: `${pctMax}%` }}
+              onMouseDown={(e) => { e.stopPropagation(); setDragging('max') }}
+            />
+          )}
+        </div>
+      )}
+      {mode !== 'track' && (
+        <>
+          <div className="flex items-center justify-center gap-4 text-xs mt-1.5">
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-400">下限</span>
+              <div className="w-14">
+                <input
+                  type="text"
+                  value={inputMin}
+                  onChange={(e) => setInputMin(e.target.value)}
+                  onFocus={() => setError(null)}
+                  onBlur={() => handleInputBlur('min')}
+                  onKeyDown={(e) => handleInputKeyDown(e, 'min')}
+                  disabled={minDisabled}
+                  className={inputCls + (minDisabled ? ' opacity-40 cursor-not-allowed' : '')}
+                />
+              </div>
+              {unit && <span className="text-zinc-400">{unit}</span>}
+            </div>
+            <span className="text-zinc-300 select-none">—</span>
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-400">上限</span>
+              <div className="w-14">
+                <input
+                  type="text"
+                  value={inputMax}
+                  onChange={(e) => setInputMax(e.target.value)}
+                  onFocus={() => setError(null)}
+                  onBlur={() => handleInputBlur('max')}
+                  onKeyDown={(e) => handleInputKeyDown(e, 'max')}
+                  disabled={maxDisabled}
+                  className={inputCls + (maxDisabled ? ' opacity-40 cursor-not-allowed' : '')}
+                />
+              </div>
+              {unit && <span className="text-zinc-400">{unit}</span>}
+            </div>
+          </div>
+          {error && <div className="text-[10px] text-red-500 text-center mt-1">{error}</div>}
+        </>
+      )}
     </div>
   )
 }
 
 export default function StockSelectFundamental() {
   const [results, setResults] = useState<StockResult[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState(false)
-  const [dataStatus, setDataStatus] = useState<DataStatus | null>(null)
+  const [hasQueried, setHasQueried] = useState(false)
   const [showFilters, setShowFilters] = useState(true)
 
+  // 使用全局数据状态上下文
+  const { dataStatus, loading: statusLoading, refresh: refreshDataStatus } = useDataStatus()
+
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([])
+  const [excludeTypes, setExcludeTypes] = useState<string[]>(['st'])
+  const DEFAULT_DISABLED = new Set(['pe', 'pb', 'profit_growth'])
+  const [disabledFilters, setDisabledFilters] = useState<Set<string>>(DEFAULT_DISABLED)
+  const [disabledBoundaries, setDisabledBoundaries] = useState<Record<string, { min: boolean; max: boolean }>>({})
+  const PAGE_SIZE = 50
   const [filterValues, setFilterValues] = useState<Record<string, { min: number; max: number }>>(() => {
     const init: Record<string, { min: number; max: number }> = {}
-    FILTER_CONFIG.forEach(fc => { init[fc.key] = { min: fc.defaultMin, max: fc.defaultMax } })
+    FILTER_CONFIG.forEach(fc => {
+      if (fc.key === 'roe') {
+        init[fc.key] = { min: 15, max: fc.defaultMax }
+      } else if (fc.key === 'gross_margin') {
+        init[fc.key] = { min: 30, max: fc.defaultMax }
+      } else if (fc.key === 'net_margin') {
+        init[fc.key] = { min: 10, max: fc.defaultMax }
+      } else if (fc.key === 'revenue_growth') {
+        init[fc.key] = { min: 10, max: fc.defaultMax }
+      } else if (fc.key === 'debt_ratio') {
+        init[fc.key] = { min: fc.defaultMin, max: 60 }
+      } else {
+        init[fc.key] = { min: fc.defaultMin, max: fc.defaultMax }
+      }
+    })
     return init
   })
 
-  const fetchDataStatus = async () => {
-    try {
-      const data = await fetchJson<DataStatus>('/api/v1/data/status')
-      setDataStatus(data)
-    } catch {
-      //
-    }
-  }
-
-  const doQuery = useCallback(async () => {
+  const doQuery = useCallback(async (targetPage?: number) => {
     setLoading(true)
+    setHasQueried(true)
     try {
-      const params: Record<string, any> = { page: 1, page_size: 200 }
+      const currentPage = targetPage ?? page
+      const params: Record<string, any> = { page: currentPage, page_size: PAGE_SIZE }
       if (selectedIndustries.length > 0) {
         params.industries = selectedIndustries
       }
+      if (excludeTypes.length > 0) {
+        params.exclude_types = excludeTypes
+      }
       for (const [key, val] of Object.entries(filterValues)) {
+        if (disabledFilters.has(key)) continue
         const cfg = FILTER_CONFIG.find(fc => fc.key === key)
         if (!cfg) continue
-        if (val.min !== cfg.defaultMin) params[key + '_min'] = val.min
-        if (val.max !== cfg.defaultMax) params[key + '_max'] = val.max
+        const boundaries = disabledBoundaries[key] || { min: false, max: false }
+        if (val.min !== cfg.defaultMin && !boundaries.min) params[key + '_min'] = val.min
+        if (val.max !== cfg.defaultMax && !boundaries.max) params[key + '_max'] = val.max
       }
       const data = await postJson<{ items: Record<string, any>[]; total: number }>('/api/v1/stock-select/query', params)
-      // 将后端原始列名映射为前端 StockResult 格式
       setResults((data.items || []).map(mapRow))
+      setTotalCount(data.total || 0)
     } catch {
       setResults([])
+      setTotalCount(0)
     } finally {
       setLoading(false)
     }
-  }, [selectedIndustries, filterValues])
+  }, [selectedIndustries, excludeTypes, filterValues, disabledFilters, disabledBoundaries, page])
 
-  // 标记是否首次渲染，用于防抖效果跳过首次触发
-  const isFirstRender = useRef(true)
-  // 使用ref保存最新的doQuery引用，避免useEffect因doQuery引用变化而重复触发
   const doQueryRef = useRef(doQuery)
   doQueryRef.current = doQuery
-
-  useEffect(() => {
-    fetchDataStatus()
-    doQuery()
-  }, [])
-
-  // 筛选条件变化时自动触发查询（带防抖，避免频繁请求）
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      return
-    }
-    const timer = setTimeout(() => {
-      doQueryRef.current()
-    }, 500)
-    return () => clearTimeout(timer)
-  }, [selectedIndustries, filterValues])
 
   const handleUpdateData = async () => {
     setUpdating(true)
     try {
       await postJson('/api/v1/jobs/run', { domain: 'stock_daily', mode: 'full' })
       await postJson('/api/v1/jobs/run', { domain: 'stock_financial', mode: 'full' })
-      await fetchDataStatus()
-      await doQuery()
-    } catch {
-      //
+      
+      await refreshDataStatus()
+      
+      if (hasQueried) {
+        doQueryRef.current(page)
+      }
+    } catch (error) {
+      console.error('更新数据失败:', error)
     } finally {
       setUpdating(false)
     }
@@ -291,6 +642,28 @@ export default function StockSelectFundamental() {
     )
   }
 
+  const toggleDisabled = (key: string) => {
+    setDisabledFilters(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  const toggleBoundary = (key: string, boundary: 'min' | 'max') => {
+    setDisabledBoundaries(prev => {
+      const current = prev[key] || { min: false, max: false }
+      return {
+        ...prev,
+        [key]: { ...current, [boundary]: !current[boundary] },
+      }
+    })
+  }
+
   const updateFilter = (key: string, field: 'min' | 'max', value: number) => {
     setFilterValues(prev => ({
       ...prev,
@@ -299,10 +672,29 @@ export default function StockSelectFundamental() {
   }
 
   const hasFilters = selectedIndustries.length > 0 || Object.entries(filterValues).some(([key, val]) => {
+    if (disabledFilters.has(key)) return false
     const cfg = FILTER_CONFIG.find(fc => fc.key === key)
     if (!cfg) return false
     return val.min !== cfg.sliderMin || val.max !== cfg.sliderMax
   })
+
+  const handleLoadPreset = (preset: PresetData) => {
+    const fv: Record<string, { min: number; max: number }> = {}
+    FILTER_CONFIG.forEach(fc => {
+      const saved = preset.filters[fc.key]
+      fv[fc.key] = {
+        min: saved?.min ?? fc.defaultMin,
+        max: saved?.max ?? fc.defaultMax,
+      }
+    })
+    setFilterValues(fv)
+    setDisabledFilters(new Set(preset.disabled_filters || []))
+    setDisabledBoundaries(preset.disabled_boundaries || {})
+    setExcludeTypes(preset.exclude_types || [])
+    setSelectedIndustries(preset.industries || [])
+    setPage(1)
+    setTimeout(() => doQueryRef.current(1), 0)
+  }
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '暂无数据'
@@ -321,10 +713,19 @@ export default function StockSelectFundamental() {
           <TrendingUp className="h-4 w-4 text-blue-500" />
           <span className="text-sm font-medium text-zinc-700">行情数据:</span>
           <span className="text-sm text-zinc-600">
-            {formatDate(dataStatus?.stock_daily?.latest_date)}
-            <span className="ml-1 text-xs text-zinc-400">
-              ({dataStatus?.stock_daily?.stock_count ?? 0} 只)
-            </span>
+            {statusLoading ? (
+              <span className="flex items-center gap-1">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                加载中...
+              </span>
+            ) : (
+              <>
+                {formatDate(dataStatus?.stock_daily?.latest_date)}
+                <span className="ml-1 text-xs text-zinc-400">
+                  ({dataStatus?.stock_daily?.stock_count ?? 0} 只)
+                </span>
+              </>
+            )}
           </span>
         </div>
         <div className="h-4 w-px bg-zinc-300" />
@@ -332,27 +733,36 @@ export default function StockSelectFundamental() {
           <Database className="h-4 w-4 text-green-500" />
           <span className="text-sm font-medium text-zinc-700">财务数据:</span>
           <span className="text-sm text-zinc-600">
-            {formatDate(dataStatus?.stock_financial?.latest_date)}
-            <span className="ml-1 text-xs text-zinc-400">
-              ({dataStatus?.stock_financial?.stock_count ?? 0} 只)
-            </span>
+            {statusLoading ? (
+              <span className="flex items-center gap-1">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                加载中...
+              </span>
+            ) : (
+              <>
+                {formatDate(dataStatus?.stock_financial?.latest_date)}
+                <span className="ml-1 text-xs text-zinc-400">
+                  ({dataStatus?.stock_financial?.stock_count ?? 0} 只)
+                </span>
+              </>
+            )}
           </span>
         </div>
         <div className="h-4 w-px bg-zinc-300" />
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-zinc-400" />
           <span className="text-xs text-zinc-400">
-            更新于 {dataStatus?.timestamp ? new Date(dataStatus.timestamp).toLocaleTimeString('zh-CN') : ''}
+            {statusLoading ? '加载中...' : `更新于 ${dataStatus?.timestamp ? new Date(dataStatus.timestamp).toLocaleTimeString('zh-CN') : ''}`}
           </span>
         </div>
         <div className="ml-auto">
           <button
             onClick={handleUpdateData}
             disabled={updating}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 hover:shadow disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${updating ? 'animate-spin' : ''}`} />
-            一键更新数据
+            {updating ? '更新中...' : '一键更新数据'}
           </button>
         </div>
       </div>
@@ -370,8 +780,25 @@ export default function StockSelectFundamental() {
             <button
               onClick={() => {
                 setSelectedIndustries([])
+                setExcludeTypes(['st'])
+                setDisabledFilters(DEFAULT_DISABLED)
+                setDisabledBoundaries({})
                 const init: Record<string, { min: number; max: number }> = {}
-                FILTER_CONFIG.forEach(fc => { init[fc.key] = { min: fc.defaultMin, max: fc.defaultMax } })
+                FILTER_CONFIG.forEach(fc => {
+                  if (fc.key === 'roe') {
+                    init[fc.key] = { min: 15, max: fc.defaultMax }
+                  } else if (fc.key === 'gross_margin') {
+                    init[fc.key] = { min: 30, max: fc.defaultMax }
+                  } else if (fc.key === 'net_margin') {
+                    init[fc.key] = { min: 10, max: fc.defaultMax }
+                  } else if (fc.key === 'revenue_growth') {
+                    init[fc.key] = { min: 10, max: fc.defaultMax }
+                  } else if (fc.key === 'debt_ratio') {
+                    init[fc.key] = { min: fc.defaultMin, max: 60 }
+                  } else {
+                    init[fc.key] = { min: fc.defaultMin, max: fc.defaultMax }
+                  }
+                })
                 setFilterValues(init)
               }}
               className="text-xs text-red-500 hover:text-red-600"
@@ -382,20 +809,54 @@ export default function StockSelectFundamental() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={doQuery}
+            onClick={() => doQuery(page)}
             disabled={loading}
-            className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-black px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-zinc-800 hover:shadow-lg active:scale-[0.97] disabled:opacity-50"
           >
-            <Search className="h-3.5 w-3.5" />
+            <Search className="h-4 w-4" />
             查询
           </button>
-          <span className="text-sm text-zinc-500">结果：<span className="font-semibold text-zinc-900">{results.length}</span> 只</span>
+          <PresetManager
+            filterValues={filterValues}
+            disabledFilters={disabledFilters}
+            disabledBoundaries={disabledBoundaries}
+            excludeTypes={excludeTypes}
+            selectedIndustries={selectedIndustries}
+            onLoadPreset={handleLoadPreset}
+          />
+          <span className="text-sm text-zinc-500">结果：<span className="font-semibold text-zinc-900">{totalCount}</span> 只</span>
         </div>
       </div>
 
       {showFilters && (
         <Card>
           <CardBody>
+            <div className="mb-4">
+              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-700">
+                <Filter className="h-3.5 w-3.5" />
+                排查股票类型
+              </div>
+              <div className="flex flex-wrap gap-4">
+                {EXCLUDE_TYPE_OPTIONS.map(opt => {
+                  const checked = excludeTypes.includes(opt.value)
+                  return (
+                    <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setExcludeTypes(prev =>
+                            checked ? prev.filter(v => v !== opt.value) : [...prev, opt.value]
+                          )
+                        }}
+                        className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
+                      />
+                      <span className="text-xs text-zinc-600">{opt.label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
             <div className="mb-4">
               <div className="mb-2 text-xs font-medium text-zinc-700">申万一级行业</div>
               <div className="flex flex-wrap gap-1.5">
@@ -418,21 +879,75 @@ export default function StockSelectFundamental() {
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {FILTER_CONFIG.map(fc => (
-                <div key={fc.key} className="rounded-lg border border-zinc-100 bg-zinc-50 p-3">
-                  <div className="mb-2 text-xs font-medium text-zinc-700">{fc.label}</div>
-                  <RangeSlider
-                    min={fc.sliderMin}
-                    max={fc.sliderMax}
-                    step={fc.step}
-                    valueMin={filterValues[fc.key]?.min ?? fc.defaultMin}
-                    valueMax={filterValues[fc.key]?.max ?? fc.defaultMax}
-                    onChangeMin={(v) => updateFilter(fc.key, 'min', v)}
-                    onChangeMax={(v) => updateFilter(fc.key, 'max', v)}
-                    unit={fc.unit}
-                  />
-                </div>
-              ))}
+              {FILTER_CONFIG.map(fc => {
+                const disabled = disabledFilters.has(fc.key)
+                const boundaries = disabledBoundaries[fc.key] || { min: false, max: false }
+                return (
+                  <div
+                    key={fc.key}
+                    onDoubleClick={() => toggleDisabled(fc.key)}
+                    className={`rounded-lg border p-3 cursor-pointer select-none transition ${
+                      disabled
+                        ? 'border-zinc-200 bg-zinc-100 opacity-50'
+                        : 'border-zinc-100 bg-zinc-50'
+                    }`}
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className={`text-xs font-medium ${disabled ? 'text-zinc-400' : 'text-zinc-700'}`}>
+                        {disabled ? `${fc.label}(已禁用)` : fc.label}
+                      </span>
+                      {disabled && <span className="text-[10px] text-zinc-400">双击启用</span>}
+                    </div>
+                    {!disabled && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <label className="flex items-center cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={!boundaries.min}
+                              onChange={() => toggleBoundary(fc.key, 'min')}
+                              className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
+                            />
+                          </label>
+                          <RangeSlider
+                            min={fc.sliderMin}
+                            max={fc.sliderMax}
+                            step={fc.step}
+                            valueMin={filterValues[fc.key]?.min ?? fc.defaultMin}
+                            valueMax={filterValues[fc.key]?.max ?? fc.defaultMax}
+                            onChangeMin={(v) => updateFilter(fc.key, 'min', v)}
+                            onChangeMax={(v) => updateFilter(fc.key, 'max', v)}
+                            minDisabled={disabled || boundaries.min}
+                            maxDisabled={disabled || boundaries.max}
+                            mode="track"
+                          />
+                          <label className="flex items-center cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={!boundaries.max}
+                              onChange={() => toggleBoundary(fc.key, 'max')}
+                              className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
+                            />
+                          </label>
+                        </div>
+                        <RangeSlider
+                          min={fc.sliderMin}
+                          max={fc.sliderMax}
+                          step={fc.step}
+                          valueMin={filterValues[fc.key]?.min ?? fc.defaultMin}
+                          valueMax={filterValues[fc.key]?.max ?? fc.defaultMax}
+                          onChangeMin={(v) => updateFilter(fc.key, 'min', v)}
+                          onChangeMax={(v) => updateFilter(fc.key, 'max', v)}
+                          unit={fc.unit}
+                          minDisabled={disabled || boundaries.min}
+                          maxDisabled={disabled || boundaries.max}
+                          mode="input"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </CardBody>
         </Card>
@@ -440,60 +955,99 @@ export default function StockSelectFundamental() {
 
       <Card>
         <CardHeader>
-          <h3 className="text-lg font-semibold">选股结果（{results.length} 只）</h3>
+          <h3 className="text-lg font-semibold">
+            {hasQueried ? `选股结果（${totalCount} 只）` : '选股结果'}
+          </h3>
         </CardHeader>
         <CardBody className="p-0">
           {loading ? (
             <Loading className="py-12" />
+          ) : !hasQueried ? (
+            <div className="px-4 py-12 text-center text-sm text-zinc-500">
+              请点击「查询」按钮开始筛选
+            </div>
           ) : results.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-zinc-500">暂无符合条件的股票，请调整筛选条件</div>
           ) : (
-            <div className="overflow-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-zinc-50 text-xs text-zinc-500">
-                  <tr>
-                    <th className="px-3 py-2">股票</th>
-                    <th className="px-3 py-2">一级行业</th>
-                    <th className="px-3 py-2">二级行业</th>
-                    <th className="px-3 py-2 text-right">市盈率</th>
-                    <th className="px-3 py-2 text-right">市净率</th>
-                    <th className="px-3 py-2 text-right">ROE(%)</th>
-                    <th className="px-3 py-2 text-right">毛利率(%)</th>
-                    <th className="px-3 py-2 text-right">净利率(%)</th>
-                    <th className="px-3 py-2 text-right">市值(亿)</th>
-                    <th className="px-3 py-2 text-right">营收增(%)</th>
-                    <th className="px-3 py-2 text-right">利润增(%)</th>
-                    <th className="px-3 py-2 text-right">负债率(%)</th>
-                    <th className="px-3 py-2 text-center">评分</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map((s, idx) => {
-                    const score = calcScore(s)
-                    return (
-                      <tr key={`${s.code}-${idx}`} className="border-t border-zinc-100 hover:bg-zinc-50">
-                        <td className="px-3 py-2">
-                          <div className="text-sm font-medium text-zinc-900">{s.code}</div>
-                          <div className="text-xs text-zinc-500">{s.name}</div>
-                        </td>
-                        <td className="px-3 py-2"><Badge variant="default">{s.sector_level1 || '--'}</Badge></td>
-                        <td className="px-3 py-2"><span className="text-xs text-zinc-500">{s.sector_level2 || '--'}</span></td>
-                        <td className="px-3 py-2 text-right text-zinc-700">{s.pe < 0 ? '亏损' : s.pe.toFixed(1)}</td>
-                        <td className="px-3 py-2 text-right text-zinc-700">{s.pb.toFixed(2)}</td>
-                        <td className={`px-3 py-2 text-right ${s.roe >= 15 ? 'text-green-600 font-medium' : 'text-zinc-700'}`}>{s.roe.toFixed(1)}</td>
-                        <td className="px-3 py-2 text-right text-zinc-700">{s.gross_margin.toFixed(1)}</td>
-                        <td className={`px-3 py-2 text-right ${s.net_margin >= 20 ? 'text-green-600 font-medium' : 'text-zinc-700'}`}>{s.net_margin.toFixed(1)}</td>
-                        <td className="px-3 py-2 text-right text-zinc-700">{s.market_cap.toLocaleString()}</td>
-                        <td className={`px-3 py-2 text-right ${s.revenue_growth > 0 ? 'text-red-600' : 'text-green-600'}`}>{s.revenue_growth > 0 ? '+' : ''}{s.revenue_growth.toFixed(1)}</td>
-                        <td className={`px-3 py-2 text-right ${s.profit_growth > 0 ? 'text-red-600' : 'text-green-600'}`}>{s.profit_growth > 0 ? '+' : ''}{s.profit_growth.toFixed(1)}</td>
-                        <td className={`px-3 py-2 text-right ${s.debt_ratio > 70 ? 'text-amber-600' : 'text-zinc-700'}`}>{s.debt_ratio.toFixed(1)}</td>
-                        <td className="px-3 py-2"><ScoreTag score={score} /></td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="overflow-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-zinc-50 text-xs text-zinc-500 shadow-[0_1px_0_0_rgba(0,0,0,0.05)]">
+                    <tr>
+                      <th className="px-3 py-2">股票</th>
+                      <th className="px-3 py-2">一级行业</th>
+                      <th className="px-3 py-2">二级行业</th>
+                      <th className="px-3 py-2 text-right">PE（市盈率）</th>
+                      <th className="px-3 py-2 text-right">PB（市净率）</th>
+                      <th className="px-3 py-2 text-right">ROE(%)</th>
+                      <th className="px-3 py-2 text-right">毛利率(%)</th>
+                      <th className="px-3 py-2 text-right">净利率(%)</th>
+                      <th className="px-3 py-2 text-right">营收增(%)</th>
+                      <th className="px-3 py-2 text-right">利润增(%)</th>
+                      <th className="px-3 py-2 text-right">资产负债率(%)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map((s, idx) => {
+                      return (
+                        <tr key={`${s.code}-${idx}`} className="border-t border-zinc-100 hover:bg-zinc-50">
+                          <td className="px-3 py-2">
+                            <a
+                              href={getCninfoUrl(s.code, s.org_id)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              {s.code}
+                            </a>
+                            <div className="text-xs text-zinc-500">{s.name}</div>
+                          </td>
+                          <td className="px-3 py-2"><Badge variant="default">{s.sector_level1 || '--'}</Badge></td>
+                          <td className="px-3 py-2"><span className="text-xs text-zinc-500">{s.sector_level2 || '--'}</span></td>
+                          <td className="px-3 py-2 text-right text-zinc-700">{s.pe < 0 ? '亏损' : s.pe.toFixed(1)}</td>
+                          <td className="px-3 py-2 text-right text-zinc-700">{s.pb.toFixed(2)}</td>
+                          <td className={`px-3 py-2 text-right ${s.roe >= 15 ? 'text-green-600 font-medium' : 'text-zinc-700'}`}>{s.roe.toFixed(1)}</td>
+                          <td className="px-3 py-2 text-right text-zinc-700">{s.gross_margin.toFixed(1)}</td>
+                          <td className={`px-3 py-2 text-right ${s.net_margin >= 20 ? 'text-green-600 font-medium' : 'text-zinc-700'}`}>{s.net_margin.toFixed(1)}</td>
+                          <td className={`px-3 py-2 text-right ${s.revenue_growth > 0 ? 'text-red-600' : 'text-green-600'}`}>{s.revenue_growth > 0 ? '+' : ''}{s.revenue_growth.toFixed(1)}</td>
+                          <td className={`px-3 py-2 text-right ${s.profit_growth > 0 ? 'text-red-600' : 'text-green-600'}`}>{s.profit_growth > 0 ? '+' : ''}{s.profit_growth.toFixed(1)}</td>
+                          <td className={`px-3 py-2 text-right ${s.debt_ratio > 70 ? 'text-amber-600' : 'text-zinc-700'}`}>{s.debt_ratio.toFixed(1)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center justify-between border-t border-zinc-100 px-4 py-3">
+                <span className="text-xs text-zinc-400">
+                  第 {page} / {Math.max(1, Math.ceil(totalCount / PAGE_SIZE))} 页（共 {totalCount} 只）
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const next = page - 1
+                      setPage(next)
+                      doQueryRef.current(next)
+                    }}
+                    disabled={page <= 1 || loading}
+                    className="rounded-md border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    上一页
+                  </button>
+                  <button
+                    onClick={() => {
+                      const next = page + 1
+                      setPage(next)
+                      doQueryRef.current(next)
+                    }}
+                    disabled={page >= Math.ceil(totalCount / PAGE_SIZE) || loading}
+                    className="rounded-md border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    下一页
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </CardBody>
       </Card>

@@ -36,8 +36,8 @@ class BacktestTask:
     start_date: str
     end_date: str
     # 新增：交易成本配置字段
-    commission_buy: float = 0.0003
-    commission_sell: float = 0.0013
+    commission_buy: float = 0.00015
+    commission_sell: float = 0.00015
     slippage_pct: float = 0.0
     slippage_fixed: float = 0.0
     min_commission: float = 5.0
@@ -261,8 +261,8 @@ class MultiAgentBacktestEngine:
         start_date: str,
         end_date: str,
         # 新增：交易成本配置参数
-        commission_buy: float = 0.0003,
-        commission_sell: float = 0.0013,
+        commission_buy: float = 0.00015,
+        commission_sell: float = 0.00015,
         slippage_pct: float = 0.0,
         slippage_fixed: float = 0.0,
         min_commission: float = 5.0,

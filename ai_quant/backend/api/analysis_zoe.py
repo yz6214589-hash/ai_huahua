@@ -61,6 +61,7 @@ for _sid, _meta in _REGISTRY.items():
         "params_schema": _meta.params_schema,
         "default_params": _meta.default_params,
         "requires_weekly": _meta.requires_weekly,
+        "requires_weekly_trend": _meta.requires_weekly_trend,
         "requires_chan": _meta.requires_chan,
         "requires_predictions": _meta.requires_predictions,
         "group": _meta.group,
@@ -146,10 +147,10 @@ class BacktestReq(BaseModel):
     end: str
     strategy_id: str
     params: dict[str, Any] = Field(default_factory=dict)
-    initial_cash: float = 100000.0
+    initial_cash: float = 1000000.0
     # 新增：佣金与滑点参数
-    commission_buy: float = Field(default=0.0003, description="买入佣金率")
-    commission_sell: float = Field(default=0.0013, description="卖出佣金率（含印花税）")
+    commission_buy: float = Field(default=0.00015, description="买入佣金率")
+    commission_sell: float = Field(default=0.00015, description="卖出佣金率")
     slippage_pct: float = Field(default=0.0, description="滑点百分比")
     slippage_fixed: float = Field(default=0.0, description="固定滑点")
     min_commission: float = Field(default=5.0, description="最低手续费")
@@ -177,11 +178,11 @@ class BatchBacktestReq(BaseModel):
     end: str
     strategy_id: str
     params: dict[str, Any] = Field(default_factory=dict)
-    initial_cash: float = 100000.0
+    initial_cash: float = 1000000.0
     max_workers: int = Field(default=4, ge=1, le=16, description="最大并发数")
     # 新增：佣金与滑点参数（与单股回测保持一致）
-    commission_buy: float = Field(default=0.0003, description="买入佣金率")
-    commission_sell: float = Field(default=0.0013, description="卖出佣金率（含印花税）")
+    commission_buy: float = Field(default=0.00015, description="买入佣金率")
+    commission_sell: float = Field(default=0.00015, description="卖出佣金率")
     slippage_pct: float = Field(default=0.0, description="滑点百分比")
     slippage_fixed: float = Field(default=0.0, description="固定滑点")
     min_commission: float = Field(default=5.0, description="最低手续费")
@@ -205,8 +206,8 @@ class WalkForwardReq(BaseModel):
     step_years: int = Field(default=1, description="步进年数")
     mode: str = Field(default="rolling", description="窗口模式：rolling 或 anchored")
     # 佣金与滑点
-    commission_buy: float = Field(default=0.0003, description="买入佣金率")
-    commission_sell: float = Field(default=0.0013, description="卖出佣金率（含印花税）")
+    commission_buy: float = Field(default=0.00015, description="买入佣金率")
+    commission_sell: float = Field(default=0.00015, description="卖出佣金率")
     slippage_pct: float = Field(default=0.0, description="滑点百分比")
     slippage_fixed: float = Field(default=0.0, description="固定滑点")
     min_commission: float = Field(default=5.0, description="最低手续费")
@@ -222,10 +223,10 @@ class ParamSearchReq(BaseModel):
     end: str
     strategy_id: str
     param_grid: dict[str, Any] = Field(default_factory=dict, description="参数网格，如 {\"fast\": [5,10,15], \"slow\": [20,30]}")
-    initial_cash: float = 100000.0
+    initial_cash: float = 1000000.0
     # 佣金与滑点
-    commission_buy: float = Field(default=0.0003, description="买入佣金率")
-    commission_sell: float = Field(default=0.0013, description="卖出佣金率（含印花税）")
+    commission_buy: float = Field(default=0.00015, description="买入佣金率")
+    commission_sell: float = Field(default=0.00015, description="卖出佣金率")
     slippage_pct: float = Field(default=0.0, description="滑点百分比")
     slippage_fixed: float = Field(default=0.0, description="固定滑点")
     min_commission: float = Field(default=5.0, description="最低手续费")
@@ -299,7 +300,7 @@ def delete_instance(instance_id: str) -> dict[str, Any]:
     return {"deleted": instance_id, "removed": before - len(instances)}
 
 
-def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log: list[dict] | None = None, chan_vis: dict | None = None) -> dict[str, Any]:
+def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log: list[dict] | None = None, chan_vis: dict | None = None, ml_metrics: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     格式化回测结果为API响应格式
 
@@ -393,6 +394,7 @@ def _format_backtest_result(bt_result: Any, req: BacktestReq, benchmark_nav_log:
         "kline": bt_result.kline if bt_result.kline else [],
         "indicator_data": bt_result.indicator_data if bt_result.indicator_data else {},
         "chan_vis": chan_vis,
+        "ml_metrics": ml_metrics if ml_metrics else None,
     }
 
     return result
@@ -408,16 +410,89 @@ def _run_single_backtest(
     from core.strategy.backtest_engine import run_backtest as bt_run
 
     _t0 = time.time()
-    logger.info(
-        "单次回测开始",
-        extra={
-            "stock_code": req.stock_code,
-            "strategy_id": req.strategy_id,
-            "data_rows": len(df),
-            "params": params,
-            "initial_cash": req.initial_cash,
-        }
-    )
+
+    extra = {
+        "stock_code": req.stock_code,
+        "strategy_id": req.strategy_id,
+        "data_rows": len(df),
+        "params": {k: v for k, v in params.items() if k != "predictions"},
+        "initial_cash": req.initial_cash,
+    }
+
+    ml_metrics: dict[str, Any] = {}
+    if bool(getattr(meta, "requires_predictions", False)):
+        preds = params.get("predictions") or {}
+        if not preds:
+            try:
+                from core.strategy.ml_breakout_filter import auto_train_predictions
+                from core.db import connect, load_mysql_config, query_dict
+                cfg = load_mysql_config()
+                conn = connect(cfg)
+                try:
+                    target_code = req.stock_code
+                    start = req.start
+                    end = req.end
+                    split_date = "2025-01-01"
+                    train_codes = [
+                        ("600519.SH", "贵州茅台"),
+                    ]
+                    stock_dfs: list[tuple[str, pd.DataFrame]] = []
+                    loaded_codes: list[str] = []
+                    for code, _name in train_codes:
+                        try:
+                            rows = query_dict(
+                                conn,
+                                "SELECT trade_date, open_price, high_price, low_price, close_price, volume "
+                                "FROM trade_stock_daily WHERE stock_code=%s AND trade_date>=%s AND trade_date<=%s "
+                                "ORDER BY trade_date ASC",
+                                (code, start, end),
+                            )
+                            if not rows:
+                                continue
+                            sdf = pd.DataFrame(rows)
+                            for c in ["open_price", "high_price", "low_price", "close_price", "volume"]:
+                                sdf[c] = pd.to_numeric(sdf[c], errors="coerce")
+                            sdf["trade_date"] = pd.to_datetime(sdf["trade_date"])
+                            sdf = sdf.rename(columns={"open_price": "open", "high_price": "high", "low_price": "low", "close_price": "close"})
+                            sdf.set_index("trade_date", inplace=True)
+                            sdf.sort_index(inplace=True)
+                            stock_dfs.append((code, sdf))
+                            loaded_codes.append(code)
+                        except Exception as e:
+                            logger.warning("加载训练股票 %s 失败: %s", code, e)
+
+                    if not stock_dfs:
+                        raise ValueError("无训练股票数据可用")
+
+                    train_dfs = [(c, (_df.set_index("trade_date") if "trade_date" in _df.columns and _df.index.name != "trade_date" else _df)) for c, _df in stock_dfs]
+                    if len(train_dfs) > 1:
+                        train_dfs = [(c, _df) for c, _df in train_dfs if c != target_code]
+                        if not train_dfs:
+                            train_dfs = [(c, (_df.set_index("trade_date") if "trade_date" in _df.columns and _df.index.name != "trade_date" else _df)) for c, _df in stock_dfs]
+
+                    target_df_for_ml = df.set_index("trade_date") if "trade_date" in df.columns and df.index.name != "trade_date" else df
+                    predictions, ml_metrics = auto_train_predictions(
+                        target_code=target_code,
+                        target_df=target_df_for_ml,
+                        train_stocks=train_dfs,
+                        split_date=split_date,
+                    )
+                    params = dict(params)
+                    params["predictions"] = predictions
+                    extra["predictions_count"] = int(len(predictions))
+                    extra["predictions_sample"] = [(k, round(v, 3)) for k, v in list(predictions.items())[:3]]
+                    extra["predictions_key_types"] = list({type(k).__name__ for k in predictions.keys()})
+                    extra["ml_metrics"] = ml_metrics
+                    extra["train_stocks_loaded"] = loaded_codes
+                    logger.info("ML自动训练完成 predictions_count=%d sample=%s key_types=%s", len(predictions), extra["predictions_sample"], extra["predictions_key_types"])
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.exception("ML自动训练失败: %s", e)
+                ml_metrics = {"error": str(e)}
+                extra["ml_metrics"] = ml_metrics
+
+    logger.info("单次回测开始", extra=extra)
 
     try:
         bt_result = bt_run(
@@ -528,7 +603,7 @@ def _run_single_backtest(
     from dataclasses import replace
     bt_result = replace(bt_result, metrics=enhanced_metrics)
 
-    return _format_backtest_result(bt_result, req, benchmark_nav_log=benchmark_nav_log, chan_vis=chan_vis)
+    return _format_backtest_result(bt_result, req, benchmark_nav_log=benchmark_nav_log, chan_vis=chan_vis, ml_metrics=ml_metrics)
 
 
 @router.post("/backtest/run")
@@ -571,13 +646,18 @@ def run_backtest(req: BacktestReq = Body(...)) -> dict[str, Any]:
     _chan_vis_data = None
     if meta.requires_chan:
         from core.strategy.chan_engine import add_chan_fields
-        chan_backend = params.pop("chan_backend", "self")
+        chan_backend = params.pop("chan_backend", "chanpy")
         chan_result = add_chan_fields(df, backend=chan_backend, symbol=req.stock_code)
         df = chan_result.df
         if df["chan_signal"].isna().all():
             raise HTTPException(status_code=400, detail="chan_data_unavailable_当前缠论数据不可用")
         # 保存缠论可视化数据，后续传给前端
         _chan_vis_data = chan_result.chan_vis
+
+    # 周线趋势数据（用于多周期缠论策略）
+    if meta.requires_weekly_trend:
+        from core.strategy.chan_engine import calc_weekly_trend
+        df["weekly_trend"] = calc_weekly_trend(df).values
 
     # 区间模式支持
     if req.interval_mode == "train_val_test":
@@ -735,6 +815,10 @@ def _run_interval_backtest(
             chan_backend = params.get("chan_backend", "self")
             chan_result = add_chan_fields(i_df, backend=chan_backend, symbol=req.stock_code)
             i_df = chan_result.df
+
+        if meta.requires_weekly_trend and "weekly_trend" not in i_df.columns:
+            from core.strategy.chan_engine import calc_weekly_trend
+            i_df["weekly_trend"] = calc_weekly_trend(i_df).values
 
         sub_req = BacktestReq(
             stock_code=req.stock_code,
@@ -1094,6 +1178,10 @@ def run_walk_forward(req: WalkForwardReq = Body(...)) -> dict[str, Any]:
         if df["chan_signal"].isna().all():
             raise HTTPException(status_code=400, detail="chan_data_unavailable_当前缠论数据不可用")
 
+    if meta.requires_weekly_trend:
+        from core.strategy.chan_engine import calc_weekly_trend
+        df["weekly_trend"] = calc_weekly_trend(df).values
+
     from core.strategy.walk_forward_engine import generate_windows, run_walk_forward as wf_run
 
     windows = generate_windows(
@@ -1196,6 +1284,38 @@ def compare_backtests(req: CompareReq = Body(...)) -> dict[str, Any]:
     return {"comparisons": results}
 
 
+@router.get("/backtest/stocks")
+def get_backtest_stocks(strategy_id: str | None = Query(default=None)) -> dict[str, Any]:
+    """获取指定策略下有回测记录的股票列表"""
+    from core.strategy.backtest_storage import ensure_backtest_tables
+    from core.db import connect, load_mysql_config, query_dict
+    ensure_backtest_tables()
+    try:
+        cfg = load_mysql_config()
+        conn = connect(cfg)
+    except Exception:
+        return {"stocks": []}
+    try:
+        if strategy_id:
+            rows = query_dict(
+                conn,
+                "SELECT DISTINCT stock_code FROM backtest_records WHERE strategy_id = %s ORDER BY stock_code",
+                (strategy_id,),
+            )
+        else:
+            rows = query_dict(
+                conn,
+                "SELECT DISTINCT stock_code FROM backtest_records ORDER BY stock_code",
+            )
+        stocks = [r["stock_code"] for r in rows]
+        return {"stocks": stocks}
+    except Exception as e:
+        logger.error("获取回测股票列表失败", extra={"error": str(e)})
+        return {"stocks": []}
+    finally:
+        conn.close()
+
+
 # ============== 参数搜索路由 ==============
 
 @router.post("/backtest/param-search")
@@ -1236,6 +1356,10 @@ def run_param_search(req: ParamSearchReq = Body(...)) -> dict[str, Any]:
         df = chan_result.df
         if df["chan_signal"].isna().all():
             raise HTTPException(status_code=400, detail="chan_data_unavailable_当前缠论数据不可用")
+
+    if meta.requires_weekly_trend:
+        from core.strategy.chan_engine import calc_weekly_trend
+        df["weekly_trend"] = calc_weekly_trend(df).values
 
     from core.strategy.param_optimizer import run_param_search as ps_run
 
@@ -1481,5 +1605,155 @@ def list_indices() -> dict[str, Any]:
         )
         indices = [{"stock_code": r["stock_code"], "stock_name": r["stock_name"]} for r in rows]
         return {"indices": indices}
+    finally:
+        conn.close()
+
+
+# ============== ML训练路由 ==============
+
+class MlTrainReq(BaseModel):
+    stock_codes: list[str] = Field(..., description="训练股票代码列表（第一只作为目标股票，其余作为训练股票）")
+    start: str = Field(..., description="数据开始日期 YYYY-MM-DD")
+    end: str = Field(..., description="数据结束日期 YYYY-MM-DD")
+    split_date: str = Field(default="2025-01-01", description="训练/测试分割日期")
+    entry_period: int = Field(default=20, ge=5, le=120, description="唐奇安通道周期")
+    atr_period: int = Field(default=20, ge=5, le=60, description="ATR计算周期")
+    engine: str = Field(default="auto", description="ML引擎: auto/lightgbm/xgboost/sklearn")
+
+    @staticmethod
+    def _validate_date(v: str, field_name: str) -> str:
+        import re
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
+            raise ValueError(f"{field_name} 格式必须为 YYYY-MM-DD")
+        try:
+            from datetime import date as _date
+            _date.fromisoformat(v)
+        except ValueError:
+            raise ValueError(f"{field_name} 不是有效的日期")
+        return v
+
+    def model_post_init(self, __context: Any) -> None:
+        self._validate_date(self.start, "start")
+        self._validate_date(self.end, "end")
+        self._validate_date(self.split_date, "split_date")
+
+
+@router.post("/ml-train")
+def run_ml_train(req: MlTrainReq = Body(...)) -> dict[str, Any]:
+    """
+    执行海龟交易ML模型训练
+    使用多只股票的突破事件特征训练分类模型
+    """
+    from core.strategy.ml_breakout_filter import collect_multi_stock_features, train_model, generate_predictions, compute_features
+    from core.db import connect, load_mysql_config, query_dict
+
+    codes = req.stock_codes
+    if len(codes) < 2:
+        raise HTTPException(status_code=400, detail="至少需要2只股票（1只目标股+1只训练股）")
+    target_code = codes[0]
+    train_codes = codes[1:]
+
+    cfg = load_mysql_config()
+    conn = connect(cfg)
+    try:
+        stock_dfs: list[tuple[str, pd.DataFrame]] = []
+        target_df: pd.DataFrame | None = None
+        loaded_codes: list[str] = []
+        all_codes = [target_code] + train_codes
+
+        for code in all_codes:
+            try:
+                rows = query_dict(
+                    conn,
+                    "SELECT trade_date, open_price, high_price, low_price, close_price, volume "
+                    "FROM trade_stock_daily WHERE stock_code=%s AND trade_date>=%s AND trade_date<=%s "
+                    "ORDER BY trade_date ASC",
+                    (code, req.start, req.end),
+                )
+                if not rows:
+                    continue
+                sdf = pd.DataFrame(rows)
+                for c in ["open_price", "high_price", "low_price", "close_price", "volume"]:
+                    sdf[c] = pd.to_numeric(sdf[c], errors="coerce")
+                sdf["trade_date"] = pd.to_datetime(sdf["trade_date"])
+                sdf = sdf.rename(columns={
+                    "open_price": "open", "high_price": "high",
+                    "low_price": "low", "close_price": "close",
+                })
+                sdf.set_index("trade_date", inplace=True)
+                sdf.sort_index(inplace=True)
+
+                if code == target_code:
+                    target_df = sdf
+                else:
+                    stock_dfs.append((code, sdf))
+                loaded_codes.append(code)
+            except Exception as e:
+                logger.warning("加载股票 %s 失败: %s", code, e)
+
+        if target_df is None or len(target_df) < 50:
+            raise HTTPException(status_code=400, detail=f"目标股票 {target_code} 数据不足")
+        if not stock_dfs:
+            raise HTTPException(status_code=400, detail="无有效的训练股票数据")
+
+        # 收集多股票特征
+        entry_period = req.entry_period
+        atr_period = req.atr_period
+        split_date = req.split_date
+
+        combined_features, combined_labels, stock_breakout_indices = collect_multi_stock_features(
+            stock_dfs, entry_period, atr_period,
+        )
+
+        if len(combined_features) < 10:
+            raise HTTPException(status_code=400, detail=f"样本不足（仅{len(combined_features)}个），请扩大时间范围或增加训练股票")
+
+        # 训练模型
+        model, metrics, engine = train_model(combined_features, combined_labels, split_date, engine=req.engine)
+        if model is None:
+            detail = metrics.get("error", "训练失败")
+            raise HTTPException(status_code=400, detail=detail)
+
+        # 为目标股票生成预测
+        target_features, _, _ = compute_features(target_df, entry_period, atr_period)
+        predictions = generate_predictions(model, target_features)
+        high_prob_count = sum(1 for p in predictions.values() if p >= 0.5)
+
+        # 获取特征重要性
+        feature_importance: list[dict[str, Any]] = []
+        if hasattr(model, "feature_importances_"):
+            importances = model.feature_importances_
+            from core.strategy.ml_breakout_filter import FEATURE_COLS
+            for i, col in enumerate(FEATURE_COLS):
+                if i < len(importances):
+                    feature_importance.append({"feature": col, "importance": float(importances[i])})
+            feature_importance.sort(key=lambda x: x["importance"], reverse=True)
+
+        # 生成预测样本
+        predictions_sample = [(k, round(v, 3)) for k, v in list(predictions.items())[:5]]
+
+        result = {
+            "ok": True,
+            "target_code": target_code,
+            "train_codes": loaded_codes[1:],
+            "engine": engine,
+            "metrics": metrics,
+            "feature_importance": feature_importance,
+            "predictions_count": int(len(predictions)),
+            "predictions_high_prob": int(high_prob_count),
+            "predictions_sample": predictions_sample,
+            "target_breakout_count": int(len(target_features)),
+            "total_samples": int(len(combined_features)),
+            "entry_period": entry_period,
+            "atr_period": atr_period,
+            "split_date": split_date,
+            "start": req.start,
+            "end": req.end,
+            "stock_breakout_details": {
+                code: int(len(indices))
+                for code, indices in stock_breakout_indices.items()
+            },
+        }
+        return result
     finally:
         conn.close()

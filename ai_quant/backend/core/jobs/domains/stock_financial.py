@@ -9,8 +9,8 @@ from core.jobs.common import JobStats, normalize_stock_code, safe_float, to_ymd
 
 _INSERT_SQL = """
 INSERT INTO trade_stock_financial
-(stock_code, report_date, revenue, net_profit, eps, roe, roa, gross_margin, net_margin, debt_ratio, current_ratio, operating_cashflow, total_assets, total_equity, data_source)
-VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+(stock_code, report_date, revenue, net_profit, eps, roe, roa, gross_margin, net_margin, debt_ratio, current_ratio, operating_cashflow, total_assets, total_equity, profit_growth_yoy, revenue_growth_yoy, data_source)
+VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
 ON DUPLICATE KEY UPDATE
 revenue=COALESCE(VALUES(revenue), revenue),
 net_profit=COALESCE(VALUES(net_profit), net_profit),
@@ -24,6 +24,8 @@ current_ratio=COALESCE(VALUES(current_ratio), current_ratio),
 operating_cashflow=COALESCE(VALUES(operating_cashflow), operating_cashflow),
 total_assets=COALESCE(VALUES(total_assets), total_assets),
 total_equity=COALESCE(VALUES(total_equity), total_equity),
+profit_growth_yoy=COALESCE(VALUES(profit_growth_yoy), profit_growth_yoy),
+revenue_growth_yoy=COALESCE(VALUES(revenue_growth_yoy), revenue_growth_yoy),
 data_source=VALUES(data_source)
 """
 
@@ -100,7 +102,7 @@ def run_stock_financial(cfg: MySQLConfig, mode: str | None, params: dict[str, An
             operating_cashflow = safe_float(payload.get("经营活动产生的现金流量净额") or payload.get("OPERATE_CASH_FLOW"))
             total_assets = safe_float(payload.get("总资产") or payload.get("TOTAL_ASSETS"))
             total_equity = safe_float(payload.get("所有者权益合计") or payload.get("TOTAL_EQUITY"))
-            rows.append((code, report_date, revenue, net_profit, eps, roe, roa, gross_margin, net_margin, debt_ratio, current_ratio, operating_cashflow, total_assets, total_equity, "akshare"))
+            rows.append((code, report_date, revenue, net_profit, eps, roe, roa, gross_margin, net_margin, debt_ratio, current_ratio, operating_cashflow, total_assets, total_equity, None, None, "akshare"))
         return rows, False
 
     conn = connect(cfg)

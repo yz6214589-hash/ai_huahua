@@ -13,6 +13,7 @@ class StrategyMeta:
     default_params: dict[str, Any]
     bt_strategy_factory: Any
     requires_weekly: bool = False
+    requires_weekly_trend: bool = False
     requires_chan: bool = False
     requires_predictions: bool = False
     group: str = "basic"  # 策略分组 "basic" | "optimized" | "combo"
@@ -307,19 +308,21 @@ def _make_macd_profit_lock():
                 self.peak_price = close
             self.peak_price = max(float(self.peak_price), close)
 
-            if self.cross[0] < 0:
-                self.sell()
-                self.entry_price = None
-                self.peak_price = None
-                return
-
+            # 利润锁定优先：用峰值计算最大盈利，而非当前价（参考代码公式）
             if self.entry_price > 0 and self.peak_price > 0:
-                profit_pct = (close - float(self.entry_price)) / float(self.entry_price) * 100.0
+                profit_pct = (float(self.peak_price) - float(self.entry_price)) / float(self.entry_price) * 100.0
                 drop_pct = (float(self.peak_price) - close) / float(self.peak_price) * 100.0
                 if profit_pct >= float(self.p.profit_trigger) and drop_pct >= float(self.p.trail_pct):
                     self.sell()
                     self.entry_price = None
                     self.peak_price = None
+                    return
+
+            # MACD 死叉兜底
+            if self.cross[0] < 0:
+                self.sell()
+                self.entry_price = None
+                self.peak_price = None
 
     return MACDProfitLock
 
@@ -505,17 +508,30 @@ def _make_turtle_full():
             self.stop_price = None
             self.next_add = None
             self.order = None
+            # 标记是否为加仓订单，用于notify_order区分首次入场和加仓
+            self._is_add_order = False
 
         def notify_order(self, order):
             if order.status in [order.Completed, order.Canceled, order.Margin]:
                 self.order = None
+                if order.status == order.Completed and order.isbuy():
+                    fp = float(order.executed.price)
+                    atr_val = float(self.atr[0])
+                    self.entry_price = fp
+                    self.stop_price = fp - float(self.p.stop_n) * atr_val
+                    self.next_add = fp + float(self.p.add_n) * atr_val
+                elif order.status in [order.Canceled, order.Margin]:
+                    # 加仓订单被拒绝时回滚units计数
+                    if self._is_add_order:
+                        self.units -= 1
+                    self._is_add_order = False
 
         def _unit_size(self, price: float, atr: float) -> int:
             if price <= 0 or atr <= 0:
                 return 0
             value = float(self.broker.getvalue())
             risk = value * float(self.p.risk_pct)
-            shares = int(risk / (_safe_float(self.p.stop_n) * atr))
+            shares = int(risk / atr)
             shares = (shares // 100) * 100
             return max(100, shares) if shares > 0 else 0
 
@@ -523,41 +539,44 @@ def _make_turtle_full():
             if self.order:
                 return
             close = _safe_float(self.data.close[0])
-            atr = _safe_float(self.atr[0])
+            atr_val = _safe_float(self.atr[0])
 
             if self.position:
                 if self.stop_price is not None and close < _safe_float(self.stop_price):
-                    self.sell(size=int(self.position.size))
+                    self.order = self.close()
                     self.units = 0
                     self.entry_price = None
                     self.stop_price = None
                     self.next_add = None
+                    self._is_add_order = False
                     return
                 if close < _safe_float(self.exit_low[-1]):
-                    self.sell(size=int(self.position.size))
+                    self.order = self.close()
                     self.units = 0
                     self.entry_price = None
                     self.stop_price = None
                     self.next_add = None
+                    self._is_add_order = False
                     return
-                if self.units < int(self.p.max_units) and self.next_add is not None and close > _safe_float(self.next_add):
-                    size = self._unit_size(close, atr)
-                    if size > 0:
-                        self.buy(size=size)
+                if self.units < int(self.p.max_units) and self.next_add is not None and close >= _safe_float(self.next_add):
+                    size = self._unit_size(close, atr_val)
+                    cash = self.broker.getcash()
+                    if size > 0 and cash > close * size * 1.01:
+                        self._is_add_order = True
                         self.units += 1
-                        self.entry_price = close
-                        self.stop_price = close - _safe_float(self.p.stop_n) * atr
-                        self.next_add = close + _safe_float(self.p.add_n) * atr
+                        self.order = self.buy(size=size)
+                        # 不在next中更新entry_price/stop_price/next_add，
+                        # 等notify_order确认成交后由成交价计算
                 return
 
             if close > _safe_float(self.entry_high[-1]):
-                size = self._unit_size(close, atr)
+                size = self._unit_size(close, atr_val)
                 if size > 0:
-                    self.buy(size=size)
+                    self._is_add_order = False
                     self.units = 1
-                    self.entry_price = close
-                    self.stop_price = close - _safe_float(self.p.stop_n) * atr
-                    self.next_add = close + _safe_float(self.p.add_n) * atr
+                    self.order = self.buy(size=size)
+                    # 不在next中更新entry_price/stop_price/next_add，
+                    # 等notify_order确认成交后由成交价计算
 
     return Turtle
 
@@ -567,15 +586,9 @@ def _make_turtle_adx():
 
     class ADXTurtle(bt.Strategy):
         params = dict(
-            entry_period=20,
-            exit_period=10,
-            atr_period=20,
-            adx_period=14,
-            adx_threshold=15,
-            risk_pct=0.01,
-            max_units=4,
-            add_n=0.5,
-            stop_n=2.0,
+            entry_period=20, exit_period=10, atr_period=20,
+            adx_period=14, adx_threshold=15,
+            risk_pct=0.01, max_units=4, add_n=0.5, stop_n=2.0,
         )
 
         def __init__(self) -> None:
@@ -588,17 +601,28 @@ def _make_turtle_adx():
             self.stop_price = None
             self.next_add = None
             self.order = None
+            self._is_add_order = False
 
         def notify_order(self, order):
             if order.status in [order.Completed, order.Canceled, order.Margin]:
                 self.order = None
+                if order.status == order.Completed and order.isbuy():
+                    fp = float(order.executed.price)
+                    atr_val = float(self.atr[0])
+                    self.entry_price = fp
+                    self.stop_price = fp - float(self.p.stop_n) * atr_val
+                    self.next_add = fp + float(self.p.add_n) * atr_val
+                elif order.status in [order.Canceled, order.Margin]:
+                    if self._is_add_order:
+                        self.units -= 1
+                    self._is_add_order = False
 
         def _unit_size(self, price: float, atr: float) -> int:
             if price <= 0 or atr <= 0:
                 return 0
             value = float(self.broker.getvalue())
             risk = value * float(self.p.risk_pct)
-            shares = int(risk / (_safe_float(self.p.stop_n) * atr))
+            shares = int(risk / atr)
             shares = (shares // 100) * 100
             return max(100, shares) if shares > 0 else 0
 
@@ -606,50 +630,54 @@ def _make_turtle_adx():
             if self.order:
                 return
             close = _safe_float(self.data.close[0])
-            atr = _safe_float(self.atr[0])
+            atr_val = _safe_float(self.atr[0])
 
             if self.position:
                 if self.stop_price is not None and close < _safe_float(self.stop_price):
-                    self.sell(size=int(self.position.size))
+                    self.order = self.close()
                     self.units = 0
                     self.entry_price = None
                     self.stop_price = None
                     self.next_add = None
+                    self._is_add_order = False
                     return
                 if close < _safe_float(self.exit_low[-1]):
-                    self.sell(size=int(self.position.size))
+                    self.order = self.close()
                     self.units = 0
                     self.entry_price = None
                     self.stop_price = None
                     self.next_add = None
+                    self._is_add_order = False
                     return
-                if self.units < int(self.p.max_units) and self.next_add is not None and close > _safe_float(self.next_add):
-                    size = self._unit_size(close, atr)
-                    if size > 0:
-                        self.buy(size=size)
+                if self.units < int(self.p.max_units) and self.next_add is not None and close >= _safe_float(self.next_add):
+                    size = self._unit_size(close, atr_val)
+                    cash = self.broker.getcash()
+                    if size > 0 and cash > close * size * 1.01:
+                        self._is_add_order = True
                         self.units += 1
-                        self.entry_price = close
-                        self.stop_price = close - _safe_float(self.p.stop_n) * atr
-                        self.next_add = close + _safe_float(self.p.add_n) * atr
+                        self.order = self.buy(size=size)
+                        # 不在next中更新entry_price/stop_price/next_add，
+                        # 等notify_order确认成交后由成交价计算
                 return
 
             if _safe_float(self.adx[0]) < _safe_float(self.p.adx_threshold):
                 return
 
             if close > _safe_float(self.entry_high[-1]):
-                size = self._unit_size(close, atr)
+                size = self._unit_size(close, atr_val)
                 if size > 0:
-                    self.buy(size=size)
+                    self._is_add_order = False
                     self.units = 1
-                    self.entry_price = close
-                    self.stop_price = close - _safe_float(self.p.stop_n) * atr
-                    self.next_add = close + _safe_float(self.p.add_n) * atr
+                    self.order = self.buy(size=size)
+                    # 不在next中更新entry_price/stop_price/next_add，
+                    # 等notify_order确认成交后由成交价计算
 
     return ADXTurtle
 
 
 def _make_turtle_multi_tf():
     import backtrader as bt  # type: ignore
+    import numpy as np
 
     class MultiTFTurtle(bt.Strategy):
         params = dict(
@@ -675,16 +703,38 @@ def _make_turtle_multi_tf():
             self.stop_price = None
             self.next_add = None
             self.order = None
+            self._is_add_order = False
 
         def notify_order(self, order):
-            if order.status in [order.Completed, order.Canceled, order.Margin]:
-                self.order = None
+            if order.status in [order.Submitted, order.Accepted]:
+                return
+            if order.status == order.Completed:
+                if order.isbuy():
+                    fp = float(order.executed.price)
+                    atr_val = float(self.atr[0])
+                    self.units += 1
+                    self.stop_price = fp - float(self.p.stop_n) * atr_val
+                    self.next_add = fp + float(self.p.add_n) * atr_val
+                elif order.issell():
+                    self.units = 0
+                    self.stop_price = None
+                    self.next_add = None
+            elif order.status in [order.Canceled, order.Margin]:
+                # 加仓订单被拒绝时回滚units计数
+                if self._is_add_order:
+                    self.units -= 1
+                self._is_add_order = False
+            self.order = None
 
         def _weekly_trend(self) -> str:
+            wh = self.weekly_high[-1]
+            wl = self.weekly_low[-1]
+            if np.isnan(wh) or np.isnan(wl):
+                return "neutral"
             wc = _safe_float(self.data1.close[0])
-            if wc > _safe_float(self.weekly_high[-1]):
+            if wc > _safe_float(wh):
                 return "up"
-            if wc < _safe_float(self.weekly_low[-1]):
+            if wc < _safe_float(wl):
                 return "down"
             return "neutral"
 
@@ -693,7 +743,7 @@ def _make_turtle_multi_tf():
                 return 0
             value = float(self.broker.getvalue())
             risk = value * float(self.p.risk_pct)
-            shares = int(risk / (_safe_float(self.p.stop_n) * atr))
+            shares = int(risk / atr)
             shares = (shares // 100) * 100
             return max(100, shares) if shares > 0 else 0
 
@@ -705,31 +755,25 @@ def _make_turtle_multi_tf():
             trend = self._weekly_trend()
 
             if self.position:
-                if trend == "down":
-                    self.sell(size=int(self.position.size))
-                    self.units = 0
-                    self.stop_price = None
-                    self.next_add = None
-                    return
                 if self.stop_price is not None and close < _safe_float(self.stop_price):
-                    self.sell(size=int(self.position.size))
-                    self.units = 0
-                    self.stop_price = None
-                    self.next_add = None
+                    self.order = self.close()
+                    self._is_add_order = False
                     return
                 if close < _safe_float(self.daily_exit_low[-1]):
-                    self.sell(size=int(self.position.size))
-                    self.units = 0
-                    self.stop_price = None
-                    self.next_add = None
+                    self.order = self.close()
+                    self._is_add_order = False
+                    return
+                if trend == "down":
+                    self.order = self.close()
+                    self._is_add_order = False
                     return
                 if self.units < int(self.p.max_units) and self.next_add is not None and close > _safe_float(self.next_add):
                     size = self._unit_size(close, atr)
                     if size > 0:
-                        self.buy(size=size)
-                        self.units += 1
-                        self.stop_price = close - _safe_float(self.p.stop_n) * atr
-                        self.next_add = close + _safe_float(self.p.add_n) * atr
+                        cash = float(self.broker.getcash())
+                        if cash > close * size * 1.01:
+                            self._is_add_order = True
+                            self.order = self.buy(size=size)
                 return
 
             if trend == "down":
@@ -738,10 +782,8 @@ def _make_turtle_multi_tf():
             if close > _safe_float(self.daily_entry_high[-1]):
                 size = self._unit_size(close, atr)
                 if size > 0:
-                    self.buy(size=size)
-                    self.units = 1
-                    self.stop_price = close - _safe_float(self.p.stop_n) * atr
-                    self.next_add = close + _safe_float(self.p.add_n) * atr
+                    self._is_add_order = False
+                    self.order = self.buy(size=size)
 
     return MultiTFTurtle
 
@@ -770,17 +812,34 @@ def _make_turtle_ml():
             self.stop_price = None
             self.next_add = None
             self.order = None
+            self._is_add_order = False
 
         def notify_order(self, order):
-            if order.status in [order.Completed, order.Canceled, order.Margin]:
-                self.order = None
+            if order.status in [order.Submitted, order.Accepted]:
+                return
+            if order.status == order.Completed:
+                if order.isbuy():
+                    fp = float(order.executed.price)
+                    atr_val = _safe_float(self.atr[0])
+                    self.units += 1
+                    self.stop_price = fp - _safe_float(self.p.stop_n) * atr_val
+                    self.next_add = fp + _safe_float(self.p.add_n) * atr_val
+                elif order.issell():
+                    self.units = 0
+                    self.stop_price = None
+                    self.next_add = None
+            elif order.status in [order.Canceled, order.Margin]:
+                if self._is_add_order:
+                    self.units -= 1
+                self._is_add_order = False
+            self.order = None
 
         def _unit_size(self, price: float, atr: float) -> int:
             if price <= 0 or atr <= 0:
                 return 0
             value = float(self.broker.getvalue())
             risk = value * float(self.p.risk_pct)
-            shares = int(risk / (_safe_float(self.p.stop_n) * atr))
+            shares = int(risk / atr)
             shares = (shares // 100) * 100
             return max(100, shares) if shares > 0 else 0
 
@@ -801,24 +860,20 @@ def _make_turtle_ml():
 
             if self.position:
                 if self.stop_price is not None and close < _safe_float(self.stop_price):
-                    self.sell(size=int(self.position.size))
-                    self.units = 0
-                    self.stop_price = None
-                    self.next_add = None
+                    self.order = self.close()
+                    self._is_add_order = False
                     return
                 if close < _safe_float(self.exit_low[-1]):
-                    self.sell(size=int(self.position.size))
-                    self.units = 0
-                    self.stop_price = None
-                    self.next_add = None
+                    self.order = self.close()
+                    self._is_add_order = False
                     return
                 if self.units < int(self.p.max_units) and self.next_add is not None and close > _safe_float(self.next_add):
                     size = self._unit_size(close, atr)
                     if size > 0:
-                        self.buy(size=size)
-                        self.units += 1
-                        self.stop_price = close - _safe_float(self.p.stop_n) * atr
-                        self.next_add = close + _safe_float(self.p.add_n) * atr
+                        cash = float(self.broker.getcash())
+                        if cash > close * size * 1.01:
+                            self._is_add_order = True
+                            self.order = self.buy(size=size)
                 return
 
             if close > _safe_float(self.entry_high[-1]):
@@ -827,10 +882,8 @@ def _make_turtle_ml():
                     return
                 size = self._unit_size(close, atr)
                 if size > 0:
-                    self.buy(size=size)
-                    self.units = 1
-                    self.stop_price = close - _safe_float(self.p.stop_n) * atr
-                    self.next_add = close + _safe_float(self.p.add_n) * atr
+                    self._is_add_order = False
+                    self.order = self.buy(size=size)
 
     return MLTurtle
 
@@ -844,16 +897,27 @@ def _make_chan_third_buy():
         def __init__(self) -> None:
             self.entry_price = None
             self.stop_price = None
+            self.order = None
+
+        def notify_order(self, order):
+            if order.status in [order.Completed]:
+                if order.isbuy():
+                    self.entry_price = float(order.executed.price)
+                self.order = None
+            elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+                self.order = None
 
         def next(self) -> None:
+            if self.order:
+                return
+
             close = float(self.data.close[0])
             sig = float(getattr(self.data, "chan_signal", [0.0])[0] or 0.0)
             zg = float(getattr(self.data, "chan_zg", [0.0])[0] or 0.0)
 
             if not self.position:
                 if sig == 3:
-                    self.buy()
-                    self.entry_price = close
+                    self.order = self.buy()
                     if bool(self.p.use_chan_stop) and zg > 0:
                         self.stop_price = zg
                     else:
@@ -863,17 +927,17 @@ def _make_chan_third_buy():
             if self.entry_price is None:
                 self.entry_price = close
             if self.stop_price is not None and close < float(self.stop_price):
-                self.sell()
+                self.order = self.close()
                 self.entry_price = None
                 self.stop_price = None
                 return
             if close >= float(self.entry_price) * (1.0 + float(self.p.take_profit_pct)):
-                self.sell()
+                self.order = self.close()
                 self.entry_price = None
                 self.stop_price = None
                 return
             if sig == -3:
-                self.sell()
+                self.order = self.close()
                 self.entry_price = None
                 self.stop_price = None
 
@@ -899,17 +963,27 @@ def _make_chan_trailing_stop():
             self.entry_price = None
             self.stop_price = None
             self.highest = None
+            self.order = None
+
+        def notify_order(self, order):
+            if order.status == order.Completed:
+                if order.isbuy():
+                    self.entry_price = float(order.executed.price)
+                    self.highest = float(order.executed.price)
+                self.order = None
+            elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+                self.order = None
 
         def next(self) -> None:
+            if self.order:
+                return
             close = float(self.data.close[0])
             sig = float(getattr(self.data, "chan_signal", [0.0])[0] or 0.0)
             zg = float(getattr(self.data, "chan_zg", [0.0])[0] or 0.0)
 
             if not self.position:
                 if sig == 3:
-                    self.buy()
-                    self.entry_price = close
-                    self.highest = close
+                    self.order = self.buy()
                     if bool(self.p.use_chan_stop) and zg > 0:
                         self.stop_price = zg
                     else:
@@ -933,21 +1007,21 @@ def _make_chan_trailing_stop():
                 self.stop_price = max(float(self.stop_price or trail), trail)
 
             if self.stop_price is not None and close < float(self.stop_price):
-                self.sell()
+                self.order = self.sell()
                 self.entry_price = None
                 self.stop_price = None
                 self.highest = None
                 return
 
             if close >= float(self.entry_price) * (1.0 + float(self.p.take_profit_pct)):
-                self.sell()
+                self.order = self.sell()
                 self.entry_price = None
                 self.stop_price = None
                 self.highest = None
                 return
 
             if sig == -3:
-                self.sell()
+                self.order = self.sell()
                 self.entry_price = None
                 self.stop_price = None
                 self.highest = None
@@ -959,50 +1033,47 @@ def _make_chan_multi_tf():
     import backtrader as bt  # type: ignore
 
     class MultiTFChan(bt.Strategy):
-        params = dict(take_profit_pct=0.15, weekly_ma_period=20)
+        params = dict(take_profit_pct=0.15)
 
         def __init__(self) -> None:
-            self.weekly_ma = bt.indicators.SimpleMovingAverage(self.data1.close, period=int(self.p.weekly_ma_period))
             self.entry_price = None
             self.stop_price = None
+            self.order = None
+
+        def notify_order(self, order):
+            if order.status == order.Completed:
+                if order.isbuy():
+                    self.entry_price = order.executed.price
+                self.order = None
+            elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+                self.order = None
 
         def next(self) -> None:
-            close = float(self.data0.close[0])
-            sig = float(getattr(self.data0, "chan_signal", [0.0])[0] or 0.0)
-            zg = float(getattr(self.data0, "chan_zg", [0.0])[0] or 0.0)
-
-            weekly_trend_up = float(self.data1.close[0]) >= float(self.weekly_ma[0])
-            weekly_trend_down = float(self.data1.close[0]) < float(self.weekly_ma[0])
-
-            if self.position and weekly_trend_down:
-                self.sell()
-                self.entry_price = None
-                self.stop_price = None
+            if self.order:
                 return
 
-            if not self.position:
-                if weekly_trend_up and sig == 3:
-                    self.buy()
-                    self.entry_price = close
-                    self.stop_price = zg if zg > 0 else close * 0.93
+            close = float(self.data.close[0])
+            sig = float(getattr(self.data, "chan_signal", [0.0])[0] or 0.0)
+            zg = float(getattr(self.data, "chan_zg", [0.0])[0] or 0.0)
+            weekly_trend = float(getattr(self.data, "weekly_trend", [0.0])[0] or 0.0)
+
+            if self.position:
+                if self.stop_price is not None and close < float(self.stop_price):
+                    self.order = self.close()
+                    return
+                if self.entry_price is not None and close >= float(self.entry_price) * (1.0 + float(self.p.take_profit_pct)):
+                    self.order = self.close()
+                    return
+                if sig == -3:
+                    self.order = self.close()
+                    return
+                if weekly_trend == -1:
+                    self.order = self.close()
                 return
 
-            if self.entry_price is None:
-                self.entry_price = close
-            if self.stop_price is not None and close < float(self.stop_price):
-                self.sell()
-                self.entry_price = None
-                self.stop_price = None
-                return
-            if close >= float(self.entry_price) * (1.0 + float(self.p.take_profit_pct)):
-                self.sell()
-                self.entry_price = None
-                self.stop_price = None
-                return
-            if sig == -3:
-                self.sell()
-                self.entry_price = None
-                self.stop_price = None
+            if weekly_trend == 1 and sig == 3:
+                self.order = self.buy()
+                self.stop_price = zg if zg > 0 else close * 0.93
 
     return MultiTFChan
 
@@ -1016,6 +1087,15 @@ def _make_chan_ml():
         def __init__(self) -> None:
             self.entry_price = None
             self.stop_price = None
+            self.order = None
+
+        def notify_order(self, order):
+            if order.status == order.Completed:
+                if order.isbuy():
+                    self.entry_price = float(order.executed.price)
+                self.order = None
+            elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+                self.order = None
 
         def _prob(self) -> float | None:
             preds = getattr(self.p, "predictions", None) or {}
@@ -1027,6 +1107,8 @@ def _make_chan_ml():
                 return None
 
         def next(self) -> None:
+            if self.order:
+                return
             close = float(self.data.close[0])
             sig = float(getattr(self.data, "chan_signal", [0.0])[0] or 0.0)
             zg = float(getattr(self.data, "chan_zg", [0.0])[0] or 0.0)
@@ -1036,25 +1118,24 @@ def _make_chan_ml():
                     prob = self._prob()
                     if prob is None or prob < float(self.p.ml_threshold):
                         return
-                    self.buy()
-                    self.entry_price = close
+                    self.order = self.buy()
                     self.stop_price = zg if zg > 0 else close * 0.93
                 return
 
             if self.entry_price is None:
                 self.entry_price = close
             if self.stop_price is not None and close < float(self.stop_price):
-                self.sell()
+                self.order = self.sell()
                 self.entry_price = None
                 self.stop_price = None
                 return
             if close >= float(self.entry_price) * (1.0 + float(self.p.take_profit_pct)):
-                self.sell()
+                self.order = self.sell()
                 self.entry_price = None
                 self.stop_price = None
                 return
             if sig == -3:
-                self.sell()
+                self.order = self.sell()
                 self.entry_price = None
                 self.stop_price = None
 
@@ -1072,32 +1153,44 @@ def _make_grid_classic():
         def __init__(self) -> None:
             self.lookback = int(self.p.lookback)
             self.engine = None
-            self.range_high = bt.indicators.Highest(self.data.high, period=self.lookback)
-            self.range_low = bt.indicators.Lowest(self.data.low, period=self.lookback)
+            self.order = None
+
+        def notify_order(self, order):
+            if order.status in [order.Submitted, order.Accepted]:
+                return
+            self.order = None
 
         def next(self) -> None:
+            if self.order:
+                return
             close = float(self.data.close[0])
             if self.engine is None:
+                if len(self.data) < self.lookback:
+                    return
                 try:
-                    lo = float(self.range_low[0])
-                    hi = float(self.range_high[0])
+                    highs = [float(self.data.high[-i]) for i in range(1, self.lookback + 1)]
+                    lows = [float(self.data.low[-i]) for i in range(1, self.lookback + 1)]
+                    hi = max(highs)
+                    lo = min(lows)
                 except (TypeError, IndexError, ValueError):
                     return
                 if not (lo > 0 and hi > lo):
                     return
-                lower = lo * (1.0 - float(self.p.margin_pct))
-                upper = hi * (1.0 + float(self.p.margin_pct))
+                margin = (hi - lo) * float(self.p.margin_pct)
+                lower = lo - margin
+                upper = hi + margin
                 capital = float(self.broker.getvalue()) * float(self.p.capital_ratio)
                 self.engine = GridEngine(lower=lower, upper=upper, num_grids=int(self.p.num_grids), total_capital=capital)
                 return
 
             for sig in self.engine.update(close):
                 if sig.action == "BUY":
-                    if float(self.broker.getcash()) >= float(sig.price) * sig.shares:
-                        self.buy(size=int(sig.shares))
+                    if float(self.broker.getcash()) >= float(close) * sig.shares * 1.01:
+                        if sig.shares > 0:
+                            self.order = self.buy(size=int(sig.shares))
                 elif sig.action == "SELL":
                     if int(self.position.size) >= int(sig.shares):
-                        self.sell(size=int(sig.shares))
+                        self.order = self.sell(size=int(sig.shares))
 
     return ClassicGrid
 
@@ -1112,8 +1205,40 @@ def _make_chan_grid():
 
         def __init__(self) -> None:
             self.engine = None
-            self.last_zg = None
-            self.last_zd = None
+            self.order = None
+            self.current_zg = 0.0
+            self.current_zd = 0.0
+            self.mode = "WAIT"
+
+        def notify_order(self, order):
+            if order.status in [order.Submitted, order.Accepted]:
+                return
+            self.order = None
+
+        def _build_grid(self, zg, zd):
+            if zg <= zd or zg <= 0:
+                return
+            grid_capital = float(self.broker.getvalue()) * float(self.p.capital_ratio)
+            if self.engine is None:
+                self.engine = ChanGridEngine(
+                    zg=zg, zd=zd,
+                    num_grids=int(self.p.num_grids),
+                    total_capital=grid_capital,
+                )
+            else:
+                self.engine.switch_zhongshu(zg, zd)
+                self.engine.total_capital = grid_capital
+                self.engine.capital_per_grid = grid_capital / int(self.p.num_grids)
+            self.current_zg = zg
+            self.current_zd = zd
+            self.mode = "GRID"
+
+        def _close_all_grid_positions(self):
+            if int(self.position.size) > 0:
+                self.order = self.close()
+            if self.engine:
+                self.engine.deactivate()
+                self.engine.position_at = [0] * (self.engine.num_grids + 1)
 
         def _has_center(self) -> bool:
             try:
@@ -1124,6 +1249,9 @@ def _make_chan_grid():
             return zg > 0 and zd > 0 and zg > zd
 
         def next(self) -> None:
+            if self.order:
+                return
+
             try:
                 close = float(self.data.close[0])
                 zg = float(getattr(self.data, "chan_zg", [0.0])[0] or 0.0)
@@ -1131,46 +1259,69 @@ def _make_chan_grid():
             except (TypeError, IndexError, ValueError):
                 return
 
-            if not self._has_center():
-                self.engine = None
+            has_zhongshu = self._has_center()
+
+            if not has_zhongshu:
+                if self.mode == "GRID":
+                    self._close_all_grid_positions()
+                    self.mode = "WAIT"
                 return
 
-            if self.last_zg is None or self.last_zd is None:
-                self.last_zg, self.last_zd = zg, zd
+            zg_changed = abs(zg - self.current_zg) > self.current_zg * 0.001 if self.current_zg > 0 else True
+            zd_changed = abs(zd - self.current_zd) > self.current_zd * 0.001 if self.current_zd > 0 else True
 
-            changed = (abs(zg / float(self.last_zg) - 1.0) > 0.001) or (abs(zd / float(self.last_zd) - 1.0) > 0.001)
-            if self.engine is None or changed:
-                if int(self.position.size) > 0:
-                    self.sell(size=int(self.position.size))
-                capital = float(self.broker.getvalue()) * float(self.p.capital_ratio)
-                self.engine = ChanGridEngine(zg=zg, zd=zd, num_grids=int(self.p.num_grids), total_capital=capital)
-                self.last_zg, self.last_zd = zg, zd
-                return
-
-            if bool(self.p.exit_on_breakout):
-                if close > zg * (1.0 + float(self.p.breakout_pct)) or close < zd * (1.0 - float(self.p.breakout_pct)):
-                    if int(self.position.size) > 0:
-                        self.sell(size=int(self.position.size))
-                    self.engine.deactivate()
+            if zg_changed or zd_changed:
+                if self.mode == "GRID" and int(self.position.size) > 0:
+                    self._close_all_grid_positions()
                     return
+                self._build_grid(zg, zd)
+
+            if self.mode != "GRID" or self.engine is None:
+                return
+
+            if close > zg * (1.0 + float(self.p.breakout_pct)):
+                if bool(self.p.exit_on_breakout):
+                    self._close_all_grid_positions()
+                self.mode = "BREAKOUT"
+                return
+
+            if close < zd * (1.0 - float(self.p.breakout_pct)):
+                if bool(self.p.exit_on_breakout):
+                    self._close_all_grid_positions()
+                self.mode = "BREAKOUT"
+                return
 
             for s in self.engine.update(close):
                 if s.action == "BUY":
-                    if float(self.broker.getcash()) >= float(s.price) * s.shares:
-                        self.buy(size=int(s.shares))
+                    cash = float(self.broker.getcash())
+                    cost = close * s.shares * 1.01
+                    if cash >= cost and s.shares > 0:
+                        self.order = self.buy(size=int(s.shares))
+                        break
                 elif s.action == "SELL":
                     if int(self.position.size) >= int(s.shares):
-                        self.sell(size=int(s.shares))
+                        self.order = self.sell(size=int(s.shares))
+                        break
 
     return ChanGrid
 
 
 def _make_chan_grid_trend_linkage():
+    """中枢网格+趋势联动策略工厂函数，与参考代码ChanHybridStrategy保持一致"""
     import backtrader as bt  # type: ignore
+    import numpy as np
 
     from core.strategy.grid_engine import ChanGridEngine
 
     class ChanGridTrend(bt.Strategy):
+        """
+        中枢网格 + 趋势联动策略
+
+        三种模式:
+          GRID:     中枢内做网格, 低买高卖
+          TREND_UP: 向上突破中枢, ATR跟踪止损持仓
+          WAIT:     向下跌破中枢或等待新中枢, 空仓防守
+        """
         params = dict(
             num_grids=6,
             capital_ratio=0.80,
@@ -1180,113 +1331,159 @@ def _make_chan_grid_trend_linkage():
         )
 
         def __init__(self) -> None:
-            self.state = "WAIT"
-            self.engine = None
-            self.atr = bt.indicators.ATR(self.data, period=int(self.p.atr_period))
-            self.highest = None
-            self.last_zg = None
-            self.last_zd = None
+            self.grid = None
+            self.order = None
+            self.mode = 'WAIT'
+            self.current_zg = 0.0
+            self.current_zd = 0.0
+            self.trail_stop = 0.0
+            self.highest_since_breakout = 0.0
+            self.trend_entry_price = 0.0
 
-        def _zgzd(self) -> tuple[float, float]:
-            zg = float(getattr(self.data, "chan_zg", [0.0])[0] or 0.0)
-            zd = float(getattr(self.data, "chan_zd", [0.0])[0] or 0.0)
-            return zg, zd
+        def notify_order(self, order):
+            if order.status in [order.Submitted, order.Accepted]:
+                return
+            self.order = None
 
-        def _has_center(self, zg: float, zd: float) -> bool:
-            return zg > 0 and zd > 0 and zg > zd
+        def _calc_atr(self):
+            """手动计算ATR（与参考代码一致，使用talib）"""
+            import talib
+            size = min(len(self.data), self.p.atr_period + 5)
+            if size < self.p.atr_period:
+                return None
+            high = np.array([self.data.high[-i] for i in range(size, 0, -1)], dtype=float)
+            low = np.array([self.data.low[-i] for i in range(size, 0, -1)], dtype=float)
+            close = np.array([self.data.close[-i] for i in range(size, 0, -1)], dtype=float)
+            atr = talib.ATR(high, low, close, timeperiod=self.p.atr_period)
+            if atr is None or np.isnan(atr[-1]):
+                return None
+            return float(atr[-1])
+
+        def _build_grid(self, zg, zd):
+            """构建或切换网格（与参考代码_build_grid一致）"""
+            grid_capital = self.broker.getvalue() * self.p.capital_ratio
+            if self.grid is None:
+                self.grid = ChanGridEngine(zg=zg, zd=zd, num_grids=self.p.num_grids, total_capital=grid_capital)
+            else:
+                self.grid.switch_zhongshu(zg, zd)
+                self.grid.total_capital = grid_capital
+                self.grid.capital_per_grid = grid_capital / self.p.num_grids
+            self.current_zg = zg
+            self.current_zd = zd
 
         def next(self) -> None:
-            close = float(self.data.close[0])
-            sig = float(getattr(self.data, "chan_signal", [0.0])[0] or 0.0)
-            zg, zd = self._zgzd()
-
-            if self.state == "WAIT":
-                if self._has_center(zg, zd):
-                    self.state = "GRID"
-                    self.last_zg, self.last_zd = zg, zd
-                    capital = float(self.broker.getvalue()) * float(self.p.capital_ratio)
-                    self.engine = ChanGridEngine(zg=zg, zd=zd, num_grids=int(self.p.num_grids), total_capital=capital)
+            if self.order:
                 return
 
-            if self.state == "GRID":
-                if not self._has_center(zg, zd):
-                    if int(self.position.size) > 0:
-                        self.sell(size=int(self.position.size))
-                    self.state = "WAIT"
-                    self.engine = None
-                    return
+            zg = self.data.chan_zg[0]
+            zd = self.data.chan_zd[0]
+            price = self.data.close[0]
+            has_zs = (not np.isnan(zg)) and (not np.isnan(zd)) and zg > 0 and zd > 0
 
-                changed = False
-                if self.last_zg is not None and self.last_zd is not None:
-                    changed = (abs(zg / float(self.last_zg) - 1.0) > 0.001) or (abs(zd / float(self.last_zd) - 1.0) > 0.001)
-                if changed:
-                    if int(self.position.size) > 0:
-                        self.sell(size=int(self.position.size))
-                    capital = float(self.broker.getvalue()) * float(self.p.capital_ratio)
-                    self.engine = ChanGridEngine(zg=zg, zd=zd, num_grids=int(self.p.num_grids), total_capital=capital)
-                    self.last_zg, self.last_zd = zg, zd
-                    return
-
-                if close > zg * (1.0 + float(self.p.breakout_confirm)):
-                    if self.engine is not None:
-                        self.engine.deactivate()
-                    capital = float(self.broker.getvalue()) * 0.50
-                    shares = int(capital / close)
-                    shares = (shares // 100) * 100
-                    if shares > 0:
-                        self.buy(size=shares)
-                        self.highest = close
-                        self.state = "TREND_UP"
-                    return
-
-                if close < zd * (1.0 - float(self.p.breakout_confirm)):
-                    if int(self.position.size) > 0:
-                        self.sell(size=int(self.position.size))
-                    if self.engine is not None:
-                        self.engine.deactivate()
-                    self.state = "WAIT"
-                    self.engine = None
-                    return
-
-                if self.engine is not None:
-                    for s in self.engine.update(close):
-                        if s.action == "BUY":
-                            if float(self.broker.getcash()) >= float(s.price) * s.shares:
-                                self.buy(size=int(s.shares))
-                        elif s.action == "SELL":
-                            if int(self.position.size) >= int(s.shares):
-                                self.sell(size=int(s.shares))
+            # ---- WAIT模式: 等待中枢形成 ----
+            if self.mode == 'WAIT':
+                if has_zs:
+                    zg_changed = abs(zg - self.current_zg) > self.current_zg * 0.001 if self.current_zg > 0 else True
+                    zd_changed = abs(zd - self.current_zd) > self.current_zd * 0.001 if self.current_zd > 0 else True
+                    if zg_changed or zd_changed:
+                        self._build_grid(zg, zd)
+                        self.mode = 'GRID'
                 return
 
-            if self.state == "TREND_UP":
-                self.highest = max(float(self.highest or close), close)
-                atr = float(self.atr[0])
-                if atr > 0 and self.highest is not None:
-                    stop = float(self.highest) - float(self.p.atr_trail_mult) * atr
-                    if close < stop:
-                        if int(self.position.size) > 0:
-                            self.sell(size=int(self.position.size))
-                        self.state = "WAIT"
-                        self.engine = None
-                        self.highest = None
+            # ---- GRID模式: 中枢内做网格 ----
+            if self.mode == 'GRID':
+                if not has_zs:
+                    if self.position.size > 0:
+                        self.order = self.close()
+                    if self.grid:
+                        self.grid.deactivate()
+                    self.mode = 'WAIT'
+                    return
+
+                # 检查中枢切换
+                zg_changed = abs(zg - self.current_zg) > self.current_zg * 0.001 if self.current_zg > 0 else False
+                zd_changed = abs(zd - self.current_zd) > self.current_zd * 0.001 if self.current_zd > 0 else False
+                if zg_changed or zd_changed:
+                    if self.position.size > 0:
+                        self.order = self.close()
                         return
+                    self._build_grid(zg, zd)
 
-                if sig == -3:
-                    if int(self.position.size) > 0:
-                        self.sell(size=int(self.position.size))
-                    self.state = "WAIT"
-                    self.engine = None
-                    self.highest = None
+                # 向上突破 -> 趋势模式
+                if price > self.current_zg * (1 + self.p.breakout_confirm):
+                    if self.position.size > 0:
+                        self.order = self.close()
+                        return
+                    if self.grid:
+                        self.grid.deactivate()
+                    # 趋势入场: 买入
+                    atr = self._calc_atr()
+                    if atr and atr > 0:
+                        size = int((self.broker.getvalue() * 0.5) / price // 100) * 100
+                        if size >= 100:
+                            self.order = self.buy(size=size)
+                            self.trend_entry_price = price
+                            self.highest_since_breakout = price
+                            self.trail_stop = price - self.p.atr_trail_mult * atr
+                            self.mode = 'TREND_UP'
                     return
 
-                if self._has_center(zg, zd):
-                    if int(self.position.size) > 0:
-                        self.sell(size=int(self.position.size))
-                    self.state = "GRID"
-                    self.last_zg, self.last_zd = zg, zd
-                    capital = float(self.broker.getvalue()) * float(self.p.capital_ratio)
-                    self.engine = ChanGridEngine(zg=zg, zd=zd, num_grids=int(self.p.num_grids), total_capital=capital)
-                    self.highest = None
+                # 向下跌破 -> 防守
+                if price < self.current_zd * (1 - self.p.breakout_confirm):
+                    if self.position.size > 0:
+                        self.order = self.close()
+                    if self.grid:
+                        self.grid.deactivate()
+                    self.mode = 'WAIT'
+                    return
+
+                # 正常网格交易
+                if self.grid and self.grid.active:
+                    signals = self.grid.update(price)
+                    for sig in signals:
+                        if sig.action == 'BUY':
+                            cash = self.broker.getcash()
+                            if cash >= price * sig.shares * 1.01 and sig.shares > 0:
+                                self.order = self.buy(size=sig.shares)
+                                break
+                        elif sig.action == 'SELL':
+                            if self.position.size >= sig.shares:
+                                self.order = self.sell(size=sig.shares)
+                                break
+                return
+
+            # ---- TREND_UP模式: 趋势跟踪 ----
+            if self.mode == 'TREND_UP':
+                if price > self.highest_since_breakout:
+                    self.highest_since_breakout = price
+
+                atr = self._calc_atr()
+                if atr and atr > 0:
+                    new_stop = self.highest_since_breakout - self.p.atr_trail_mult * atr
+                    self.trail_stop = max(self.trail_stop, new_stop)
+
+                # ATR跟踪止损
+                if price < self.trail_stop:
+                    self.order = self.close()
+                    self.mode = 'WAIT'
+                    return
+
+                # 三卖信号离场
+                if self.data.chan_signal[0] == -3:
+                    self.order = self.close()
+                    self.mode = 'WAIT'
+                    return
+
+                # 检查是否进入新中枢 -> 回到网格
+                zg_changed = abs(zg - self.current_zg) > self.current_zg * 0.001 if self.current_zg > 0 else False
+                zd_changed = abs(zd - self.current_zd) > self.current_zd * 0.001 if self.current_zd > 0 else False
+                if has_zs and (zg_changed or zd_changed):
+                    if self.position.size > 0:
+                        self.order = self.close()
+                        return
+                    self._build_grid(zg, zd)
+                    self.mode = 'GRID'
+                return
 
     return ChanGridTrend
 
@@ -1651,19 +1848,18 @@ def get_strategy_registry() -> dict[str, StrategyMeta]:
         "chan_multi_tf": StrategyMeta(
             strategy_id="chan_multi_tf",
             name="缠论-多周期缠论策略",
-            description="周线向上才允许日线三买入场；其余止盈/止损/三卖离场。",
+            description="周线中枢方向判断趋势，向上才允许日线三买入场；其余止盈/止损/三卖离场。",
             params_schema={
                 "chan_backend": _p_select("缠论分析库", "选择缠论分析引擎：自研 ChanAnalyzer 或开源 chan.py", [
                     {"value": "self", "label": "自研 ChanAnalyzer"},
                     {"value": "chanpy", "label": "开源 chan.py"},
                 ]),
                 "take_profit_pct": _p_float("止盈比例", "达到该比例收益后止盈出场。", 0.0, 5.0, 0.01),
-                "weekly_ma_period": _p_int("周线MA周期", "周线趋势过滤的均线周期（默认 20）。周线收盘高于均线视为向上。", 2, 200),
             },
-            default_params={"chan_backend": "self", "take_profit_pct": 0.15, "weekly_ma_period": 20},
+            default_params={"chan_backend": "self", "take_profit_pct": 0.15},
             bt_strategy_factory=_make_chan_multi_tf,
             requires_chan=True,
-            requires_weekly=True,
+            requires_weekly_trend=True,
             group="optimized",
         ),
         "chan_ml": StrategyMeta(

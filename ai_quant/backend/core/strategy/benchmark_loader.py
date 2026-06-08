@@ -116,7 +116,7 @@ def calc_benchmark_nav(
     code: str,
     start: str,
     end: str,
-    initial_cash: float = 100000.0,
+    initial_cash: float = 1000000.0,
 ) -> list[dict[str, Any]]:
     """
     计算基准净值序列

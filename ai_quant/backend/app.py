@@ -42,6 +42,7 @@ from .api.watchlist import router as watchlist_router
 from .api.stock_detail import router as stock_detail_router
 from .api.data_status import router as data_status_router
 from .api.stock_select import router as stock_select_router
+from .api.stock_select_presets import router as stock_select_presets_router
 from .api.signals import router as signals_router
 from .api.sim_account import router as sim_account_router
 from .api.mainforce import router as mainforce_router
@@ -50,6 +51,16 @@ from .api.performance import router as performance_router
 from .api.stock_group import router as stock_group_router
 from .api.intraday import router as intraday_router
 from .api.workflow_team import router as workflow_team_router
+from .api.admin.admin_conversations import router as admin_conversations_router
+from .api.admin.admin_api_keys import router as admin_api_keys_router
+from .api.admin.admin_models import router as admin_models_router
+from .api.admin.admin_tools import router as admin_tools_router
+from .api.admin.admin_prompts import router as admin_prompts_router
+from .api.admin.admin_agents import router as admin_agents_router
+from .api.admin.admin_feishu import router as admin_feishu_router
+from .api.admin.admin_system import router as admin_system_router
+from .api.admin.admin_monitor import router as admin_monitor_router
+from .api.admin.admin_scheduled_jobs import router as admin_scheduled_jobs_router
 from .config import get_settings, get_logging_settings
 from .infra.storage.logging_service import init_logging, get_logger, shutdown_logging
 
@@ -272,6 +283,7 @@ def create_app() -> FastAPI:
     api.include_router(watchlist_router)     # 自选股路由
     api.include_router(stock_detail_router)   # 个股详情路由
     api.include_router(stock_select_router)   # 选股路由
+    api.include_router(stock_select_presets_router)   # 选股条件预设路由
     api.include_router(jobs_router)           # 任务队列路由
     api.include_router(reports_router)        # 报告生成路由
     api.include_router(analysis_router)       # 技术分析路由
@@ -291,6 +303,16 @@ def create_app() -> FastAPI:
     api.include_router(stock_group_router)     # 股票分组管理路由
     api.include_router(intraday_router)         # 个股分时数据路由
     api.include_router(workflow_team_router)     # 工作流团队路由
+    api.include_router(admin_conversations_router)  # 管理后台会话路由
+    api.include_router(admin_api_keys_router)       # 管理后台API密钥路由
+    api.include_router(admin_models_router)         # 管理后台模型配置路由
+    api.include_router(admin_tools_router)          # 管理后台工具与技能路由
+    api.include_router(admin_prompts_router)        # 管理后台提示词管理路由
+    api.include_router(admin_agents_router)         # 管理后台智能体配置路由
+    api.include_router(admin_feishu_router)         # 管理后台飞书集成路由
+    api.include_router(admin_system_router)          # 管理后台系统配置路由
+    api.include_router(admin_monitor_router)         # 管理后台日志与监控路由
+    api.include_router(admin_scheduled_jobs_router)  # 管理后台AI定时任务路由
 
     # 挂载静态文件目录，用于 QuantStats HTML 报告访问
     reports_static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "reports")
@@ -325,6 +347,36 @@ def create_app() -> FastAPI:
             run_financial_indexes_migration()
         except Exception as e:
             logger.warning("财务数据索引迁移失败", extra={
+                "error": str(e)
+            })
+        
+        # 初始化管理后台数据库
+        try:
+            from .api.admin_db import init_admin_db
+            init_admin_db()
+            logger.info("管理后台数据库初始化成功")
+        except Exception as e:
+            logger.warning("管理后台数据库初始化失败", extra={
+                "error": str(e)
+            })
+        
+        # 初始化选股条件预设表
+        try:
+            from .api.stock_select_presets import init_presets_table
+            init_presets_table()
+            logger.info("选股条件预设表初始化成功")
+        except Exception as e:
+            logger.warning("选股条件预设表初始化失败", extra={
+                "error": str(e)
+            })
+        
+        # 注入API密钥到环境变量
+        try:
+            from .infra.key_injector import KeyInjector
+            KeyInjector.inject_all()
+            logger.info("API密钥注入完成")
+        except Exception as e:
+            logger.warning("API密钥注入失败（不影响启动）", extra={
                 "error": str(e)
             })
         

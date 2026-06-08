@@ -22,14 +22,13 @@ interface StockScore {
 }
 
 const DEFAULT_FACTORS: Factor[] = [
-  { key: 'pe', label: '市盈率（TTM）', weight: 15, direction: 'down', desc: '越低估值越合理' },
-  { key: 'pb', label: '市净率（MRQ）', weight: 10, direction: 'down', desc: '越低资产质量越好' },
+  { key: 'pe', label: 'PE（市盈率）', weight: 15, direction: 'down', desc: '越低估值越合理' },
+  { key: 'pb', label: 'PB（市净率）', weight: 10, direction: 'down', desc: '越低资产质量越好' },
   { key: 'roe', label: 'ROE', weight: 20, direction: 'up', desc: '越高盈利能力越强' },
   { key: 'gross', label: '毛利率', weight: 10, direction: 'up', desc: '越高定价能力越强' },
   { key: 'rev_growth', label: '营收增速', weight: 15, direction: 'up', desc: '越高成长性越好' },
   { key: 'profit_growth', label: '利润增速', weight: 20, direction: 'up', desc: '越高盈利质量越好' },
   { key: 'debt_ratio', label: '资产负债率', weight: 5, direction: 'down', desc: '越低财务越健康' },
-  { key: 'market_cap', label: '市值规模', weight: 5, direction: 'up', desc: '适中规模更具弹性' },
 ]
 
 export default function StockSelectFactor() {

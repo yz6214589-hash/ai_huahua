@@ -63,11 +63,11 @@ def run_backtest(
     df: pd.DataFrame,
     strategy_cls: Any,
     strategy_params: dict[str, Any],
-    initial_cash: float = 100000.0,
+    initial_cash: float = 1000000.0,
     commission: float = 0.001,
     requires_weekly: bool = False,
-    commission_buy: float = 0.0003,
-    commission_sell: float = 0.0013,
+    commission_buy: float = 0.00015,
+    commission_sell: float = 0.00015,
     slippage_pct: float = 0.0,
     slippage_fixed: float = 0.0,
     min_commission: float = 5.0,
@@ -86,8 +86,8 @@ def run_backtest(
         initial_cash: 初始资金
         commission: 统一佣金率（向后兼容，当 commission_buy/commission_sell 未使用时生效）
         requires_weekly: 是否需要周线数据
-        commission_buy: 买入佣金率，默认0.0003
-        commission_sell: 卖出佣金率，默认0.0013
+        commission_buy: 买入佣金率，默认0.00015
+        commission_sell: 卖出佣金率，默认0.00015
         slippage_pct: 滑点百分比，默认0.0
         slippage_fixed: 固定滑点，默认0.0
         min_commission: 最低手续费，默认5.0
@@ -118,7 +118,7 @@ def run_backtest(
     data_df = data_df.sort_values("trade_date").reset_index(drop=True)
 
     class PandasDaily(bt.feeds.PandasData):
-        lines = ("chan_signal", "chan_zg", "chan_zd")
+        lines = ("chan_signal", "chan_zg", "chan_zd", "weekly_trend")
         params = (
             ("datetime", "trade_date"),
             ("open", "open"),
@@ -129,6 +129,7 @@ def run_backtest(
             ("chan_signal", "chan_signal"),
             ("chan_zg", "chan_zg"),
             ("chan_zd", "chan_zd"),
+            ("weekly_trend", "weekly_trend"),
             ("openinterest", -1),
         )
 
@@ -187,23 +188,22 @@ def run_backtest(
     cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
     cerebro.addanalyzer(bt.analyzers.Returns, _name="rets")
 
-    for col in ["chan_signal", "chan_zg", "chan_zd"]:
+    for col in ["chan_signal", "chan_zg", "chan_zd", "weekly_trend"]:
         if col not in data_df.columns:
             data_df[col] = np.nan
 
     feed = PandasDaily(dataname=data_df)
     cerebro.adddata(feed)
     if bool(requires_weekly):
-        cerebro.resampledata(feed, timeframe=bt.TimeFrame.Weeks, compression=1)
+        feed_weekly = PandasDaily(dataname=data_df)
+        cerebro.resampledata(feed_weekly, timeframe=bt.TimeFrame.Weeks, compression=1)
 
     class _Wrapped(strategy_cls):  # type: ignore[misc,valid-type]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             self._trade_log: list[dict[str, Any]] = []
             self._nav_log: list[dict[str, Any]] = []
-            # 使用 FIFO 队列替代 id(trade) 字典缓存，因为 backtrader 的 Trade 对象
-            # 在 justopened 和 isclosed 两次回调中可能不是同一个实例，导致 id(trade) 不一致
-            self._entry_queue: list[dict[str, Any]] = []
+            self._buy_queue: list[dict[str, Any]] = []
 
         def _calc_fee_breakdown(self, size: int, price: float, is_buy: bool) -> str:
             abs_size = abs(size)
@@ -220,63 +220,56 @@ def run_backtest(
                 parts = [f"{comm:.2f}(卖出佣金)", f"{stamp:.2f}(印花税)", f"{transfer:.2f}(卖出过户费)"]
             return f"{total:.2f}={'+'.join(parts)}"
 
-        def notify_trade(self, trade: Any) -> None:
+        def notify_order(self, order: Any) -> None:
+            try:
+                super().notify_order(order)
+            except AttributeError:
+                pass
+            if not hasattr(self, "_buy_queue"):
+                self._buy_queue = []
+            if not hasattr(self, "_trade_log"):
+                self._trade_log = []
+            if order.status != order.Completed:
+                return
             dt = self.data.datetime.date(0).isoformat()
-            if trade.justopened:
-                entry_price = round(float(trade.price), 4)
-                entry_size = abs(int(trade.size))
-                # 推入 FIFO 队列，按顺序匹配后续的卖出
-                self._entry_queue.append({
-                    "entry_price": entry_price,
-                    "entry_size": entry_size,
+            px = float(order.executed.price)
+            sz = int(order.executed.size)
+            if order.isbuy():
+                fee_str = self._calc_fee_breakdown(sz, px, is_buy=True)
+                buy_fee = float(fee_str.split("=")[0]) if "=" in fee_str else 0.0
+                self._buy_queue.append({
+                    "price": px, "size": sz,
+                    "cost_with_fee": sz * px + buy_fee,
                 })
-                fee_detail = self._calc_fee_breakdown(trade.size, trade.price, is_buy=True)
-                self._trade_log.append(
-                    {
-                        "trade_date": dt,
-                        "action": "buy",
-                        "price": entry_price,
-                        "size": entry_size,
-                        "cost": round(entry_price * entry_size, 2),
-                        "proceeds": 0,
-                        "pnl": 0.0,
-                        "pnlcomm": 0.0,
-                        "fee_detail": fee_detail,
-                    }
-                )
-            if trade.isclosed:
-                # 从 FIFO 队列中弹出最早匹配的买入记录（先进先出）
-                info = self._entry_queue.pop(0) if self._entry_queue else None
-                pnl = float(trade.pnl)
-
-                if info:
-                    entry_price = info["entry_price"]
-                    entry_size = info["entry_size"]
-                    # 主计算：exit_price = entry_price + pnl / entry_size
-                    exit_price = round(entry_price + pnl / entry_size, 4) if entry_size > 0 else 0.0
-                    proceeds = round(exit_price * entry_size, 2)
-                else:
-                    # 兜底：直接从 trade 对象获取（trade.price 和 trade.size 本身是可靠的）
-                    entry_price = abs(float(trade.price))
-                    entry_size = abs(int(trade.size))
-                    exit_price = round(entry_price + pnl / entry_size, 4) if entry_size > 0 else 0.0
-                    proceeds = round(exit_price * entry_size, 2)
-
-                # 卖出时，trade.price 可能不可靠，改用计算出的 exit_price 和 entry_size
-                fee_detail = self._calc_fee_breakdown(-entry_size, exit_price, is_buy=False)
-                self._trade_log.append(
-                    {
-                        "trade_date": dt,
-                        "action": "sell",
-                        "price": exit_price,
-                        "size": entry_size,
-                        "cost": 0,
-                        "proceeds": proceeds,
-                        "pnl": pnl,
-                        "pnlcomm": float(trade.pnlcomm),
-                        "fee_detail": fee_detail,
-                    }
-                )
+                self._trade_log.append({
+                    "trade_date": dt, "action": "buy",
+                    "price": round(px, 2), "size": sz,
+                    "cost": round(sz * px, 2), "proceeds": 0,
+                    "pnl": 0.0, "pnlcomm": 0.0, "fee_detail": fee_str,
+                })
+            else:
+                sz_abs = abs(sz)
+                total_cost_with_fee = 0.0
+                remaining = sz_abs
+                while remaining > 0 and self._buy_queue:
+                    entry = self._buy_queue[0]
+                    match = min(remaining, entry["size"])
+                    total_cost_with_fee += entry["cost_with_fee"] * (match / entry["size"])
+                    remaining -= match
+                    entry["size"] -= match
+                    if entry["size"] <= 0:
+                        self._buy_queue.pop(0)
+                proceeds = sz_abs * px
+                fee_str = self._calc_fee_breakdown(-sz_abs, px, is_buy=False)
+                sell_fee = float(fee_str.split("=")[0]) if "=" in fee_str else 0.0
+                net_pnl = proceeds - total_cost_with_fee - sell_fee
+                self._trade_log.append({
+                    "trade_date": dt, "action": "sell",
+                    "price": round(px, 2), "size": sz_abs,
+                    "cost": 0, "proceeds": round(proceeds, 2),
+                    "pnl": round(net_pnl, 2), "pnlcomm": round(net_pnl, 2),
+                    "fee_detail": fee_str,
+                })
 
         def next(self) -> None:
             try:
@@ -306,7 +299,7 @@ def run_backtest(
     end_value = cerebro.broker.getvalue()
 
     # 检查是否有未平仓的买入（待卖）
-    pending_entries = list(strat._entry_queue)
+    pending_entries = list(strat._buy_queue) if hasattr(strat, "_buy_queue") else []
     if pending_entries:
         last_date = data_df["trade_date"].iloc[-1]
         if hasattr(last_date, "strftime"):
@@ -317,8 +310,10 @@ def run_backtest(
             last_date = str(last_date)[:10]
         last_close = float(data_df["close"].iloc[-1])
         for entry in pending_entries:
-            entry_price = entry["entry_price"]
-            entry_size = entry["entry_size"]
+            entry_price = entry["price"]
+            entry_size = entry["size"]
+            if entry_size <= 0:
+                continue
             market_value = round(last_close * entry_size, 2)
             unrealized_pnl = round((last_close - entry_price) * entry_size, 2)
             strat._trade_log.append({

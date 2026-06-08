@@ -549,7 +549,14 @@ def run_job_once(body: dict[str, Any], bg: BackgroundTasks) -> dict[str, Any]:
     )
     run_id = str(run.get("runId") or "").strip()
     started_at = str(run.get("startedAt") or "").strip()
-    bg.add_task(_run_job_impl, run_id=run_id, started_at=started_at, domain=domain, mode=mode, params=params)
+    # 使用独立线程避免阻塞 uvicorn 事件循环
+    import threading
+    t = threading.Thread(
+        target=_run_job_impl,
+        kwargs={"run_id": run_id, "started_at": started_at, "domain": domain, "mode": mode, "params": params},
+        daemon=True
+    )
+    t.start()
     return {"ok": True, "result": run}
 
 

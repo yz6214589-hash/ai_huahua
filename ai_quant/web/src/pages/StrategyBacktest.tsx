@@ -1904,6 +1904,140 @@ export default function StrategyBacktest() {
                                 }
                               }
 
+                              // 网格策略可视化：网格辅助线
+                              const strategyType = currentInstance?.strategy_id || selectedStrategyId
+                              const isGridStrategy = strategyType === 'grid_classic' || strategyType === 'chan_grid' || strategyType === 'chan_grid_trend'
+                              if (isGridStrategy && singleResult.kline?.length) {
+                                const prices = singleResult.kline.map(k => k.close)
+                                const highs = singleResult.kline.map(k => k.high)
+                                const lows = singleResult.kline.map(k => k.low)
+                                
+                                // 从 overrideParams 获取实际回测参数（优先于 currentInstance.params）
+                                const getNumParam = (key: string, defaultVal: number): number => {
+                                  const ov = overrideParams[key]
+                                  if (ov != null) { const n = parseFloat(ov); if (!isNaN(n)) return n }
+                                  const ip = currentInstance?.params?.[key]
+                                  if (ip != null) { const n = Number(ip); if (!isNaN(n)) return n }
+                                  return defaultVal
+                                }
+                                
+                                let gridLower: number, gridUpper: number
+                                let numGrids = 8
+                                let gridLineColor = '#e5e7eb'
+                                let gridLineLabel = '网格'
+                                
+                                if (strategyType === 'grid_classic') {
+                                  const lookback = getNumParam('lookback', 60)
+                                  const marginPct = getNumParam('margin_pct', 0.02)
+                                  const lookbackLen = Math.min(lookback, singleResult.kline.length)
+                                  const initHighs = highs.slice(0, lookbackLen)
+                                  const initLows = lows.slice(0, lookbackLen)
+                                  const hi = Math.max(...initHighs)
+                                  const lo = Math.min(...initLows)
+                                  const margin = (hi - lo) * marginPct
+                                  gridLower = lo - margin
+                                  gridUpper = hi + margin
+                                  numGrids = getNumParam('num_grids', 8)
+                                  gridLineColor = '#f59e0b'
+                                  gridLineLabel = '网格'
+                                } else if (singleResult.chan_vis?.zs_list?.length) {
+                                  const zsList = singleResult.chan_vis.zs_list
+                                  numGrids = getNumParam('num_grids', 6)
+                                  gridLineColor = '#3b82f6'
+                                  gridLineLabel = '中枢网格'
+                                  zsList.forEach((zs: any, zsIdx: number) => {
+                                    const zsZG = zs.ZG ?? zs.zg ?? 0
+                                    const zsZD = zs.ZD ?? zs.zd ?? 0
+                                    if (zsZG <= 0 || zsZD <= 0 || zsZG <= zsZD) return
+                                    const zsGridSize = (zsZG - zsZD) / numGrids
+                                    for (let i = 0; i <= numGrids; i++) {
+                                      const level = zsZD + i * zsGridSize
+                                      const isBorder = i === 0 || i === numGrids
+                                      // 边界线标注ZD/ZG，内部线标注网格级别
+                                      const levelLabel = isBorder
+                                        ? (i === 0 ? `ZS${zsIdx + 1} ZD ${level.toFixed(2)}` : `ZS${zsIdx + 1} ZG ${level.toFixed(2)}`)
+                                        : `ZS${zsIdx + 1} L${i}/${numGrids} ${level.toFixed(2)}`
+                                      seriesList.push({
+                                        name: `${gridLineLabel}${zsIdx + 1}-${i}`,
+                                        type: 'line',
+                                        data: [],
+                                        xAxisIndex: 0,
+                                        yAxisIndex: 0,
+                                        symbol: 'none',
+                                        markLine: {
+                                          silent: true,
+                                          animation: false,
+                                          label: {
+                                            show: true,
+                                            formatter: levelLabel,
+                                            fontSize: isBorder ? 10 : 9,
+                                            color: isBorder ? '#374151' : '#6b7280',
+                                            position: 'end',
+                                          },
+                                          lineStyle: {
+                                            color: isBorder ? '#3b82f6' : '#93c5fd',
+                                            width: isBorder ? 1.5 : 0.8,
+                                            type: isBorder ? 'solid' : 'dashed',
+                                          },
+                                          data: [{ yAxis: level }],
+                                        },
+                                        z: 1,
+                                      })
+                                    }
+                                  })
+                                  legendData.push(gridLineLabel)
+                                  gridLower = 0
+                                  gridUpper = 0
+                                } else {
+                                  gridLower = Math.min(...prices) * 0.98
+                                  gridUpper = Math.max(...prices) * 1.02
+                                }
+                                
+                                if (gridLower > 0 && gridUpper > gridLower) {
+                                  const gridSize = (gridUpper - gridLower) / numGrids
+                                  const gridLevels: number[] = []
+                                  for (let i = 0; i <= numGrids; i++) {
+                                    gridLevels.push(gridLower + i * gridSize)
+                                  }
+                                  
+                                  gridLevels.forEach((level, idx) => {
+                                    const isBorder = idx === 0 || idx === numGrids
+                                    // 边界线标注"下界/上界"，内部线标注网格级别
+                                    const levelLabel = isBorder
+                                      ? (idx === 0 ? `下界 ${level.toFixed(2)}` : `上界 ${level.toFixed(2)}`)
+                                      : `L${idx}/${numGrids} ${level.toFixed(2)}`
+                                    seriesList.push({
+                                      name: `${gridLineLabel}${idx + 1}`,
+                                      type: 'line',
+                                      data: [],
+                                      xAxisIndex: 0,
+                                      yAxisIndex: 0,
+                                      symbol: 'none',
+                                      markLine: {
+                                        silent: true,
+                                        animation: false,
+                                        label: {
+                                          show: true,
+                                          formatter: levelLabel,
+                                          fontSize: isBorder ? 10 : 9,
+                                          color: isBorder ? '#374151' : '#6b7280',
+                                          position: 'end',
+                                        },
+                                        lineStyle: {
+                                          color: isBorder ? gridLineColor : (strategyType === 'grid_classic' ? '#fbbf24' : '#e5e7eb'),
+                                          width: isBorder ? 1.5 : 0.8,
+                                          type: isBorder ? 'solid' : 'dashed',
+                                        },
+                                        data: [{ yAxis: level }],
+                                      },
+                                      z: 1,
+                                    })
+                                  })
+                                  
+                                  legendData.push(gridLineLabel)
+                                }
+                              }
+
                               return (
                                 <ReactECharts
                                   option={{

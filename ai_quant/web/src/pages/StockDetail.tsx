@@ -245,8 +245,19 @@ export default function StockDetail() {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div>
-            <div className="text-sm font-semibold text-zinc-900">
-              {snapshot?.stock_name || '—'} <span className="text-zinc-500">{code}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-zinc-900">
+                {snapshot?.stock_name || '—'} <span className="text-zinc-500">{code}</span>
+              </span>
+              <a
+                href={`https://stockpage.10jqka.com.cn/${code.split('.')[0]}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-blue-500 transition-colors"
+                title="在同花顺中查看"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
               <span>现价 {fmtNum(snapshot?.price ?? null, 2)}</span>

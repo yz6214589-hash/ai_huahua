@@ -27,6 +27,10 @@ from infra.storage.logging_service import get_logger
 
 logger = get_logger("stock_financial")
 
+# 全市场 daily_basic 缓存（启动时拉取一次，所有股票共享）
+_DAILY_BASIC_CACHE: dict[str, dict[str, Any]] = {}
+_DAILY_BASIC_LOADED = False
+
 
 def _log(msg: str):
     """打印带时间戳的日志（同时输出到控制台和日志系统）
@@ -39,12 +43,65 @@ def _log(msg: str):
     logger.info(msg)
 
 
+def _load_daily_basic_cache() -> None:
+    """
+    启动时拉取一次全市场 daily_basic，所有股票共享，减少重复API调用
+    
+    使用 TuShare 的 daily_basic 接口批量获取 PE、PB、市值等行情数据
+    """
+    global _DAILY_BASIC_CACHE, _DAILY_BASIC_LOADED
+    if _DAILY_BASIC_LOADED:
+        return
+    
+    _log("正在预加载全市场 daily_basic 缓存...")
+    try:
+        from infra.tushare_client import get_pro_api
+        pro = get_pro_api()
+        
+        df = pro.daily_basic(limit=5000)
+        if df is None or len(df) == 0:
+            _log("  daily_basic 接口返回空数据")
+            _DAILY_BASIC_LOADED = True
+            return
+        
+        for _, row in df.iterrows():
+            ts_code = str(row.get('ts_code') or '')
+            if ts_code:
+                _DAILY_BASIC_CACHE[ts_code] = {
+                    'pe_ttm': safe_float(row.get('pe_ttm')),
+                    'pb': safe_float(row.get('pb')),
+                    'market_cap': safe_float(row.get('total_mv')),
+                    'float_market_cap': safe_float(row.get('circ_mv')),
+                    'close': safe_float(row.get('close')),
+                }
+        _log(f"  daily_basic 缓存完成: {len(_DAILY_BASIC_CACHE)} 只股票")
+    except Exception as e:
+        _log(f"  daily_basic 缓存失败: {type(e).__name__}: {e}，将回退到单只查询")
+    finally:
+        _DAILY_BASIC_LOADED = True
+
+
+def _get_daily_basic_from_cache(stock_code: str) -> dict[str, Any] | None:
+    """
+    从缓存获取股票的 daily_basic 数据
+    
+    Args:
+        stock_code: 股票代码
+        
+    Returns:
+        dict | None: daily_basic 数据（包含 pe_ttm, pb, market_cap, float_market_cap, close）
+    """
+    return _DAILY_BASIC_CACHE.get(stock_code)
+
+
 _INSERT_SQL = """
 INSERT INTO trade_stock_financial
 (stock_code, report_date, revenue, net_profit, eps, roe, roa, gross_margin, net_margin,
  debt_ratio, current_ratio, operating_cashflow, total_assets, total_equity,
- pe_ttm, pb, market_cap, float_market_cap, data_source, created_at)
-VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+ pe_ttm, pb, market_cap, float_market_cap,
+ profit_growth_yoy, revenue_growth_yoy,
+ data_source, created_at)
+VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
 ON DUPLICATE KEY UPDATE
 revenue=COALESCE(VALUES(revenue), revenue),
 net_profit=COALESCE(VALUES(net_profit), net_profit),
@@ -62,6 +119,8 @@ pe_ttm=COALESCE(VALUES(pe_ttm), pe_ttm),
 pb=COALESCE(VALUES(pb), pb),
 market_cap=COALESCE(VALUES(market_cap), market_cap),
 float_market_cap=COALESCE(VALUES(float_market_cap), float_market_cap),
+profit_growth_yoy=COALESCE(VALUES(profit_growth_yoy), profit_growth_yoy),
+revenue_growth_yoy=COALESCE(VALUES(revenue_growth_yoy), revenue_growth_yoy),
 data_source=VALUES(data_source)
 """
 
@@ -147,7 +206,68 @@ def _get_stock_list_qmt_or_akshare(test_mode: bool, test_stock: str, max_stocks:
         return []
 
 
-def _get_market_data_qmt(stock_code: str) -> Optional[dict[str, Any]]:
+def _compute_yoy_growth(financial_list: list[dict]) -> list[dict]:
+    """
+    为每条财务数据计算同比增长率
+
+    对每条记录，尝试找到去年同期（年份-1，同月同日）的数据来对比。
+    如果找不到精确匹配，找最近的前一年记录来近似。
+    """
+    if len(financial_list) < 2:
+        return financial_list
+
+    sorted_list = sorted(financial_list, key=lambda x: x.get("report_date", ""))
+
+    date_to_data: dict[str, dict] = {}
+    for item in sorted_list:
+        rpt = item.get("report_date", "")
+        if rpt:
+            date_to_data[rpt] = item
+
+    from datetime import datetime as dt_mod
+    from dateutil.relativedelta import relativedelta
+
+    for item in sorted_list:
+        rpt = item.get("report_date", "")
+        if not rpt:
+            continue
+        try:
+            # 兼容两种日期格式：2023-06-30 和 20230630
+            rpt_clean = rpt.replace("-", "")
+            if len(rpt_clean) == 8:
+                current_date = dt_mod.strptime(rpt_clean, "%Y%m%d")
+            else:
+                current_date = dt_mod.strptime(rpt, "%Y-%m-%d")
+            target_date = current_date - relativedelta(years=1)
+            target_str = target_date.strftime("%Y-%m-%d")
+            # 同时准备不带横线的格式
+            target_str_compact = target_date.strftime("%Y%m%d")
+
+            prev_data = None
+            if target_str in date_to_data:
+                prev_data = date_to_data[target_str]
+            elif target_str_compact in date_to_data:
+                prev_data = date_to_data[target_str_compact]
+
+            if prev_data:
+                prev_revenue = prev_data.get("revenue")
+                cur_revenue = item.get("revenue")
+                if prev_revenue and cur_revenue and prev_revenue != 0:
+                    growth = (cur_revenue - prev_revenue) / abs(prev_revenue)
+                    item["revenue_growth_yoy"] = round(growth * 100, 4)
+
+                prev_profit = prev_data.get("net_profit")
+                cur_profit = item.get("net_profit")
+                if prev_profit and cur_profit and prev_profit != 0:
+                    growth = (cur_profit - prev_profit) / abs(prev_profit)
+                    item["profit_growth_yoy"] = round(growth * 100, 4)
+        except (ValueError, Exception):
+            pass
+
+    return sorted_list
+
+
+def _get_market_data_qmt(stock_code: str) -> dict[str, Any]:
     """
     使用QMT获取股票的实时行情数据
 
@@ -335,15 +455,10 @@ def _get_market_data_map(stock_codes: list[str]) -> dict[str, dict[str, Any]]:
     Returns:
         dict: {stock_code: {price, pe, pb, market_cap, float_market_cap}}
     """
-    _log("正在通过 akshare 批量获取全市场行情数据（超时30秒）...")
-    code_num_map = _run_with_timeout(_get_market_data_from_akshare, timeout=30)
+    _log("正在通过 akshare 批量获取全市场行情数据（超时90秒）...")
+    code_num_map = _run_with_timeout(_get_market_data_from_akshare, timeout=90)
     if not code_num_map:
-        _log("akshare 批量获取市场数据失败或超时，尝试 TuShare 备选...")
-        tushare_map = _get_market_data_from_tushare(stock_codes)
-        if tushare_map:
-            _log(f"TuShare 备选成功，获取到 {len(tushare_map)} 只股票的市场数据")
-            return tushare_map
-        _log("TuShare 备选也失败，返回空数据")
+        _log("akshare 批量获取市场数据失败或超时，跳过行情兜底")
         return {}
 
     result: dict[str, dict[str, Any]] = {}
@@ -379,6 +494,80 @@ def _get_market_data(stock_code: str) -> dict[str, Any]:
     return data if data else {}
 
 
+
+
+def _normalize_pct(val):
+    """
+    将比率值统一归一化为百分比形式存储
+
+    QMT返回的比率值存在两种格式：
+    - 小数形式：0.1057 表示 10.57%（大部分股票）
+    - 百分比形式：45.29 表示 45.29%（少数股票如泽璟制药）
+
+    判断逻辑：如果绝对值小于1，认为是小数形式，乘以100转为百分比
+    注意：此函数仅用于单字段判断，对于同一记录中多个比率字段格式一致的场景，
+    建议使用 _normalize_pct_batch 批量处理
+    """
+    if val is None:
+        return None
+    if abs(val) < 1:
+        return round(val * 100, 4)
+    return round(val, 4)
+
+
+def _normalize_pct_batch(roe_val, gross_margin_val, net_margin_val):
+    """
+    批量归一化同一记录中的比率字段
+
+    核心逻辑：同一只股票同一报告期的所有比率字段格式一致。
+    以毛利率(gross_margin)为参照判断格式：
+    - 毛利率通常在 5%~95% 之间
+    - 如果毛利率 < 1，说明是小数形式（如 0.8976 表示 89.76%），所有比率字段需乘以100
+    - 如果毛利率 >= 1，说明已经是百分比形式（如 89.76 表示 89.76%），直接保留
+
+    当毛利率为 None 时，回退到逐字段判断（_normalize_pct）
+
+    Args:
+        roe_val: ROE原始值
+        gross_margin_val: 毛利率原始值（参照字段）
+        net_margin_val: 净利率原始值
+
+    Returns:
+        (归一化ROE, 归一化毛利率, 归一化净利率)
+    """
+    if gross_margin_val is not None and abs(gross_margin_val) < 1:
+        need_multiply = True
+    elif gross_margin_val is not None and abs(gross_margin_val) >= 1:
+        need_multiply = False
+    else:
+        need_multiply = None
+
+    def _convert(v):
+        if v is None:
+            return None
+        if need_multiply is True:
+            return round(v * 100, 4)
+        elif need_multiply is False:
+            return round(v, 4)
+        else:
+            return _normalize_pct(v)
+
+    return _convert(roe_val), _convert(gross_margin_val), _convert(net_margin_val)
+
+
+def _clean_nan(v):
+    """将 NaN/inf 值转为 None，避免 MySQL 写入失败"""
+    if v is None:
+        return None
+    try:
+        import math
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return v
+
+
 def _get_financial_data_qmt(stock_code: str, max_rows: int = 12) -> Optional[list[dict[str, Any]]]:
     """
     通过 QMT Gateway 远程获取股票的综合财务数据
@@ -410,20 +599,46 @@ def _get_financial_data_qmt(stock_code: str, max_rows: int = 12) -> Optional[lis
 
         results = []
         for r in rows:
+            report_date_raw = r.get("报告期") or r.get("end_date") or ""
+            report_date = str(report_date_raw)[:10] if report_date_raw else ""
+            if not report_date:
+                continue
+
+            revenue = safe_float(r.get("营业收入"))
+            net_profit = safe_float(r.get("净利润"))
+            total_assets = safe_float(r.get("总资产"))
+            total_equity = safe_float(r.get("净资产"))
+            total_shares = safe_float(r.get("总股本"))
+
+            debt_ratio = None
+            if total_assets and total_assets != 0 and total_equity is not None:
+                debt_ratio = round((1 - total_equity / total_assets) * 100, 4)
+
+            bps = safe_float(r.get("每股净资产"))
+            if bps is None and total_equity is not None and total_shares is not None and total_shares != 0:
+                bps = round(total_equity / total_shares, 4)
+
+            raw_roe = safe_float(r.get("ROE"))
+            raw_gm = safe_float(r.get("毛利率"))
+            raw_nm = safe_float(r.get("净利率"))
+            normalized_roe, normalized_gm, normalized_nm = _normalize_pct_batch(raw_roe, raw_gm, raw_nm)
+
             results.append({
-                "report_date": str(r.get("end_date") or "")[:10],
-                "revenue": r.get("revenue"),
-                "net_profit": r.get("net_profit"),
-                "eps": r.get("eps"),
-                "roe": r.get("roe"),
-                "roa": r.get("roa"),
-                "gross_margin": r.get("gross_margin"),
-                "net_margin": r.get("net_margin"),
-                "debt_ratio": r.get("debt_ratio"),
-                "current_ratio": r.get("current_ratio"),
-                "operating_cashflow": r.get("operating_cashflow"),
-                "total_assets": r.get("total_assets"),
-                "total_equity": r.get("total_equity"),
+                "report_date": report_date,
+                "revenue": revenue,
+                "net_profit": net_profit,
+                "eps": safe_float(r.get("基本每股收益")),
+                "bps": bps,
+                "roe": normalized_roe,
+                "roa": None,
+                "gross_margin": normalized_gm,
+                "net_margin": normalized_nm,
+                "debt_ratio": debt_ratio,
+                "current_ratio": None,
+                "operating_cashflow": safe_float(r.get("每股经营现金流")),
+                "total_assets": total_assets,
+                "total_equity": total_equity,
+                "total_shares": total_shares,
             })
 
         _log(f"QMT Gateway 成功获取 {stock_code} 财务数据，共 {len(results)} 条")
@@ -469,20 +684,27 @@ def _get_financial_data_akshare(stock_code: str, max_rows: int = 12) -> list[dic
                 if isinstance(v, (pd.Timestamp,)):
                     payload[k] = v.isoformat()
 
+            raw_ak_roe = safe_float(payload.get("净资产收益率") or payload.get("WEIGHT_AVG_ROE"))
+            raw_ak_gm = safe_float(payload.get("销售毛利率") or payload.get("GROSS_PROFIT_RATIO"))
+            raw_ak_nm = safe_float(payload.get("销售净利率") or payload.get("NET_PROFIT_RATIO"))
+            ak_roe, ak_gm, ak_nm = _normalize_pct_batch(raw_ak_roe, raw_ak_gm, raw_ak_nm)
+
             results.append({
                 "report_date": report_date,
                 "revenue": safe_float(payload.get("营业总收入") or payload.get("REVENUE")),
                 "net_profit": safe_float(payload.get("净利润") or payload.get("NET_PROFIT")),
                 "eps": safe_float(payload.get("每股收益") or payload.get("BASIC_EPS")),
-                "roe": safe_float(payload.get("净资产收益率") or payload.get("WEIGHT_AVG_ROE")),
+                "bps": safe_float(payload.get("每股净资产") or payload.get("BPS")),
+                "roe": ak_roe,
                 "roa": safe_float(payload.get("总资产净利率") or payload.get("ROA")),
-                "gross_margin": safe_float(payload.get("销售毛利率") or payload.get("GROSS_PROFIT_RATIO")),
-                "net_margin": safe_float(payload.get("销售净利率") or payload.get("NET_PROFIT_RATIO")),
+                "gross_margin": ak_gm,
+                "net_margin": ak_nm,
                 "debt_ratio": safe_float(payload.get("资产负债率") or payload.get("DEBT_ASSET_RATIO")),
                 "current_ratio": safe_float(payload.get("流动比率") or payload.get("CURRENT_RATIO")),
                 "operating_cashflow": safe_float(payload.get("经营活动产生的现金流量净额") or payload.get("OPERATE_CASH_FLOW")),
                 "total_assets": safe_float(payload.get("总资产") or payload.get("TOTAL_ASSETS")),
                 "total_equity": safe_float(payload.get("所有者权益合计") or payload.get("TOTAL_EQUITY")),
+                "total_shares": safe_float(payload.get("总股本") or payload.get("TOTAL_SHARES")),
             })
         return results
     except Exception as e:
@@ -518,7 +740,9 @@ def _get_financial_data_tushare(stock_code: str, max_rows: int = 12) -> list[dic
                 return None
             try:
                 x = float(v)
-                return x / 100.0
+                if x != x:
+                    return None
+                return round(x, 4)
             except (ValueError, TypeError):
                 return None
 
@@ -548,6 +772,27 @@ def _get_financial_data_tushare(stock_code: str, max_rows: int = 12) -> list[dic
     except Exception as e:
         _log(f"TuShare 获取 {stock_code} 财务数据失败: {type(e).__name__}: {e}")
         return []
+
+
+def _get_existing_report_dates(conn, stock_code: str) -> set[str]:
+    """
+    获取股票已有的报告期日期集合（用于去重）
+    
+    Args:
+        conn: 数据库连接
+        stock_code: 股票代码
+        
+    Returns:
+        set[str]: 已有的报告期日期集合
+    """
+    try:
+        rows = query_dict(conn, 
+            "SELECT report_date FROM trade_stock_financial WHERE stock_code = %s",
+            (stock_code,))
+        return {str(r["report_date"]) for r in rows}
+    except Exception as e:
+        _log(f"从数据库获取 {stock_code} 已有报告期失败: {e}")
+        return set()
 
 
 def _get_existing_financial_data_from_db(conn, stock_code: str, max_rows: int = 12) -> list[dict[str, Any]]:
@@ -605,8 +850,8 @@ def run_stock_financial_collection(
     """
     运行财务数据采集任务
 
-    数据源优先级：QMT Gateway > TuShare > AkShare > 数据库回退。
-    支持多线程并发采集和断点续传。
+    数据源优先级：TuShare > QMT Gateway > AkShare > 数据库回退。
+    支持多线程并发采集、断点续传和日期级别去重。
 
     Args:
         cfg: 数据库配置
@@ -623,6 +868,10 @@ def run_stock_financial_collection(
         JobStats: 任务执行统计
     """
     test_mode = (mode or "").lower() == "test"
+    
+    # 预加载全市场 daily_basic 缓存（非测试模式）
+    if not test_mode:
+        _load_daily_basic_cache()
     test_stock = str((params or {}).get("test_stock") or "002163.SZ")
     max_stocks_val = (params or {}).get("max_stocks")
     max_stocks = int(max_stocks_val) if max_stocks_val is not None else (0 if not test_mode else 1)
@@ -647,14 +896,15 @@ def run_stock_financial_collection(
             message="没有股票列表",
         )
 
-    # 断点续传：跳过已有数据的股票
+    # 断点续传：跳过已有完整PB数据的股票
     if resume and not test_mode:
-        _log("断点续传模式: 查询已有数据的股票...")
+        _log("断点续传模式: 查询已有完整PB数据的股票...")
         try:
             conn_check = connect(cfg)
             try:
                 existing_rows = query_dict(conn_check,
                     "SELECT stock_code FROM trade_stock_financial "
+                    "WHERE pb IS NOT NULL "
                     "GROUP BY stock_code HAVING COUNT(*) >= %s",
                     (max_rows_per_stock,))
                 existing_codes = {r["stock_code"] for r in existing_rows}
@@ -662,18 +912,18 @@ def run_stock_financial_collection(
                     before = len(codes)
                     codes = [c for c in codes if c not in existing_codes]
                     skipped = before - len(codes)
-                    _log(f"断点续传: 跳过 {skipped} 只已有数据的股票, 待处理 {len(codes)} 只")
+                    _log(f"断点续传: 跳过 {skipped} 只已有完整PB数据的股票, 待处理 {len(codes)} 只")
             finally:
                 conn_check.close()
         except Exception as e:
             _log(f"断点续传查询失败: {type(e).__name__}: {e}, 将全量处理")
 
     if not codes:
-        _log("所有股票已有完整数据，无需处理")
+        _log("所有股票已有完整PB数据，无需处理")
         return JobStats(
             items_processed=0, rows_written=0, failed_items=[],
             data_source_final="qmt", fallback_chain=["qmt"],
-            message="所有股票已有数据，跳过",
+            message="所有股票已有完整PB数据，跳过",
         )
 
     processed = 0
@@ -693,6 +943,13 @@ def run_stock_financial_collection(
          f"{max_workers} 线程, 中间提交阈值={intermediate_batch_size}")
     _log(f"数据源: QMT Gateway (Windows服务器), 数据库回退: 启用")
 
+    # 批量获取AkShare全市场行情数据，作为PE/PB/市值兜底
+    akshare_market_map = _get_market_data_map(codes)
+    if akshare_market_map:
+        _log(f"AkShare行情兜底数据已就绪，覆盖 {len(akshare_market_map)} 只股票")
+    else:
+        _log("AkShare行情数据获取失败，PB/市值将仅依赖计算")
+
     def _process_one(code: str) -> tuple[str, list[tuple], str, bool]:
         """单线程处理一只股票，返回 (code, rows, source, is_failed)"""
         try:
@@ -700,23 +957,20 @@ def run_stock_financial_collection(
             if not market_data:
                 market_data = {}
 
-            pe = market_data.get("pe")
-            pb = market_data.get("pb")
-            market_cap = market_data.get("market_cap")
-            float_market_cap = market_data.get("float_market_cap")
+            qmt_price = market_data.get("price")
 
-            # 获取财务数据：QMT → TuShare → AkShare → 数据库回退
-            financial_data = _get_financial_data_qmt(code, max_rows_per_stock)
-            fin_source = "qmt"
+            # 获取财务数据：TuShare → QMT → AkShare → 数据库回退（按优先级）
+            financial_data = _get_financial_data_tushare(code, max_rows_per_stock)
+            fin_source = "tushare"
 
             if not financial_data:
-                _log(f"  [{code}] QMT 无财务数据，尝试 TuShare 备选...")
-                financial_data = _get_financial_data_tushare(code, max_rows_per_stock)
+                _log(f"  [{code}] TuShare 无财务数据，尝试 QMT 备选...")
+                financial_data = _get_financial_data_qmt(code, max_rows_per_stock)
                 if financial_data:
-                    fin_source = "tushare"
+                    fin_source = "qmt"
 
             if not financial_data:
-                _log(f"  [{code}] TuShare 也无财务数据，尝试 AkShare 备选...")
+                _log(f"  [{code}] QMT 也无财务数据，尝试 AkShare 备选...")
                 financial_data = _get_financial_data_akshare(code, max_rows_per_stock)
                 if financial_data:
                     fin_source = "akshare"
@@ -730,15 +984,78 @@ def run_stock_financial_collection(
             if not financial_data:
                 return code, [], "unknown", True
 
+            # 日期级别去重：过滤已存在的报告期数据
+            existing_dates = _get_existing_report_dates(conn, code)
+            if existing_dates:
+                before_count = len(financial_data)
+                financial_data = [f for f in financial_data if f["report_date"] not in existing_dates]
+                skipped_count = before_count - len(financial_data)
+                if skipped_count > 0:
+                    _log(f"  [{code}] 跳过 {skipped_count} 条已存在的报告期数据")
+
+            if not financial_data:
+                _log(f"  [{code}] 所有报告期数据均已存在，跳过")
+                return code, [], fin_source, False
+
+            # 计算同比增长率
+            if fin_source in ("qmt", "tushare", "akshare"):
+                financial_data = _compute_yoy_growth(financial_data)
+
+            # 用 QMT 最新价格和财务数据计算 PE/PB/市值
+            # PE = 收盘价 / 最近4季度EPS之和 (TTM)
+            # PB = 收盘价 / 每股净资产 (bps)
+            # 市值 = 收盘价 × 总股本
+            sorted_fin = sorted(financial_data, key=lambda x: x.get("report_date", ""))
+            eps_values = [f.get("eps") for f in sorted_fin if f.get("eps") is not None]
+            eps_ttm = sum(eps_values[-4:]) if eps_values else None
+
+            latest_fin = sorted_fin[-1] if sorted_fin else {}
+            bps_val = latest_fin.get("bps")
+            total_shares_val = latest_fin.get("total_shares")
+
+            computed_pe = None
+            computed_pb = None
+            computed_market_cap = None
+            computed_float_market_cap = None
+
+            if qmt_price and qmt_price > 0:
+                if eps_ttm and eps_ttm != 0:
+                    computed_pe = round(qmt_price / eps_ttm, 4)
+                if bps_val and bps_val != 0:
+                    computed_pb = round(qmt_price / bps_val, 4)
+                if total_shares_val:
+                    computed_market_cap = round(qmt_price * total_shares_val, 2)
+
+            # 外部行情数据兜底（akshare enrich 会用）
+            pe = computed_pe or market_data.get("pe")
+            pb = computed_pb or market_data.get("pb")
+            market_cap = computed_market_cap or market_data.get("market_cap")
+            float_market_cap = computed_float_market_cap or market_data.get("float_market_cap")
+
+            # AkShare行情数据兜底：QMT行情PE/PB为空时，使用AkShare全市场行情
+            ak_data = akshare_market_map.get(code) if akshare_market_map else None
+            if ak_data:
+                if pe is None:
+                    pe = ak_data.get("pe")
+                if pb is None:
+                    pb = ak_data.get("pb")
+                if market_cap is None:
+                    market_cap = ak_data.get("market_cap")
+                if float_market_cap is None:
+                    float_market_cap = ak_data.get("float_market_cap")
+
             rows: list[tuple] = []
             for fin in financial_data:
                 rows.append((
                     code, fin["report_date"],
-                    fin["revenue"], fin["net_profit"], fin["eps"],
-                    fin["roe"], fin["roa"], fin["gross_margin"], fin["net_margin"],
-                    fin["debt_ratio"], fin["current_ratio"],
-                    fin["operating_cashflow"], fin["total_assets"], fin["total_equity"],
-                    pe, pb, market_cap, float_market_cap, fin_source
+                    _clean_nan(fin["revenue"]), _clean_nan(fin["net_profit"]), _clean_nan(fin["eps"]),
+                    _clean_nan(fin["roe"]), _clean_nan(fin["roa"]), _clean_nan(fin["gross_margin"]), _clean_nan(fin["net_margin"]),
+                    _clean_nan(fin["debt_ratio"]), _clean_nan(fin["current_ratio"]),
+                    _clean_nan(fin["operating_cashflow"]), _clean_nan(fin["total_assets"]), _clean_nan(fin["total_equity"]),
+                    _clean_nan(pe), _clean_nan(pb), _clean_nan(market_cap), _clean_nan(float_market_cap),
+                    _clean_nan(fin.get("profit_growth_yoy")),
+                    _clean_nan(fin.get("revenue_growth_yoy")),
+                    fin_source
                 ))
             with progress_lock:
                 used_sources.add(fin_source)
@@ -857,13 +1174,21 @@ def run_stock_financial_collection(
                 rows_written = 0
 
         total_elapsed = (datetime.now() - task_start_time).total_seconds()
-        _log(f"[完成] 总耗时 {total_elapsed:.0f}s, 处理 {processed} 只, "
-             f"写入 {rows_written} 行, 失败 {len(failed)} 只")
+        speed_avg = processed / total_elapsed * 60 if total_elapsed > 0 else 0
+        
+        _log(f"[完成] ========== 财务季度数据采集任务完成 ==========")
+        _log(f"[完成] 总耗时: {total_elapsed:.0f}秒 ({total_elapsed/60:.1f}分钟)")
+        _log(f"[完成] 处理股票: {processed} 只")
+        _log(f"[完成] 写入记录: {rows_written} 行")
+        _log(f"[完成] 失败股票: {len(failed)} 只")
+        _log(f"[完成] 平均速度: {speed_avg:.1f} 只/分钟")
+        _log(f"[完成] 使用数据源: {', '.join(sorted(used_sources))}")
         if failed:
             _log(f"[完成] 失败列表前10: {failed[:10]}")
+            _log(f"[完成] 失败原因可能: 数据源不可用、网络超时、API限流等")
 
-        # 构建数据源链和最终数据源
-        source_order = ["qmt", "tushare", "akshare", "db"]
+        # 构建数据源链和最终数据源（按优先级顺序）
+        source_order = ["tushare", "qmt", "akshare", "db"]
         fallback_chain = [s for s in source_order if s in used_sources]
         if not fallback_chain:
             fallback_chain = ["unknown"]

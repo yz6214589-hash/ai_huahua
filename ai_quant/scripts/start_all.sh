@@ -40,6 +40,7 @@ PORT_STREAMLIT=8501
 URL_BACKEND="http://127.0.0.1:8000"
 URL_FRONTEND="http://localhost:5173"
 URL_STREAMLIT="http://localhost:8501"
+URL_ADMIN="${URL_FRONTEND}/ai-admin"
 
 # 全局变量
 MODE="dev"
@@ -47,6 +48,11 @@ BACKGROUND=false
 LOG_DIR="${PROJECT_ROOT}/logs"
 LOG_FILE="${LOG_DIR}/startup_$(date '+%Y%m%d_%H%M%S').log"
 VENV_PYTHON="python3"  # 在 check_dependencies 中会被更新为 venv/bin/python3
+
+# 飞书机器人配置（必须在 LOG_DIR 之后定义）
+FEISHU_BOT_SCRIPT="${BACKEND_DIR}/feishu/bot.py"
+FEISHU_BOT_PID_FILE="${LOG_DIR}/feishu_bot.pid"
+FEISHU_BOT_LOG="${LOG_DIR}/feishu_bot.log"
 
 #==============================================================================
 # 辅助函数
@@ -101,6 +107,77 @@ kill_by_port() {
         kill "$pid" 2>/dev/null && return 0 || return 1
     fi
     return 0
+}
+
+#==============================================================================
+# 飞书机器人进程管理（无 HTTP 端口，通过 PID 文件管理）
+#==============================================================================
+
+get_feishu_bot_pid() {
+    if [ -f "$FEISHU_BOT_PID_FILE" ]; then
+        local pid=$(cat "$FEISHU_BOT_PID_FILE" 2>/dev/null)
+        if [ -n "$pid" ] && ps -p "$pid" -o comm= 2>/dev/null | grep -qi "python"; then
+            echo "$pid"
+            return 0
+        fi
+    fi
+    # 回退：通过进程名查找
+    local fallback_pid=$(ps aux | grep "backend/feishu/bot.py" | grep -v grep | awk '{print $2}' | head -1)
+    if [ -n "$fallback_pid" ]; then
+        echo "$fallback_pid" > "$FEISHU_BOT_PID_FILE" 2>/dev/null
+        echo "$fallback_pid"
+        return 0
+    fi
+    return 1
+}
+
+start_feishu_bot() {
+    log "START" "启动飞书机器人..."
+
+    # 先停止可能存在的旧进程
+    local old_pid=$(get_feishu_bot_pid)
+    if [ -n "$old_pid" ]; then
+        log "INFO" "发现旧飞书机器人进程 (PID: $old_pid)，正在停止..."
+        kill "$old_pid" 2>/dev/null
+        sleep 2
+    fi
+
+    nohup "${VENV_PYTHON}" "${FEISHU_BOT_SCRIPT}" > "${FEISHU_BOT_LOG}" 2>&1 &
+    local bot_pid=$!
+    echo "$bot_pid" > "$FEISHU_BOT_PID_FILE"
+
+    sleep 3
+
+    if kill -0 "$bot_pid" 2>/dev/null; then
+        log "DONE" "飞书机器人已启动 (PID: $bot_pid, 日志: ${FEISHU_BOT_LOG})"
+        return 0
+    else
+        log "ERROR" "飞书机器人启动失败，请查看日志: ${FEISHU_BOT_LOG}"
+        rm -f "$FEISHU_BOT_PID_FILE"
+        return 1
+    fi
+}
+
+stop_feishu_bot() {
+    local pid=$(get_feishu_bot_pid)
+    if [ -n "$pid" ]; then
+        log "INFO" "正在停止飞书机器人 (PID: $pid)..."
+        kill "$pid" 2>/dev/null
+        rm -f "$FEISHU_BOT_PID_FILE"
+        sleep 1
+        log "DONE" "已停止飞书机器人"
+        return 0
+    fi
+    log "INFO" "飞书机器人未运行"
+    return 0
+}
+
+check_feishu_bot() {
+    local pid=$(get_feishu_bot_pid)
+    if [ -n "$pid" ]; then
+        return 0
+    fi
+    return 1
 }
 
 get_python_version() {
@@ -233,7 +310,9 @@ check_ports() {
 }
 
 kill_services() {
-    log "INFO" "停止已运行的服务..."
+    log "INFO" "停止所有服务..."
+    
+    stop_feishu_bot
     
     for port in $PORT_BACKEND $PORT_FRONTEND $PORT_STREAMLIT; do
         if kill_by_port "$port"; then
@@ -351,7 +430,7 @@ show_status() {
     echo ""
     
     # 后端
-    printf "%-20s " "FastAPI 后端服务:8000"
+    printf "%-24s " "FastAPI 后端服务:8000"
     if check_port "$PORT_BACKEND"; then
         local pid=$(get_pid_by_port "$PORT_BACKEND")
         printf "${GREEN}● 运行中${NC} (PID: %s)\n" "$pid"
@@ -361,23 +440,33 @@ show_status() {
     fi
     echo ""
     
-    # 前端
-    printf "%-20s " "React 前端服务:5173"
+    # 前端 + 管理后台
+    printf "%-24s " "React 前端(含管理后台):5173"
     if check_port "$PORT_FRONTEND"; then
         local pid=$(get_pid_by_port "$PORT_FRONTEND")
         printf "${GREEN}● 运行中${NC} (PID: %s)\n" "$pid"
-        printf "  ${CYAN}%s${NC}\n" "$URL_FRONTEND"
+        printf "  ${CYAN}%s${NC}\n" "$URL_ADMIN"
     else
         printf "${RED}○ 已停止${NC}\n"
     fi
     echo ""
     
     # Streamlit
-    printf "%-20s " "Streamlit AI对话:8501"
+    printf "%-24s " "Streamlit AI对话:8501"
     if check_port "$PORT_STREAMLIT"; then
         local pid=$(get_pid_by_port "$PORT_STREAMLIT")
         printf "${GREEN}● 运行中${NC} (PID: %s)\n" "$pid"
         printf "  ${CYAN}%s${NC}\n" "$URL_STREAMLIT"
+    else
+        printf "${RED}○ 已停止${NC}\n"
+    fi
+    echo ""
+    
+    # 飞书机器人
+    printf "%-24s " "飞书机器人(WebSocket)"
+    local feishu_pid=$(get_feishu_bot_pid 2>/dev/null)
+    if [ -n "$feishu_pid" ]; then
+        printf "${GREEN}● 运行中${NC} (PID: %s)\n" "$feishu_pid"
     else
         printf "${RED}○ 已停止${NC}\n"
     fi
@@ -388,6 +477,8 @@ show_status() {
 
 cleanup() {
     log "INFO" "正在清理..."
+    
+    stop_feishu_bot
     
     for port in $PORT_BACKEND $PORT_FRONTEND $PORT_STREAMLIT; do
         kill_by_port "$port" 2>/dev/null || true
@@ -433,9 +524,10 @@ ${YELLOW}示例:${NC}
     $0 -k           # 停止所有服务
 
 ${YELLOW}服务说明:${NC}
-    后端API:     ${URL_BACKEND}  (FastAPI)
-    前端应用:    ${URL_FRONTEND}   (React + Vite)
-    AI对话机器人: ${URL_STREAMLIT}  (Streamlit)
+    后端API:            ${URL_BACKEND}  (FastAPI)
+    前端(含管理后台):    ${URL_FRONTEND}   (React + Vite, 管理后台: ${URL_ADMIN})
+    AI对话机器人:        ${URL_STREAMLIT}  (Streamlit)
+    飞书机器人:          (WebSocket 长连接，无 HTTP 端口)
 
 ${YELLOW}日志位置:${NC}
     ${LOG_DIR}/
@@ -526,6 +618,10 @@ main() {
         failed="${failed} streamlit"
     fi
     
+    if ! start_feishu_bot; then
+        failed="${failed} feishu_bot"
+    fi
+    
     # 结果报告
     echo ""
     echo "=============================================="
@@ -537,9 +633,13 @@ main() {
         log "DONE" "所有服务启动成功!"
         echo ""
         echo -e "${GREEN}访问链接:${NC}"
-        echo -e "  ${CYAN}后端API:    ${URL_BACKEND}${NC}"
-        echo -e "  ${CYAN}前端应用:   ${URL_FRONTEND}${NC}"
-        echo -e "  ${CYAN}AI对话机器人: ${URL_STREAMLIT}${NC}"
+        echo -e "  ${CYAN}后端API:            ${URL_BACKEND}${NC}"
+        echo -e "  ${CYAN}前端(含管理后台):    ${URL_FRONTEND}  (管理后台: ${URL_ADMIN})${NC}"
+        echo -e "  ${CYAN}AI对话机器人:        ${URL_STREAMLIT}${NC}"
+        echo ""
+        echo -e "${YELLOW}服务说明:${NC}"
+        echo -e "  飞书机器人作为独立进程运行（WebSocket 长连接），无 HTTP 端口"
+        echo -e "  管理后台已集成在前端应用内，通过 ${CYAN}${URL_ADMIN}${NC} 访问"
         echo ""
         echo -e "${YELLOW}按 Ctrl+C 停止所有服务${NC}"
         echo "=============================================="

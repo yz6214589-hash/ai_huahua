@@ -21,57 +21,67 @@ class GridEngine:
         self.grid_size = (self.upper - self.lower) / float(self.num_grids)
         self.levels = [self.lower + i * self.grid_size for i in range(self.num_grids + 1)]
         self.current_grid = None
-        self.position_at = [False] * self.num_grids
+        self.position_at = [0] * (self.num_grids + 1)
         self.capital_per_grid = self.total_capital / float(self.num_grids) if self.num_grids > 0 else 0.0
         self.total_profit = 0.0
-        self.trades_count = 0
+        self.buy_count = 0
+        self.sell_count = 0
+        self.max_layers = 0
 
-    def _get_grid_index(self, price: float) -> int:
-        if price <= self.lower:
-            return 0
+    def _get_cell(self, price: float) -> int:
+        if price < self.lower:
+            return -1
         if price >= self.upper:
-            return self.num_grids - 1
-        idx = int((price - self.lower) / self.grid_size)
-        return max(0, min(self.num_grids - 1, idx))
+            return self.num_grids
+        return int((price - self.lower) / self.grid_size)
 
-    def _get_shares(self, price: float) -> int:
+    def _calc_shares(self, price: float) -> int:
         if price <= 0:
             return 0
-        shares = int(self.capital_per_grid / price)
-        if shares <= 0:
-            return 0
-        return max(100, (shares // 100) * 100)
+        shares = self.capital_per_grid / price
+        shares = int(shares // 100) * 100
+        return max(shares, 100)
+
+    def _current_layers(self) -> int:
+        return sum(1 for s in self.position_at if s > 0)
 
     def update(self, price: float) -> list[GridSignal]:
         price = float(price)
         if self.num_grids <= 0:
             return []
 
-        grid = self._get_grid_index(price)
+        curr_cell = self._get_cell(price)
         if self.current_grid is None:
-            self.current_grid = grid
+            self.current_grid = curr_cell
             return []
 
         signals: list[GridSignal] = []
+        prev_cell = self.current_grid
 
-        if grid < self.current_grid:
-            for g in range(self.current_grid - 1, grid - 1, -1):
-                if not self.position_at[g]:
-                    p = self.levels[g]
-                    shares = self._get_shares(p)
-                    if shares > 0:
-                        self.position_at[g] = True
-                        signals.append(GridSignal(action="BUY", price=p, shares=shares, grid_level=g))
-        elif grid > self.current_grid:
-            for g in range(self.current_grid, grid):
-                if self.position_at[g]:
-                    p = self.levels[g + 1]
-                    shares = self._get_shares(p)
-                    if shares > 0:
-                        self.position_at[g] = False
-                        signals.append(GridSignal(action="SELL", price=p, shares=shares, grid_level=g))
+        if curr_cell < prev_cell:
+            for cell in range(prev_cell - 1, curr_cell - 1, -1):
+                if 0 <= cell < self.num_grids and self.position_at[cell] == 0:
+                    p = self.levels[cell]
+                    size = self._calc_shares(p)
+                    if size > 0:
+                        self.position_at[cell] = size
+                        self.buy_count += 1
+                        signals.append(GridSignal(action="BUY", price=p, shares=size, grid_level=cell))
 
-        self.current_grid = grid
+        elif curr_cell > prev_cell:
+            for cell in range(prev_cell, curr_cell):
+                if 0 <= cell < self.num_grids and self.position_at[cell] > 0:
+                    size = self.position_at[cell]
+                    sell_price = self.levels[cell + 1]
+                    profit = (sell_price - self.levels[cell]) * size
+                    self.total_profit += profit
+                    self.position_at[cell] = 0
+                    self.sell_count += 1
+                    signals.append(GridSignal(action="SELL", price=sell_price, shares=size, grid_level=cell))
+
+        layers = self._current_layers()
+        self.max_layers = max(self.max_layers, layers)
+        self.current_grid = curr_cell
         return signals
 
 
@@ -81,6 +91,7 @@ class ChanGridEngine(GridEngine):
         self.zg = float(zg)
         self.zd = float(zd)
         self.active = True
+        self.switch_count = 0
 
     def switch_zhongshu(self, new_zg: float, new_zd: float) -> None:
         self.zg = float(new_zg)
@@ -90,7 +101,9 @@ class ChanGridEngine(GridEngine):
         self.grid_size = (self.upper - self.lower) / float(self.num_grids)
         self.levels = [self.lower + i * self.grid_size for i in range(self.num_grids + 1)]
         self.current_grid = None
-        self.position_at = [False] * self.num_grids
+        self.position_at = [0] * (self.num_grids + 1)
+        self.active = True
+        self.switch_count += 1
 
     def deactivate(self) -> None:
         self.active = False

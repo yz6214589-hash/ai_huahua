@@ -31,7 +31,7 @@ from core.jobs.common import safe_float, to_ymd
 
 logger = logging.getLogger("sentiment_api")
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1", tags=["sentiment"])
 
 # 时区
 _tz = timezone(timedelta(hours=8))
