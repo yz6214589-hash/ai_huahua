@@ -18,17 +18,12 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from core.db import connect, load_mysql_config, query_dict
-from core.data import get_job_store_dir, get_summary, get_watchlist
+from core.data import get_job_store_dir, get_watchlist
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("data")
 
 router = APIRouter(prefix="/api/v1", tags=["data"])
-
-
-@router.get("/data/summary")
-def data_summary() -> dict[str, Any]:
-    return get_summary()
 
 
 def _contains_injection(v: str) -> bool:
@@ -156,7 +151,7 @@ def data_summary() -> dict[str, object]:
 
 
 @router.get("/data/{dataset}")
-def data_get(request: Request, dataset: str, page: int = 1, pageSize: int = 50) -> dict[str, Any]:
+def data_get(request: Request, dataset: str, page: int = 1, pageSize: int = 50, page_size: int = 50) -> dict[str, Any]:
     """
     分页查询数据集
 
@@ -179,7 +174,9 @@ def data_get(request: Request, dataset: str, page: int = 1, pageSize: int = 50) 
     })
     table, allowed, order_col = _dataset_def(dataset)
     page = max(page, 1)
-    page_size = min(max(pageSize, 1), 200)
+    # 优先使用 page_size 参数，如果没有则使用 pageSize
+    effective_page_size = page_size if page_size != 50 or request.query_params.get("page_size") else pageSize
+    page_size = min(max(effective_page_size, 1), 200)
 
     # 解析查询参数，过滤分页参数
     filters: dict[str, Any] = {}
@@ -229,7 +226,21 @@ def data_get(request: Request, dataset: str, page: int = 1, pageSize: int = 50) 
         return {"page": page, "pageSize": page_size, "total": 0, "rows": []}
     try:
         try:
-            total = query_dict_func(conn, count_sql, tuple(params))
+            # 数据条数：使用 INFORMATION_SCHEMA.TABLES 读 MySQL 维护的统计，避免全表 COUNT
+            try:
+                from core.db import load_mysql_config
+                _cfg = load_mysql_config()
+                _stat_rows = query_dict_func(
+                    conn,
+                    "SELECT TABLE_ROWS AS c FROM INFORMATION_SCHEMA.TABLES "
+                    "WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s",
+                    (_cfg.database, table),
+                )
+                total_count = int(_stat_rows[0]["c"]) if _stat_rows else 0
+            except Exception:
+                # 回退方案：使用原始 COUNT(*) 查询
+                total = query_dict_func(conn, count_sql, tuple(params))
+                total_count = int(total[0]["c"]) if total else 0
             rows = query_dict_func(conn, sql, tuple(params + [page_size, offset]))
         except Exception as exc:
             # 表不存在时返回空结果而非报错
@@ -240,7 +251,6 @@ def data_get(request: Request, dataset: str, page: int = 1, pageSize: int = 50) 
                 })
                 return {"page": page, "pageSize": page_size, "total": 0, "rows": []}
             raise
-        total_count = int(total[0]["c"]) if total else 0
         rows_count = len(rows)
         logger.info("数据查询完成", extra={
             "dataset": dataset,
@@ -297,8 +307,6 @@ def export_data(body: dict[str, Any]) -> Response:
         # 处理股票代码批量查询
         if k == "stock_code" and isinstance(v, str) and "," in v:
             codes = [p.strip() for p in v.split(",") if p.strip()]
-            if not codes:
-                continue
             if not codes:
                 continue
             ph = ",".join(["%s"] * len(codes))
@@ -370,7 +378,8 @@ def export_data(body: dict[str, Any]) -> Response:
 def macro_latest() -> dict[str, Any]:
     """
     获取宏观指标最新数据
-    返回CPI、PPI、PMI、LPR、恐惧贪婪指数等宏观指标的最新值
+    返回CPI、PPI、PMI、M2、社融、LPR、国债收益率等宏观指标的最新值
+    每个指标分别查询最新非空值（因发布日期间隔不同）
     """
     from core.db import load_mysql_config
     import pymysql
@@ -383,120 +392,101 @@ def macro_latest() -> dict[str, Any]:
     )
     
     try:
-        # 查询宏观指标最新数据
         cur = conn.cursor(pymysql.cursors.DictCursor)
+        indicators = []
         
-        # 查询宏观指标表最新记录
+        # 定义需要查询的指标列表：(indicator_key, 表名, 字段名, 日期字段, 显示名称, 数据源)
+        macro_indicators = [
+            ('CPI', 'trade_macro_indicator', 'cpi_yoy', 'indicator_date', 'CPI（居民消费价格指数）', 'AkShare'),
+            ('PPI', 'trade_macro_indicator', 'ppi_yoy', 'indicator_date', 'PPI（生产价格指数）', 'AkShare'),
+            ('PMI', 'trade_macro_indicator', 'pmi', 'indicator_date', 'PMI（采购经理指数）', 'AkShare'),
+            ('M2', 'trade_macro_indicator', 'm2_yoy', 'indicator_date', 'M2（广义货币供应量同比）', 'AkShare'),
+            ('社融', 'trade_macro_indicator', 'shrzgm', 'indicator_date', '社会融资规模（亿元）', 'AkShare'),
+            ('LPR', 'trade_macro_indicator', 'lpr_1y', 'indicator_date', 'LPR（1年期贷款市场报价利率）', 'AkShare'),
+            ('LPR5Y', 'trade_macro_indicator', 'lpr_5y', 'indicator_date', 'LPR（5年期贷款市场报价利率）', 'AkShare'),
+        ]
+        
+        for key, table, col, date_col, name, source in macro_indicators:
+            cur.execute(f"""
+                SELECT {date_col} AS dt, {col} AS val
+                FROM {table}
+                WHERE {col} IS NOT NULL
+                ORDER BY {date_col} DESC
+                LIMIT 1
+            """)
+            row = cur.fetchone()
+            if row and row['val'] is not None:
+                indicators.append({
+                    'indicator': key,
+                    'name': name,
+                    'value': float(row['val']),
+                    'date': str(row['dt']),
+                    'source': source
+                })
+        
+        # 查询国债收益率数据（从 trade_rate_daily 表）
+        bond_indicators = [
+            ('CN10Y', 'trade_rate_daily', 'cn_bond_10y', 'rate_date', '中国10年期国债收益率', 'Wind'),
+            ('US10Y', 'trade_rate_daily', 'us_bond_10y', 'rate_date', '美国10年期国债收益率', 'Yahoo Finance'),
+            ('FearGreed', 'trade_rate_daily', 'fear_greed', 'rate_date', '恐惧贪婪指数', 'Alternative.me'),
+            ('VIX', 'trade_rate_daily', 'vix', 'rate_date', 'VIX波动率指数', 'Yahoo Finance'),
+            ('OVX', 'trade_rate_daily', 'ovx', 'rate_date', 'OVX原油波动率指数', 'Yahoo Finance'),
+            ('GVZ', 'trade_rate_daily', 'gvz', 'rate_date', 'GVZ黄金波动率指数', 'Yahoo Finance'),
+        ]
+        for key, table, col, date_col, name, source in bond_indicators:
+            cur.execute(f"""
+                SELECT {date_col} AS dt, {col} AS val
+                FROM {table}
+                WHERE {col} IS NOT NULL
+                ORDER BY {date_col} DESC
+                LIMIT 1
+            """)
+            row = cur.fetchone()
+            if row and row['val'] is not None:
+                indicators.append({
+                    'indicator': key,
+                    'name': name,
+                    'value': float(row['val']),
+                    'date': str(row['dt']),
+                    'source': source
+                })
+        
+        # 查询 QVIX（中国期权波动率指数）
         cur.execute("""
-            SELECT indicator_date, cpi_yoy, ppi_yoy, pmi, m2_yoy, shrzgm, lpr_1y, lpr_5y
-            FROM trade_macro_indicator
-            ORDER BY indicator_date DESC
+            SELECT trade_date AS dt, qvix_50etf AS val
+            FROM trade_qvix_daily
+            WHERE qvix_50etf IS NOT NULL
+            ORDER BY trade_date DESC
             LIMIT 1
         """)
-        macro_row = cur.fetchone()
-        
-        # 查询恐惧贪婪指数（从trade_rate_daily表获取）
-        cur.execute("""
-            SELECT rate_date, fear_greed, vix, ovx, gvz, ivix, us10y
-            FROM trade_rate_daily
-            ORDER BY rate_date DESC
-            LIMIT 1
-        """)
-        rate_row = cur.fetchone()
+        row = cur.fetchone()
+        if row and row['val'] is not None:
+            indicators.append({
+                'indicator': 'QVIX',
+                'name': '中国期权波动率指数（50ETF）',
+                'value': float(row['val']),
+                'date': str(row['dt']),
+                'source': 'AkShare'
+            })
         
         cur.close()
         
-        indicators = []
-        
-        if macro_row:
-            if macro_row.get('cpi_yoy') is not None:
-                indicators.append({
-                    'indicator': 'CPI',
-                    'name': 'CPI（居民消费价格指数）',
-                    'value': macro_row['cpi_yoy'],
-                    'date': str(macro_row['indicator_date']),
-                    'source': 'AkShare'
-                })
-            if macro_row.get('ppi_yoy') is not None:
-                indicators.append({
-                    'indicator': 'PPI',
-                    'name': 'PPI（生产价格指数）',
-                    'value': macro_row['ppi_yoy'],
-                    'date': str(macro_row['indicator_date']),
-                    'source': 'AkShare'
-                })
-            if macro_row.get('pmi') is not None:
-                indicators.append({
-                    'indicator': 'PMI',
-                    'name': 'PMI（采购经理指数）',
-                    'value': macro_row['pmi'],
-                    'date': str(macro_row['indicator_date']),
-                    'source': 'AkShare'
-                })
-            if macro_row.get('lpr_1y') is not None:
-                indicators.append({
-                    'indicator': 'LPR',
-                    'name': 'LPR（贷款市场报价利率）',
-                    'value': macro_row['lpr_1y'],
-                    'date': str(macro_row['indicator_date']),
-                    'source': 'AkShare'
-                })
-        
-        if rate_row:
-            if rate_row.get('fear_greed') is not None:
-                indicators.append({
-                    'indicator': 'FearGreed',
-                    'name': '恐惧贪婪指数',
-                    'value': rate_row['fear_greed'],
-                    'date': str(rate_row['rate_date']),
-                    'source': 'Alternative.me'
-                })
-            if rate_row.get('vix') is not None:
-                indicators.append({
-                    'indicator': 'VIX',
-                    'name': 'VIX（CBOE波动率指数）',
-                    'value': rate_row['vix'],
-                    'date': str(rate_row['rate_date']),
-                    'source': 'CBOE'
-                })
-            if rate_row.get('ovx') is not None:
-                indicators.append({
-                    'indicator': 'OVX',
-                    'name': 'OVX（原油波动率指数）',
-                    'value': rate_row['ovx'],
-                    'date': str(rate_row['rate_date']),
-                    'source': 'CBOE'
-                })
-            if rate_row.get('gvz') is not None:
-                indicators.append({
-                    'indicator': 'GVZ',
-                    'name': 'GVZ（黄金波动率指数）',
-                    'value': rate_row['gvz'],
-                    'date': str(rate_row['rate_date']),
-                    'source': 'CBOE'
-                })
-            if rate_row.get('ivix') is not None:
-                indicators.append({
-                    'indicator': 'iVIX',
-                    'name': 'iVIX（中国波动率指数）',
-                    'value': rate_row['ivix'],
-                    'date': str(rate_row['rate_date']),
-                    'source': 'Wind'
-                })
-            if rate_row.get('us10y') is not None:
-                indicators.append({
-                    'indicator': 'US10Y',
-                    'name': '美国10年期国债收益率',
-                    'value': rate_row['us10y'],
-                    'date': str(rate_row['rate_date']),
-                    'source': 'Yahoo Finance'
-                })
+        # 计算综合情绪
+        overall_sentiment = '中性'
+        action_suggestion = '观望'
+        pmi_value = next((i['value'] for i in indicators if i['indicator'] == 'PMI'), None)
+        if pmi_value and pmi_value >= 50:
+            overall_sentiment = '偏乐观'
+            action_suggestion = '可适度关注'
+        elif pmi_value and pmi_value < 50:
+            overall_sentiment = '偏悲观'
+            action_suggestion = '谨慎观望'
         
         return {
             'indicators': indicators,
             'composite': {
-                'overall_sentiment': '中性',
-                'action_suggestion': '观望',
+                'overall_sentiment': overall_sentiment,
+                'action_suggestion': action_suggestion,
                 'timestamp': datetime.now().isoformat()
             }
         }
@@ -519,7 +509,7 @@ def macro_history(indicator: str, days: int = 90) -> dict[str, Any]:
     """
     获取宏观指标历史数据
     Args:
-        indicator: 指标名称（CPI/PPI/PMI/LPR/FearGreed/VIX/OVX/GVZ/iVIX/US10Y）
+        indicator: 指标名称（CPI/PPI/PMI/LPR/CN10Y/US10Y）
         days: 回溯天数，默认90天
     """
     from core.db import load_mysql_config
@@ -538,13 +528,17 @@ def macro_history(indicator: str, days: int = 90) -> dict[str, Any]:
             'CPI': ('trade_macro_indicator', 'cpi_yoy', 'indicator_date'),
             'PPI': ('trade_macro_indicator', 'ppi_yoy', 'indicator_date'),
             'PMI': ('trade_macro_indicator', 'pmi', 'indicator_date'),
+            'M2': ('trade_macro_indicator', 'm2_yoy', 'indicator_date'),
+            '社融': ('trade_macro_indicator', 'shrzgm', 'indicator_date'),
             'LPR': ('trade_macro_indicator', 'lpr_1y', 'indicator_date'),
+            'LPR5Y': ('trade_macro_indicator', 'lpr_5y', 'indicator_date'),
+            'CN10Y': ('trade_rate_daily', 'cn_bond_10y', 'rate_date'),
+            'US10Y': ('trade_rate_daily', 'us_bond_10y', 'rate_date'),
             'FearGreed': ('trade_rate_daily', 'fear_greed', 'rate_date'),
             'VIX': ('trade_rate_daily', 'vix', 'rate_date'),
             'OVX': ('trade_rate_daily', 'ovx', 'rate_date'),
             'GVZ': ('trade_rate_daily', 'gvz', 'rate_date'),
-            'iVIX': ('trade_rate_daily', 'ivix', 'rate_date'),
-            'US10Y': ('trade_rate_daily', 'us10y', 'rate_date'),
+            'QVIX': ('trade_qvix_daily', 'qvix_50etf', 'trade_date'),
         }
         
         table_info = table_map.get(indicator)
@@ -576,13 +570,17 @@ def macro_history(indicator: str, days: int = 90) -> dict[str, Any]:
             'CPI': 'CPI（居民消费价格指数）',
             'PPI': 'PPI（生产价格指数）',
             'PMI': 'PMI（采购经理指数）',
-            'LPR': 'LPR（贷款市场报价利率）',
-            'FearGreed': '恐惧贪婪指数',
-            'VIX': 'VIX（CBOE波动率指数）',
-            'OVX': 'OVX（原油波动率指数）',
-            'GVZ': 'GVZ（黄金波动率指数）',
-            'iVIX': 'iVIX（中国波动率指数）',
+            'M2': 'M2（广义货币供应量同比）',
+            '社融': '社会融资规模（亿元）',
+            'LPR': 'LPR（1年期贷款市场报价利率）',
+            'LPR5Y': 'LPR（5年期贷款市场报价利率）',
+            'CN10Y': '中国10年期国债收益率',
             'US10Y': '美国10年期国债收益率',
+            'FearGreed': '恐惧贪婪指数',
+            'VIX': 'VIX波动率指数',
+            'OVX': 'OVX原油波动率指数',
+            'GVZ': 'GVZ黄金波动率指数',
+            'QVIX': '中国期权波动率指数（50ETF）',
         }
         
         return {

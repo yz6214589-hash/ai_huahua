@@ -53,7 +53,10 @@ async def analyze_stock(body: dict):
             logger.warning("分析未完成", extra={
                 "stock_code": stock_code,
                 "error": result.get("error"),
+                "data_bars": result.get("data_bars", 0),
+                "expected_bars": result.get("expected_bars", 0),
             })
+            # 当分析失败（如 QMT 无数据）时，直接返回错误信息，不执行保存操作
             return result
 
         try:

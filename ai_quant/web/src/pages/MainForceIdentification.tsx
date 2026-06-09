@@ -315,6 +315,10 @@ export default function MainForceIdentification() {
     try {
       const result = await analyzeMainForce(selectedStock.code, timeRange)
       setAnalysisResult(result)
+      // 如果后端返回了错误信息（如 QMT 无数据），在结果卡片中显示，无需额外弹窗
+      if (result.error) {
+        setAnalysisError(result.error)
+      }
     } catch (error: any) {
       setAnalysisError(error?.message || '分析失败，请重试')
     }
@@ -426,20 +430,29 @@ export default function MainForceIdentification() {
                 </div>
                 <div className="text-sm text-gray-500 flex flex-wrap gap-3">
                   <span>时间范围: {analysisResult.time_range_label}</span>
-                  {analysisResult.data_bars !== undefined && (
-                    <span className="flex items-center gap-1">
-                      数据条数: <span className="font-mono font-semibold text-gray-700">{analysisResult.data_bars}</span>
-                      {analysisResult.expected_bars !== undefined && (
-                        <span className="text-gray-400">/ {analysisResult.expected_bars}</span>
-                      )}
-                    </span>
-                  )}
+                  <span className="flex items-center gap-1">
+                    数据条数: <span className={`font-mono font-semibold ${(analysisResult.data_bars ?? 0) === 0 ? 'text-red-500' : 'text-gray-700'}`}>{analysisResult.data_bars ?? 0}</span>
+                    {analysisResult.expected_bars !== undefined && analysisResult.expected_bars > 0 && (
+                      <span className="text-gray-400">/ {analysisResult.expected_bars}</span>
+                    )}
+                  </span>
                   <span>分析时间: {analysisResult.analysis_date}</span>
                 </div>
               </div>
 
-              {/* 数据完整性警告 */}
-              {dataCompleteness && !dataCompleteness.complete && dataCompleteness.warning && (
+              {/* QMT 无数据或分析失败的提示 */}
+              {analysisResult.error && (
+                <div className="flex items-start gap-3 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                  <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-orange-800">无法完成主力行为分析</div>
+                    <div className="text-sm text-orange-700 mt-1 whitespace-pre-line">{analysisResult.error}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* 数据完整性警告（仅在非错误状态下显示） */}
+              {!analysisResult.error && dataCompleteness && !dataCompleteness.complete && dataCompleteness.warning && (
                 <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
                   <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
                   <div>
@@ -449,43 +462,47 @@ export default function MainForceIdentification() {
                 </div>
               )}
 
-              {/* 数据完整性确认 */}
-              {dataCompleteness && dataCompleteness.complete && (
+              {/* 数据完整性确认（仅在非错误状态下显示） */}
+              {!analysisResult.error && dataCompleteness && dataCompleteness.complete && (
                 <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
                   <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
                   <div className="text-sm text-green-700">数据完整，分析结果可靠</div>
                 </div>
               )}
 
-              {/* 主力类型判定卡片 + 特征雷达图 */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <TypeClassificationCard classification={analysisResult.classification} />
-                <div className="bg-white border border-gray-200 rounded-xl p-4">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">特征雷达图</h3>
-                  <FeatureRadarChart features={analysisResult.features} />
-                </div>
-              </div>
+              {/* 主力类型判定卡片 + 特征雷达图（仅在有数据时显示） */}
+              {!analysisResult.error && (analysisResult.data_bars ?? 0) > 0 && (
+                <>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <TypeClassificationCard classification={analysisResult.classification} />
+                    <div className="bg-white border border-gray-200 rounded-xl p-4">
+                      <h3 className="text-sm font-medium text-gray-700 mb-2">特征雷达图</h3>
+                      <FeatureRadarChart features={analysisResult.features} />
+                    </div>
+                  </div>
 
-              {/* 趋势指标卡片 */}
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">趋势指标</h3>
-                <TrendIndicatorCards indicators={analysisResult.indicators} />
-              </div>
+                  {/* 趋势指标卡片 */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 mb-3">趋势指标</h3>
+                    <TrendIndicatorCards indicators={analysisResult.indicators} />
+                  </div>
 
-              {/* 信号列表 */}
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">交易信号</h3>
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <SignalList signals={analysisResult.signals} />
-                </div>
-              </div>
+                  {/* 信号列表 */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 mb-3">交易信号</h3>
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <SignalList signals={analysisResult.signals} />
+                    </div>
+                  </div>
 
-              {/* 分析摘要 */}
-              {analysisResult.summary && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">分析摘要</h3>
-                  <p className="text-sm text-gray-600 leading-relaxed">{analysisResult.summary}</p>
-                </div>
+                  {/* 分析摘要 */}
+                  {analysisResult.summary && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <h3 className="text-sm font-medium text-gray-700 mb-2">分析摘要</h3>
+                      <p className="text-sm text-gray-600 leading-relaxed">{analysisResult.summary}</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

@@ -222,7 +222,7 @@ export default function StockDetail() {
   }, [feedTab, page])
 
   const header = (
-    <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white px-4 py-3 md:px-6">
+    <div className="sticky top-14 z-10 border-b border-zinc-200 bg-white px-4 py-3 md:px-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <button

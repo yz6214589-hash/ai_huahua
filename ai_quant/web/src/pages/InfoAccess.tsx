@@ -16,8 +16,8 @@ export default function InfoAccess() {
   const activeKey = TABS.find((t) => location.pathname === t.path)?.key || 'data-collection'
 
   return (
-    <div>
-      <div className="sticky top-[52px] z-0 mb-4 border-b border-zinc-200 bg-white">
+    <div className="flex h-full flex-col">
+      <div className="flex-shrink-0 border-b border-zinc-200 bg-white">
         <div className="flex gap-1">
           {TABS.map((tab) => (
             <button
@@ -35,7 +35,9 @@ export default function InfoAccess() {
           ))}
         </div>
       </div>
-      <Outlet />
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <Outlet />
+      </div>
     </div>
   )
 }

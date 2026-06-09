@@ -7,6 +7,7 @@ import { Card, CardBody, CardHeader } from '@/components/Card'
 import { DataSourceBadge, JobStatusBadge } from '@/components/StatusBadge'
 import { GitBranch, History, RefreshCcw, Database, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useDataStatus } from '@/context/DataStatusContext'
 
 const DATASETS: { value: DatasetName; label: string }[] = [
   { value: 'trade_stock_daily', label: '行情数据' },
@@ -46,15 +47,18 @@ export default function DataDelivery() {
     last_sync_time: string
   } | null>(null)
 
+  // 复用全局 DataStatusContext 的结果（避免重复调用 /api/v1/data/status）
+  const ctx = useDataStatus()
   useEffect(() => {
-    fetchJson<{
-      branch: string
-      sync_status: string
-      last_sync_time: string
-    }>('/api/v1/data/status').then(setDataStatus).catch(() => {
-      // 忽略
-    })
-  }, [])
+    if (ctx && ctx.dataStatus) {
+      const ds = ctx.dataStatus
+      setDataStatus({
+        branch: 'main',
+        sync_status: ds.stock_daily?.latest_date ? 'in_sync' : 'unknown',
+        last_sync_time: ds.timestamp || '',
+      })
+    }
+  }, [ctx && ctx.dataStatus])
 
   const DOMAIN_LABEL_MAP: Record<string, string> = {
     stock_daily: '行情日线（stock_daily）',

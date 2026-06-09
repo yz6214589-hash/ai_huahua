@@ -71,6 +71,38 @@ def _get_conn():
     return connect(cfg)
 
 
+def generate_mock_signals() -> list[dict[str, Any]]:
+    """生成模拟信号数据（用于开发测试）"""
+    stocks = [
+        ("600519.SH", "贵州茅台"), ("300750.SZ", "宁德时代"),
+        ("002594.SZ", "比亚迪"), ("601318.SH", "中国平安"),
+        ("000858.SZ", "五粮液"), ("600036.SH", "招商银行"),
+        ("000001.SZ", "平安银行"), ("601012.SH", "隆基绿能"),
+        ("002475.SZ", "立讯精密"), ("600900.SH", "长江电力"),
+    ]
+    signals = []
+    for code, name in stocks:
+        sig_type = np.random.choice(["buy", "sell"])
+        strength = int(np.random.randint(1, 6))
+        score = round(float(np.random.uniform(0.3, 0.95)), 2)
+        close = round(float(np.random.uniform(10, 2000)), 2)
+        signals.append({
+            "id": str(uuid4()),
+            "stock_code": code,
+            "stock_name": name,
+            "signal_type": sig_type,
+            "strength": strength,
+            "score": score,
+            "close": close,
+            "reason": f"{'买入' if sig_type == 'buy' else '卖出'}信号: 综合评分{score}",
+            "macd": round(float(np.random.uniform(-2, 2)), 4),
+            "rsi": round(float(np.random.uniform(20, 80)), 2),
+            "ma20": round(close * float(np.random.uniform(0.95, 1.05)), 2),
+            "trade_date": datetime.now().strftime("%Y-%m-%d"),
+        })
+    return signals
+
+
 @router.get("", response_model=dict)
 async def get_signals(
     signal_type: Optional[str] = Query(None),

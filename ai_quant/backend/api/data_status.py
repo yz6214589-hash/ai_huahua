@@ -105,7 +105,7 @@ def _get_table_stats(table: str) -> dict[str, Any]:
     统计标准:
       - 行情(stock_daily): 全市场有行情记录的去重股票总数
       - 财务(stock_financial): 全市场有财报数据的去重股票总数
-      - 数据条数: 表内总记录数
+      - 数据条数: 表内总记录数（从 INFORMATION_SCHEMA.TABLES 获取，避免全表 COUNT）
 
     Args:
         table: 表名（必须在 ALLOWED_TABLES 白名单中）
@@ -131,6 +131,7 @@ def _get_table_stats(table: str) -> dict[str, Any]:
             cursorclass=pymysql.cursors.DictCursor,
         )
         try:
+            # 最新日期：直接查索引列，毫秒级
             rows = query_dict(conn, f"SELECT MAX({date_column}) as latest FROM {table}", ())
             if rows and rows[0].get("latest"):
                 latest = rows[0]["latest"]
@@ -139,12 +140,31 @@ def _get_table_stats(table: str) -> dict[str, Any]:
                 else:
                     result["latest_date"] = str(latest)
 
-            # 全表去重统计：行情统计所有有行情记录的股票，财务统计所有有财报的股票
-            count_rows = query_dict(conn,
-                f"SELECT COUNT(DISTINCT stock_code) as stock_count, COUNT(*) as data_count FROM {table}", ())
-            if count_rows:
-                result["stock_count"] = count_rows[0].get("stock_count") or 0
-                result["data_count"] = count_rows[0].get("data_count") or 0
+            # 数据条数：使用 INFORMATION_SCHEMA.TABLES 读 MySQL 维护的统计，O(1)
+            tbl_rows = query_dict(
+                conn,
+                "SELECT TABLE_ROWS AS data_count FROM INFORMATION_SCHEMA.TABLES "
+                "WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s",
+                (cfg.database, table),
+            )
+            if tbl_rows:
+                try:
+                    result["data_count"] = int(tbl_rows[0].get("data_count") or 0)
+                except (TypeError, ValueError):
+                    result["data_count"] = 0
+
+            # 去重股票数：使用 stock_code 索引快速统计
+            if _is_valid_identifier("stock_code"):
+                distinct_rows = query_dict(
+                    conn,
+                    f"SELECT COUNT(DISTINCT stock_code) AS stock_count FROM {table}",
+                    (),
+                )
+                if distinct_rows:
+                    try:
+                        result["stock_count"] = int(distinct_rows[0].get("stock_count") or 0)
+                    except (TypeError, ValueError):
+                        result["stock_count"] = 0
         finally:
             conn.close()
     except Exception as e:

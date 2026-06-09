@@ -312,9 +312,9 @@ export default function Execution() {
    * ============================================================ */
   return (
     <TradingContext.Provider value={contextValue}>
-      <div>
+      <div className="flex h-full flex-col">
         {/* Tab 栏 + 右侧账户连接组件 */}
-        <div className="sticky top-0 z-10 mb-4 border-b border-zinc-200 bg-white">
+        <div className="flex-shrink-0 border-b border-zinc-200 bg-white">
           <div className="flex items-center justify-between">
             {/* 左侧 Tab */}
             <div className="flex gap-1">
@@ -342,7 +342,9 @@ export default function Execution() {
         </div>
 
         {/* 子页面 */}
-        <Outlet />
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <Outlet />
+        </div>
       </div>
     </TradingContext.Provider>
   )

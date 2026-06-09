@@ -101,7 +101,7 @@ class SimpleConnectionPool:
     _instance: SimpleConnectionPool | None = None
     _lock = threading.Lock()
 
-    def __init__(self, cfg: MySQLConfig, pool_size: int = 5) -> None:
+    def __init__(self, cfg: MySQLConfig, pool_size: int = 10) -> None:
         import pymysql
 
         self._cfg = cfg
@@ -115,16 +115,16 @@ class SimpleConnectionPool:
                 database=cfg.database,
                 charset="utf8mb4",
                 autocommit=True,
-                connect_timeout=2,
-                read_timeout=3,
-                write_timeout=3,
+                connect_timeout=5,
+                read_timeout=30,
+                write_timeout=30,
                 cursorclass=pymysql.cursors.DictCursor,
             )
             self._pool.put(conn)
 
     def get_conn(self):
         try:
-            conn = self._pool.get(timeout=5)
+            conn = self._pool.get(timeout=10)
             try:
                 conn.ping(reconnect=True)
             except Exception:
@@ -137,9 +137,9 @@ class SimpleConnectionPool:
                     database=self._cfg.database,
                     charset="utf8mb4",
                     autocommit=True,
-                    connect_timeout=2,
-                    read_timeout=3,
-                    write_timeout=3,
+                    connect_timeout=5,
+                    read_timeout=30,
+                    write_timeout=30,
                     cursorclass=pymysql.cursors.DictCursor,
                 )
             return conn
@@ -153,9 +153,9 @@ class SimpleConnectionPool:
                 database=self._cfg.database,
                 charset="utf8mb4",
                 autocommit=True,
-                connect_timeout=2,
-                read_timeout=3,
-                write_timeout=3,
+                connect_timeout=5,
+                read_timeout=30,
+                write_timeout=30,
                 cursorclass=pymysql.cursors.DictCursor,
             )
 
@@ -169,7 +169,7 @@ class SimpleConnectionPool:
                 pass
 
     @classmethod
-    def get_pool(cls, cfg: MySQLConfig | None = None, pool_size: int = 5) -> SimpleConnectionPool:
+    def get_pool(cls, cfg: MySQLConfig | None = None, pool_size: int = 10) -> SimpleConnectionPool:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:

@@ -27,25 +27,28 @@ export function AssistantDrawer() {
       {/* 展开状态 - 显示原来的大按钮样式 */}
       {!collapsed && (
         <>
-          {/* 主按钮 */}
-          <button
-            onClick={() => setOpen(true)}
-            title="AI 投资助手"
-            className="fixed bottom-6 right-6 z-40 inline-flex select-none items-center gap-2 rounded-full border border-zinc-200 bg-white/92 backdrop-blur-md px-4 py-3 text-sm font-semibold text-zinc-900 shadow-[0_10px_30px_rgba(0,0,0,0.12)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(0,0,0,0.16)]"
-          >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-900 text-white">
-              <Bot className="h-5 w-5" />
-            </span>
-            <span>AI 投资助手</span>
+          {/* 主按钮区域 */}
+          <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
+            {/* 主按钮 */}
+            <button
+              onClick={() => setOpen(true)}
+              title="AI 投资助手"
+              className="inline-flex select-none items-center gap-2 rounded-full border border-zinc-200 bg-white/92 backdrop-blur-md px-4 py-3 text-sm font-semibold text-zinc-900 shadow-[0_10px_30px_rgba(0,0,0,0.12)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(0,0,0,0.16)]"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-900 text-white">
+                <Bot className="h-5 w-5" />
+              </span>
+              <span>AI 投资助手</span>
+            </button>
             {/* 收起按钮 */}
             <button
-              onClick={(e) => { e.stopPropagation(); setCollapsed(true) }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors"
+              onClick={() => setCollapsed(true)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white/92 backdrop-blur-md text-zinc-600 hover:bg-zinc-100 transition-colors shadow-[0_10px_30px_rgba(0,0,0,0.12)]"
               title="收起"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
-          </button>
+          </div>
 
           {/* 对话窗口 */}
           {open && (

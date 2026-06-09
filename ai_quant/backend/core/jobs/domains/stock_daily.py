@@ -78,6 +78,45 @@ def _latest_dates(conn) -> dict[str, str]:
     return out
 
 
+def _existing_dates_map(conn, stock_codes: list[str]) -> dict[str, set[str]]:
+    """查询数据库中各股票已采集数据的具体日期集合（按股票+日期维度去重）
+
+    用于在采集结果写入前过滤已存在的记录，避免重复写入。
+
+    Args:
+        conn: 数据库连接对象
+        stock_codes: 需要查询的股票代码列表
+
+    Returns:
+        dict: {stock_code: {"2024-01-02", "2024-01-03", ...}} 格式的日期集合映射
+    """
+    if not stock_codes:
+        return {}
+
+    result: dict[str, set[str]] = {}
+    # 分批查询，避免SQL过长
+    batch_size = 500
+    for i in range(0, len(stock_codes), batch_size):
+        batch = stock_codes[i:i + batch_size]
+        placeholders = ",".join(["%s"] * len(batch))
+        rows = query_dict(
+            conn,
+            f"SELECT stock_code, trade_date FROM trade_stock_daily WHERE stock_code IN ({placeholders})",
+            tuple(batch),
+        )
+        for r in rows:
+            code = str(r["stock_code"])
+            td = r.get("trade_date")
+            if td:
+                dstr = td.strftime("%Y-%m-%d") if hasattr(td, "strftime") else str(td)[:10]
+                if code not in result:
+                    result[code] = set()
+                result[code].add(dstr)
+
+    _log(f"步骤1.5: 查询到 {len(result)} 只股票的已有日期数据，共 {sum(len(v) for v in result.values())} 条记录")
+    return result
+
+
 def _infer_exchange(code_num: str) -> str:
     """根据股票代码前6位推断所属交易所
 
@@ -486,10 +525,11 @@ def _process_one_stock(
     progress_lock: Lock,
     processed_ref: list[int],
     total_count: int,
+    cfg: MySQLConfig | None = None,
 ) -> dict[str, Any] | None:
     """处理单只股票的完整采集流程（供线程池并发调用）
 
-    包含：QMT获取 → TuShare备选 → AkShare备选 → 数据清洗 → 计算RSI14/MA20 → 组装写入行
+    包含：QMT获取 → TuShare备选 → AkShare备选 → 数据清洗 → 计算RSI14/MA20 → 过滤已有数据 → 组装写入行
 
     Args:
         code: 股票代码，如 "600519.SH"
@@ -500,6 +540,7 @@ def _process_one_stock(
         progress_lock: 线程安全的进度计数锁
         processed_ref: 已处理数量的可变引用（列表包裹的int），用于线程安全递增
         total_count: 股票总数，用于日志输出进度
+        cfg: MySQL 数据库配置，用于按需查询单只股票的已有日期集合
 
     Returns:
         dict | None: 成功时返回 {"code": str, "rows": list[tuple], "source": str}，
@@ -555,9 +596,37 @@ def _process_one_stock(
                 ma_map[key] = ma_seq[i]
 
         rows: list[tuple[Any, ...]] = []
+        skipped = 0
+
+        # 按需查询单只股票的已有日期集合（避免全量查询导致超时）
+        existing_dates: set[str] | None = None
+        if cfg is not None:
+            try:
+                conn_q = connect(cfg)
+                try:
+                    date_rows = query_dict(
+                        conn_q,
+                        "SELECT trade_date FROM trade_stock_daily WHERE stock_code = %s",
+                        (code,),
+                    )
+                    existing_dates = set()
+                    for r in date_rows:
+                        td = r.get("trade_date")
+                        if td:
+                            existing_dates.add(td.strftime("%Y-%m-%d") if hasattr(td, "strftime") else str(td)[:10])
+                finally:
+                    conn_q.close()
+            except Exception as e:
+                _log(f"[WARN] {code}: 查询已有日期失败({type(e).__name__})，将不跳过已有数据")
+                existing_dates = None
+
         for _, row in df.iterrows():
             dt = row["date"]
             dstr = dt.date().isoformat() if hasattr(dt, "date") else str(dt)[:10]
+            # 按股票+日期维度过滤：如果数据库中已有该日期的数据，跳过
+            if existing_dates and dstr in existing_dates:
+                skipped += 1
+                continue
             close = safe_float(row.get("close"))
             vol = row.get("volume")
             volume = int(float(vol)) if vol not in (None, "") and float(vol) == float(vol) else None
@@ -565,7 +634,10 @@ def _process_one_stock(
             ma20 = ma_map.get(dstr)
             rows.append((code, dstr, close, volume, rsi, ma20, stock_name))
 
-        _log(f"步骤6: {code} 生成 {len(rows)} 条写入数据 ({df['date'].min().date()}~{df['date'].max().date()}, 名称={stock_name or '未知'}, 数据源={source})")
+        if skipped > 0:
+            _log(f"步骤6: {code} 跳过 {skipped} 条已有数据，生成 {len(rows)} 条新写入数据 (名称={stock_name or '未知'}, 数据源={source})")
+        else:
+            _log(f"步骤6: {code} 生成 {len(rows)} 条写入数据 ({df['date'].min().date()}~{df['date'].max().date()}, 名称={stock_name or '未知'}, 数据源={source})")
         return {"code": code, "rows": rows, "source": source}
     except Exception as e:
         _log(f"[ERROR] {code}: 处理异常: {type(e).__name__}: {e}")
@@ -714,6 +786,7 @@ def run_stock_daily(cfg: MySQLConfig, mode: str | None, params: dict[str, Any] |
                     _process_one_stock,
                     code, latest, data_start, today_str, name_map,
                     progress_lock, processed_ref, total_count,
+                    cfg,
                 )
                 future_to_code[future] = code
 

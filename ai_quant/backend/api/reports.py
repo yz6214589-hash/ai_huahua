@@ -731,8 +731,283 @@ def _generate_report_markdown(
         ]
     )
 
+    # 五步法开关：AI_QUANT_REPORT_USE_FIVE_STEP=1 启用（默认启用）
+    use_five_step = str(os.getenv("AI_QUANT_REPORT_USE_FIVE_STEP", "1")).strip() not in ("0", "false", "False", "")
+    if use_five_step:
+        logger.info("使用国泰君安'五步法'生成研报", extra={
+            "stock_code": stock_code,
+            "model": model_name,
+            "use_rag": bool(use_rag),
+        })
+        text = _five_step_generate_report(
+            model_name=model_name,
+            api_key=api_key,
+            stock_code=stock_code,
+            stock_name=stock_name,
+            daily_table=daily_table or "",
+            news_block=news_block or "",
+            fin_latest=fin_latest or "",
+            rag_context=rag_context or "",
+        )
+        return text
+
+    # 单次 LLM 调用（保留作为兜底，关闭五步法时使用）
     text = _dashscope_generate(model_name=model_name, api_key=api_key, system_prompt=system_prompt, user_prompt=user_prompt)
     return text + "\n"
+
+
+# ============================================================
+# 国泰君安"五步法"研报生成实现
+# ============================================================
+# 五步法核心思想：信息差 → 逻辑差 → 预期差 → 催化剂 → 结论+风险闭环
+# 每一步都基于前一步的输出做"递进式推理"，确保研报有清晰的逻辑链。
+# 相比单次大调用，迭代式调用能让模型在每一步聚焦特定分析视角，
+# 输出更聚焦、更具深度的研报内容。
+# ============================================================
+
+# 五步法每个步骤的 Prompt 模板（聚焦问题 + 数据注入槽位）
+FIVE_STEP_PROMPTS: dict[str, dict[str, str]] = {
+    "information_gap": {
+        "name": "信息差",
+        "title": "一、信息差 — 市场尚未充分关注的关键信息",
+        "focus": "寻找'信息差'：市场尚未充分关注或被忽视的关键数据/事件/趋势",
+        "template": (
+            "你是一位资深买方研究员，正在为 {stock_name}（{stock_code}）撰写深度研报。"
+            "当前是五步法分析框架的【第一步：信息差】。\n\n"
+            "【本步骤核心问题】\n"
+            "{focus}\n\n"
+            "【可用数据】\n"
+            "1. 日线行情快照（最近 60 个交易日，已抽取关键字段）：\n{daily_table}\n\n"
+            "2. 新闻快照（最近 30 条）：\n{news_block}\n\n"
+            "3. 本地 RAG 检索材料（财报/研报节选）：\n{rag_context}\n\n"
+            "【输出要求】\n"
+            "- 列出 3-5 个'市场可能忽视'的关键信息点（正面 / 负面各 1-3 条）\n"
+            "- 每个信息点需附：具体数据支撑、为什么被忽视、对股价的潜在影响\n"
+            "- 控制在 400 字以内，使用 Markdown 列表表达\n"
+            "- 直接输出本步骤分析内容，不要包含其他章节标题或解释性文字"
+        ),
+    },
+    "logic_gap": {
+        "name": "逻辑差",
+        "title": "二、逻辑差 — 市场对数据的推理错在哪里",
+        "focus": "寻找'逻辑差'：市场对已知数据/事件的主流推理可能存在哪些错误",
+        "template": (
+            "你是一位资深买方研究员，正在为 {stock_name}（{stock_code}）撰写深度研报。"
+            "当前是五步法分析框架的【第二步：逻辑差】。\n\n"
+            "【本步骤核心问题】\n"
+            "{focus}\n\n"
+            "【上一步输出（信息差）】\n{previous_analysis}\n\n"
+            "【补充 RAG 材料（业务/竞争/驱动因素）】\n{rag_context}\n\n"
+            "【输出要求】\n"
+            "- 指出 2-4 个市场主流逻辑可能存在的'推理偏差'\n"
+            "- 给出正确的因果逻辑链（数据 A → 实际是 C，而非市场认为的 D）\n"
+            "- 控制在 400 字以内，使用 Markdown 列表表达\n"
+            "- 直接输出本步骤分析内容"
+        ),
+    },
+    "expectation_gap": {
+        "name": "预期差",
+        "title": "三、预期差 — 一致预期 vs 实际的偏离方向与幅度",
+        "focus": "寻找'预期差'：市场一致预期与公司实际/合理预期之间的偏离",
+        "template": (
+            "你是一位资深买方研究员，正在为 {stock_name}（{stock_code}）撰写深度研报。"
+            "当前是五步法分析框架的【第三步：预期差】。\n\n"
+            "【本步骤核心问题】\n"
+            "{focus}\n\n"
+            "【可用数据】\n"
+            "1. 财务数据最近报告期：{fin_latest}\n"
+            "2. 日线行情趋势（最近 60 日）：\n{daily_table}\n\n"
+            "【前两步输出（信息差 + 逻辑差）】\n{previous_analysis}\n\n"
+            "【输出要求】\n"
+            "- 用 Markdown 表格对比'市场一致预期 vs 财报实际/合理估计'（覆盖营收增速、净利润增速、毛利率、ROE 等核心指标）\n"
+            "- 说明预期差的驱动因素（一次性 vs 持续性）\n"
+            "- 给出预期差的方向（正向 / 负向）与强度判断\n"
+            "- 控制在 400 字以内\n"
+            "- 直接输出本步骤分析内容"
+        ),
+    },
+    "catalyst": {
+        "name": "催化剂",
+        "title": "四、催化剂 — 触发价值重估的事件与时间窗口",
+        "focus": "识别'催化剂'：可能触发市场重新评估该公司价值的事件或时间节点",
+        "template": (
+            "你是一位资深买方研究员，正在为 {stock_name}（{stock_code}）撰写深度研报。"
+            "当前是五步法分析框架的【第四步：催化剂】。\n\n"
+            "【本步骤核心问题】\n"
+            "{focus}\n\n"
+            "【可用数据】\n"
+            "1. 近期新闻：\n{news_block}\n"
+            "2. 财务报告期：{fin_latest}\n\n"
+            "【前三步输出（信息差 + 逻辑差 + 预期差）】\n{previous_analysis}\n\n"
+            "【输出要求】\n"
+            "- 列出短期催化剂（1-3 个月）3-5 个\n"
+            "- 列出中期催化剂（3-12 个月）2-3 个\n"
+            "- 列出潜在负面催化剂 1-2 个\n"
+            "- 用时间线呈现：未来 1 / 3 / 6 / 12 个月最可能发生的催化剂\n"
+            "- 控制在 400 字以内\n"
+            "- 直接输出本步骤分析内容"
+        ),
+    },
+    "conclusion": {
+        "name": "结论与风险闭环",
+        "title": "五、结论与风险闭环 — 投资建议 + 假设证伪风险",
+        "focus": "综合前四步给出最终投资结论，并明确风险闭环（哪些假设失效会推翻结论）",
+        "template": (
+            "你是一位资深买方研究员，正在为 {stock_name}（{stock_code}）撰写深度研报的最终结论。"
+            "当前是五步法分析框架的【第五步：结论与风险闭环】。\n\n"
+            "【本步骤核心问题】\n"
+            "{focus}\n\n"
+            "【前四步分析（信息差 / 逻辑差 / 预期差 / 催化剂）】\n{previous_analysis}\n\n"
+            "【输出要求 — 必须包含以下五段】\n"
+            "1. 【核心观点】一句话总结（看多 / 看空 / 中性 + 核心逻辑）\n"
+            "2. 【投资逻辑】3-5 个要点，引用前四步的结论\n"
+            "3. 【投资评级】强烈推荐 / 推荐 / 中性 / 回避 + 评级依据\n"
+            "4. 【关键假设与风险闭环】列出 2-3 个关键假设，并明确'若 XX 假设被证伪，结论将被推翻'\n"
+            "5. 【关注指标】3-5 个需要持续跟踪的指标\n"
+            "- 控制在 500 字以内\n"
+            "- 直接输出本步骤分析内容"
+        ),
+    },
+}
+
+
+def _five_step_generate_report(
+    *,
+    model_name: str,
+    api_key: str,
+    stock_code: str,
+    stock_name: str,
+    daily_table: str,
+    news_block: str,
+    fin_latest: str,
+    rag_context: str,
+) -> str:
+    """
+    按国泰君安"五步法"迭代式生成研报。
+
+    实现要点：
+    1. 严格按"信息差 → 逻辑差 → 预期差 → 催化剂 → 结论"顺序逐次调用 LLM
+    2. 每一步的输出作为下一步的 previous_analysis，形成递进式分析链
+    3. 步骤失败时优雅降级：保留已有内容继续后续步骤，最终仍返回可用报告
+    4. 最终报告以"摘要 + 五步法正文"形式组装
+
+    Args:
+        model_name: LLM 模型名（如 qwen-max / deepseek-v3）
+        api_key: DashScope API Key
+        stock_code: 股票代码
+        stock_name: 股票名称
+        daily_table: 行情表格 Markdown（已格式化）
+        news_block: 新闻快照（多行字符串）
+        fin_latest: 财务最近报告期
+        rag_context: 本地 RAG 检索内容
+
+    Returns:
+        str: 完整 Markdown 研报
+    """
+    system_prompt = (
+        "你是资深买方研究员与投资经理助理，正在使用国泰君安'五步法'（信息差→逻辑差→"
+        "预期差→催化剂→结论+风险闭环）撰写中文个股研报。\n"
+        "要求：\n"
+        "1) 严格基于事实与提供的数据，不要编造数字；\n"
+        "2) 数据缺失时明确说明，不要编造；\n"
+        "3) 逻辑推理必须可追溯到前一步或原始数据；\n"
+        "4) 结论必须包含风险闭环（假设证伪路径）。"
+    )
+
+    step_keys = ["information_gap", "logic_gap", "expectation_gap", "catalyst", "conclusion"]
+    accumulated = ""
+    step_results: list[tuple[str, str]] = []  # (title, content)
+
+    for idx, key in enumerate(step_keys, start=1):
+        cfg = FIVE_STEP_PROMPTS[key]
+        user_prompt = cfg["template"].format(
+            stock_name=stock_name,
+            stock_code=stock_code,
+            focus=cfg["focus"],
+            daily_table=daily_table or "（无）",
+            news_block=news_block or "（无）",
+            rag_context=rag_context or "（无）",
+            fin_latest=fin_latest or "未知",
+            previous_analysis=accumulated or "（这是首步分析，无前置分析结果）",
+        )
+        logger.info("五步法研报：开始步骤", extra={
+            "step_index": idx,
+            "step_name": cfg["name"],
+            "stock_code": stock_code,
+            "model": model_name,
+        })
+        try:
+            content = _dashscope_generate(
+                model_name=model_name,
+                api_key=api_key,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+            )
+            content = str(content or "").strip()
+        except Exception as exc:
+            # 单步失败不阻塞整体任务：记录错误并以占位内容继续
+            logger.warning("五步法研报：单步调用失败，使用占位内容继续", extra={
+                "step_index": idx,
+                "step_name": cfg["name"],
+                "stock_code": stock_code,
+                "error": str(exc),
+            })
+            content = f"_（本步骤因 {type(exc).__name__} 未能生成：{str(exc)[:200]}）_"
+
+        step_results.append((cfg["title"], content))
+        accumulated += f"\n\n### {cfg['title']}\n{content}"
+
+    # 摘要：在五步分析完成后单独生成一段 100-150 字的摘要
+    summary_prompt = (
+        f"你已完成 {stock_name}（{stock_code}）的五步法分析。请基于以下五步输出，"
+        f"撰写一段 100-150 字的'摘要'，包含：核心观点、投资逻辑要点、主要风险。\n\n"
+        f"五步分析全文：\n{accumulated}\n\n"
+        f"输出要求：直接输出摘要正文，不要任何前缀（如'摘要：'）。"
+    )
+    try:
+        summary_text = _dashscope_generate(
+            model_name=model_name,
+            api_key=api_key,
+            system_prompt=system_prompt,
+            user_prompt=summary_prompt,
+        ).strip()
+    except Exception as exc:
+        logger.warning("五步法研报：摘要生成失败，使用首步内容截取", extra={
+            "stock_code": stock_code,
+            "error": str(exc),
+        })
+        summary_text = (step_results[0][1] if step_results else "摘要生成失败")[:300]
+
+    # 组装最终 Markdown 报告
+    body_lines: list[str] = [
+        f"# 深度研报：{stock_name}（{stock_code}）",
+        "",
+        "> 分析框架：国泰君安'五步法'（信息差 → 逻辑差 → 预期差 → 催化剂 → 结论+风险闭环）",
+        f"> 生成模型：{model_name}",
+        f"> 生成时间：{now_iso()}",
+        "",
+        "## 摘要",
+        summary_text or "（摘要生成失败）",
+        "",
+    ]
+    for title, content in step_results:
+        body_lines.append(f"## {title}")
+        body_lines.append("")
+        body_lines.append(content or "（本步骤无内容）")
+        body_lines.append("")
+
+    # 风险提示与免责声明（标准尾部）
+    body_lines.extend([
+        "## 风险提示",
+        "- 本报告由 AI 基于公开行情、新闻与本地 RAG 材料自动生成，可能存在遗漏或偏差。",
+        "- 投资建议仅供参考，不构成投资决策依据；据此操作风险自担。",
+        "- 市场环境、政策、公司经营等变化均可能导致结论失效。",
+        "",
+        "## 免责声明",
+        "本报告由 AI 投研助手自动生成，仅供学习与研究参考，不构成任何投资建议。",
+    ])
+
+    return "\n".join(body_lines) + "\n"
 
 
 def _map_report_error_message(msg: str) -> str:

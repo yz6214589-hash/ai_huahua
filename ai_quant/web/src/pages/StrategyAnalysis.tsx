@@ -19,8 +19,8 @@ export default function StrategyAnalysis() {
     || 'library'
 
   return (
-    <div>
-      <div className="sticky top-0 z-10 mb-4 border-b border-zinc-200 bg-white">
+    <div className="flex h-full flex-col">
+      <div className="flex-shrink-0 border-b border-zinc-200 bg-white">
         <div className="flex gap-1">
           {TABS.map((tab) => (
             <button
@@ -38,7 +38,9 @@ export default function StrategyAnalysis() {
           ))}
         </div>
       </div>
-      <Outlet />
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <Outlet />
+      </div>
     </div>
   )
 }

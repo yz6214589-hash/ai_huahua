@@ -57,6 +57,7 @@ class StockSelectRequest(BaseModel):
     ev_ebitda_max: float | None = None
     industries: list[str] | None = None
     exclude_types: list[str] | None = None
+    include_excluded: bool = False
 
 
 FILTER_FIELD_MAPPING: dict[str, str] = {
@@ -113,17 +114,24 @@ RATIO_FIELDS: set[str] = {
 }
 
 
-def _build_where_clause(params: dict[str, Any]) -> tuple[str, list[Any]]:
+def _build_where_clause(params: dict[str, Any]) -> tuple[str, list[Any], list[str]]:
+    """构建 WHERE 子句，返回 (where_sql, values, active_filters)
+
+    active_filters: 记录哪些指标筛选条件被用户启用（前端发送了 min/max 参数）
+    """
     conditions: list[str] = []
     values: list[Any] = []
+    active_filters: list[str] = []
 
     for prefix, db_column in FILTER_FIELD_MAPPING.items():
         min_val = params.get(f"{prefix}_min")
+        max_val = params.get(f"{prefix}_max")
+        if min_val is not None or max_val is not None:
+            active_filters.append(prefix)
         if min_val is not None:
             conditions.append(f"f.{db_column} >= %s")
             values.append(min_val)
 
-        max_val = params.get(f"{prefix}_max")
         if max_val is not None:
             conditions.append(f"f.{db_column} <= %s")
             values.append(max_val)
@@ -155,7 +163,7 @@ def _build_where_clause(params: dict[str, Any]) -> tuple[str, list[Any]]:
             conditions.append("(" + " AND ".join(exclude_conditions) + ")")
 
     where = " AND ".join(conditions) if conditions else "1=1"
-    return where, values
+    return where, values, active_filters
 
 
 def _create_direct_connection(cfg):
@@ -196,6 +204,122 @@ _LATEST_ANNUAL_ROE_SUBQUERY = """
         GROUP BY stock_code
     ) annual ON f2.stock_code = annual.stock_code AND f2.report_date = annual.latest_annual
 """
+
+# 指标显示名映射（用于前端展示缺失指标）
+_FILTER_LABEL_MAP: dict[str, str] = {
+    "pe": "PE（市盈率）",
+    "pb": "PB（市净率）",
+    "roe": "ROE",
+    "revenue_growth": "营收增速",
+    "profit_growth": "利润增速",
+    "gross_margin": "毛利率",
+    "net_margin": "净利率",
+    "debt_ratio": "资产负债率",
+    "operating_margin": "营业利润率",
+    "quick_ratio": "速动比率",
+    "asset_turnover": "总资产周转率",
+    "free_cash_flow": "自由现金流",
+    "dividend_yield": "股息率",
+    "ebitda": "EBITDA",
+    "ev_ebitda": "EV/EBITDA",
+}
+
+
+def _query_excluded_stocks(
+    conn, active_filters: list[str], params: dict[str, Any]
+) -> dict[str, Any]:
+    """查询因指标缺失或不在范围内而被剔除的股票
+
+    逻辑：
+    1. 查询满足行业/排除条件但不满足指标筛选条件的所有股票
+    2. 为每只被剔除的股票标注具体缺失/不满足的指标
+    """
+    # 构建仅包含行业和排除条件的WHERE（不包含指标筛选）
+    base_conditions: list[str] = []
+    base_values: list[Any] = []
+
+    if params.get("report_date"):
+        base_conditions.append("f.report_date = %s")
+        base_values.append(params["report_date"])
+
+    industries = params.get("industries")
+    if industries:
+        placeholders = ",".join(["%s"] * len(industries))
+        base_conditions.append(f"m.sector_level1 IN ({placeholders})")
+        base_values.extend(industries)
+
+    exclude_types = params.get("exclude_types")
+    if exclude_types:
+        exclude_conds = []
+        for t in exclude_types:
+            if t == "kcb":
+                exclude_conds.append("m.stock_code NOT LIKE '688%%'")
+            elif t == "cyb":
+                exclude_conds.append("m.stock_code NOT LIKE '300%%'")
+                exclude_conds.append("m.stock_code NOT LIKE '301%%'")
+            elif t == "st":
+                exclude_conds.append("(m.stock_name IS NULL OR (m.stock_name NOT LIKE '%%ST%%' AND m.stock_name NOT LIKE '%%退市%%'))")
+        if exclude_conds:
+            base_conditions.append("(" + " AND ".join(exclude_conds) + ")")
+
+    base_where = " AND ".join(base_conditions) if base_conditions else "1=1"
+
+    # 查询满足基础条件但不满足指标条件的股票
+    # 构建 NOT EXISTS 子查询，找出不在已筛选结果中的股票
+    indicator_conditions: list[str] = []
+    indicator_values: list[Any] = []
+    for prefix in active_filters:
+        db_column = FILTER_FIELD_MAPPING[prefix]
+        min_val = params.get(f"{prefix}_min")
+        max_val = params.get(f"{prefix}_max")
+        # 指标缺失（NULL）或不在范围内
+        null_or_outside = [f"f.{db_column} IS NULL"]
+        if min_val is not None:
+            null_or_outside.append(f"f.{db_column} < %s")
+            indicator_values.append(min_val)
+        if max_val is not None:
+            null_or_outside.append(f"f.{db_column} > %s")
+            indicator_values.append(max_val)
+        indicator_conditions.append("(" + " OR ".join(null_or_outside) + ")")
+
+    excluded_where = base_where
+    if indicator_conditions:
+        excluded_where += " AND (" + " OR ".join(indicator_conditions) + ")"
+
+    all_values = base_values + indicator_values
+
+    excluded_sql = f"""
+        SELECT
+            f.stock_code,
+            m.stock_name,
+            m.sector_level1,
+            {', '.join(f'f.{FILTER_FIELD_MAPPING[prefix]} as `{prefix}`' for prefix in active_filters)}
+        FROM ({_LATEST_REPORT_SUBQUERY}) f
+        LEFT JOIN trade_stock_master m ON f.stock_code = m.stock_code
+        WHERE {excluded_where}
+        ORDER BY f.stock_code
+        LIMIT 500
+    """
+
+    excluded_rows = query_dict(conn, excluded_sql, tuple(all_values))
+
+    # 为每只被剔除的股票标注缺失/不满足的指标
+    items = []
+    for row in excluded_rows:
+        missing: list[str] = []
+        for prefix in active_filters:
+            val = row.get(prefix)
+            if val is None:
+                missing.append(_FILTER_LABEL_MAP.get(prefix, prefix))
+        items.append({
+            "stock_code": row.get("stock_code", ""),
+            "stock_name": row.get("stock_name", ""),
+            "sector_level1": row.get("sector_level1", ""),
+            "missing_indicators": missing,
+            "reason": "指标缺失" if missing else "指标不满足筛选条件",
+        })
+
+    return {"total": len(items), "items": items}
 
 
 @router.post("/query")
@@ -269,7 +393,7 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
             "exclude_types": body.exclude_types,
         }
 
-        where, values = _build_where_clause(params)
+        where, values, active_filters = _build_where_clause(params)
 
         page = max(body.page, 1)
         page_size = max(body.page_size, 1)
@@ -328,21 +452,12 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
                 if col in row and row[col] is not None:
                     row[col] = round(float(row[col]), 4)
 
-        # 为每只股票获取巨潮资讯网的 orgId，用于生成个股链接
-        for row in rows:
-            stock_code_raw = row.get("stock_code", "")
-            if stock_code_raw:
-                code_num = stock_code_raw.split(".")[0]
-                if code_num:
-                    org_id = _get_cninfo_orgid(code_num)
-                    row["org_id"] = org_id
-
         logger.info("股票筛选完成", extra={
             "total": total,
             "returned": len(rows)
         })
 
-        return {
+        result: dict[str, Any] = {
             "page": page,
             "page_size": page_size,
             "total": total,
@@ -365,11 +480,41 @@ def stock_select(body: StockSelectRequest) -> dict[str, Any]:
                 "exclude_types": body.exclude_types or [],
             }
         }
+
+        # 当用户请求返回被剔除的股票时，额外查询
+        if body.include_excluded and active_filters:
+            try:
+                excluded = _query_excluded_stocks(conn, active_filters, params)
+                result["excluded"] = excluded
+            except Exception as e:
+                logger.warning("查询被剔除股票失败", extra={"error": str(e)})
+                result["excluded"] = {"total": 0, "items": []}
+
+        return result
     except Exception as e:
         logger.error("股票筛选失败", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail=f"筛选失败: {str(e)}")
     finally:
         conn.close()
+
+
+@router.get("/orgid")
+def get_orgid(stock_code: str) -> dict[str, Any]:
+    """
+    按需获取股票对应的巨潮资讯网机构ID
+
+    前端可针对单只股票调用此接口获取 orgId，避免批量查询时的 N+1 延迟问题
+
+    Args:
+        stock_code: 股票代码（纯数字，如 000001）
+
+    Returns:
+        dict: 包含 stock_code 和 org_id 的字典
+    """
+    if not stock_code:
+        raise HTTPException(status_code=400, detail="stock_code 参数不能为空")
+    org_id = _get_cninfo_orgid(stock_code)
+    return {"stock_code": stock_code, "org_id": org_id}
 
 
 @router.get("/criteria")

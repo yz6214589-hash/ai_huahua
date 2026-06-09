@@ -156,15 +156,15 @@ const Topbar = memo(function Topbar() {
   }, [selectedStock, navigate, location.pathname])
 
   return (
-    <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-3 md:px-6">
+    <header className="sticky top-0 z-20 flex h-14 flex-nowrap items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-2 md:px-6">
       {/* 左侧：页面标题和日期 */}
-      <div>
+      <div className="min-w-0 flex-shrink-0">
         <div className="text-sm font-semibold text-zinc-900">{title}</div>
         <div className="text-xs text-zinc-500">{new Date().toLocaleDateString()}</div>
       </div>
       {/* 右侧：股票选择 + 查看详情 */}
-      <div className="flex w-full items-center gap-2 md:w-auto">
-        <div className="w-full md:w-72">
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="w-44 md:w-56 lg:w-72">
           <StockPicker
             value={selectedStock}
             onChange={handleStockChange}
@@ -175,7 +175,7 @@ const Topbar = memo(function Topbar() {
         <button
           onClick={handleViewStock}
           disabled={!selectedStock}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ExternalLink className="h-4 w-4" />
           查看
@@ -195,12 +195,12 @@ export default function AppShell() {
   }, [])
 
   return (
-    /** 外层容器固定为视口高度，隐藏溢出，防止全页滚动 */
-    <div className="h-screen overflow-hidden bg-zinc-50">
+    /** 外层容器固定为视口高度，不设置 overflow-hidden，允许下拉列表等弹出层超出边界 */
+    <div className="h-screen bg-zinc-50">
       <div className="flex h-full">
         {/* 侧边栏，可折叠（固定左侧） */}
         <Sidebar collapsed={sidebarCollapsed} onToggle={handleToggleSidebar} />
-        {/* 主内容区域 */}
+        {/* 主内容区域 - 不做 overflow-hidden，确保 Topbar sticky 定位正常 */}
         <div className="flex flex-1 flex-col min-w-0">
           <Topbar />
           {/* 页面内容，通过路由 Outlet 渲染（可滚动区域） */}

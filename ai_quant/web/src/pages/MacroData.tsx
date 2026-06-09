@@ -11,17 +11,21 @@ const INDICATOR_LABELS: Record<string, string> = {
   CPI: 'CPI（居民消费价格指数）',
   PPI: 'PPI（生产价格指数）',
   PMI: 'PMI（采购经理指数）',
-  LPR: 'LPR（贷款市场报价利率）',
-  FearGreed: '恐惧贪婪指数',
-  VIX: 'VIX（CBOE波动率指数）',
-  OVX: 'OVX（原油波动率指数）',
-  GVZ: 'GVZ（黄金波动率指数）',
-  iVIX: 'iVIX（中国波动率指数）',
+  M2: 'M2（广义货币供应量同比）',
+  社融: '社会融资规模（亿元）',
+  LPR: 'LPR（1年期贷款市场报价利率）',
+  LPR5Y: 'LPR（5年期贷款市场报价利率）',
+  CN10Y: '中国10年期国债收益率',
   US10Y: '美国10年期国债收益率',
+  FearGreed: '恐惧贪婪指数',
+  VIX: 'VIX波动率指数',
+  OVX: 'OVX原油波动率指数',
+  GVZ: 'GVZ黄金波动率指数',
+  QVIX: '中国期权波动率指数（50ETF）',
 }
 
 // 指标分组定义
-const CHINA_MARKET_INDICATORS = ['CPI', 'PMI', 'LPR', 'iVIX']
+const CHINA_MARKET_INDICATORS = ['CPI', 'PPI', 'PMI', 'M2', '社融', 'LPR', 'LPR5Y', 'CN10Y', 'QVIX']
 const GLOBAL_MARKET_INDICATORS = ['FearGreed', 'VIX', 'OVX', 'GVZ', 'US10Y']
 
 /**
@@ -39,19 +43,31 @@ function formatIndicatorValue(indicator: string, raw: number | null): string {
   switch (indicator) {
     case 'CPI':
       return `${raw.toFixed(2)}%`
+    case 'PPI':
+      return `${raw.toFixed(2)}%`
     case 'PMI':
       return raw.toFixed(2)
+    case 'M2':
+      return `${raw.toFixed(2)}%`
+    case '社融':
+      if (raw >= 10000) {
+        return `${(raw / 10000).toFixed(2)}万亿`
+      }
+      return `${raw.toFixed(0)}亿`
     case 'LPR':
+    case 'LPR5Y':
+      return `${raw.toFixed(2)}%`
+    case 'CN10Y':
+    case 'US10Y':
       return `${raw.toFixed(2)}%`
     case 'FearGreed':
-      return raw.toFixed(2)
+      return raw.toFixed(0)
     case 'VIX':
     case 'OVX':
     case 'GVZ':
-    case 'iVIX':
       return raw.toFixed(2)
-    case 'US10Y':
-      return `${raw.toFixed(2)}%`
+    case 'QVIX':
+      return raw.toFixed(2)
     default:
       return String(raw)
   }
@@ -69,8 +85,8 @@ function getIndicatorColor(indicator: string, value: number | null): {
   badge: string
   badgeText: string
 } {
-  // 经济指标（CPI/PMI/LPR）：蓝色系
-  if (['CPI', 'PMI', 'LPR'].includes(indicator)) {
+  // 经济指标（CPI/PPI/PMI/M2/LPR/LPR5Y）：蓝色系
+  if (['CPI', 'PPI', 'PMI', 'M2', 'LPR', 'LPR5Y'].includes(indicator)) {
     return {
       border: 'border-l-blue-500',
       valueText: 'text-blue-700',
@@ -79,7 +95,27 @@ function getIndicatorColor(indicator: string, value: number | null): {
     }
   }
 
-  // US10Y：紫色系
+  // 社融：绿色系
+  if (indicator === '社融') {
+    return {
+      border: 'border-l-emerald-500',
+      valueText: 'text-emerald-700',
+      badge: 'bg-emerald-50',
+      badgeText: 'text-emerald-600',
+    }
+  }
+
+  // CN10Y（中国国债收益率）：橙色系
+  if (indicator === 'CN10Y') {
+    return {
+      border: 'border-l-orange-500',
+      valueText: 'text-orange-700',
+      badge: 'bg-orange-50',
+      badgeText: 'text-orange-600',
+    }
+  }
+
+  // US10Y（美国国债收益率）：紫色系
   if (indicator === 'US10Y') {
     return {
       border: 'border-l-purple-500',
@@ -89,27 +125,27 @@ function getIndicatorColor(indicator: string, value: number | null): {
     }
   }
 
-  // 情绪指标：根据值动态变色
-  if (value == null) {
+  // QVIX（中国波动率指数）：粉色系
+  if (indicator === 'QVIX') {
     return {
-      border: 'border-l-zinc-300',
-      valueText: 'text-zinc-700',
-      badge: 'bg-zinc-50',
-      badgeText: 'text-zinc-500',
+      border: 'border-l-pink-500',
+      valueText: 'text-pink-700',
+      badge: 'bg-pink-50',
+      badgeText: 'text-pink-600',
     }
   }
 
-  // FearGreed: >60 绿色(贪婪), 40-60 灰色(中性), <40 红色(恐慌)
+  // FearGreed（恐惧贪婪）：动态颜色，根据数值区间
   if (indicator === 'FearGreed') {
-    if (value > 60) {
+    if (value != null && value > 60) {
       return {
-        border: 'border-l-emerald-500',
-        valueText: 'text-emerald-700',
-        badge: 'bg-emerald-50',
-        badgeText: 'text-emerald-600',
+        border: 'border-l-green-500',
+        valueText: 'text-green-700',
+        badge: 'bg-green-50',
+        badgeText: 'text-green-600',
       }
     }
-    if (value < 40) {
+    if (value != null && value < 40) {
       return {
         border: 'border-l-red-500',
         valueText: 'text-red-700',
@@ -118,16 +154,16 @@ function getIndicatorColor(indicator: string, value: number | null): {
       }
     }
     return {
-      border: 'border-l-zinc-400',
-      valueText: 'text-zinc-700',
-      badge: 'bg-zinc-50',
-      badgeText: 'text-zinc-500',
+      border: 'border-l-yellow-500',
+      valueText: 'text-yellow-700',
+      badge: 'bg-yellow-50',
+      badgeText: 'text-yellow-600',
     }
   }
 
-  // VIX/OVX/GVZ/iVIX: >25 红色(高波动), 15-25 灰色(正常), <15 绿色(低波动)
-  if (['VIX', 'OVX', 'GVZ', 'iVIX'].includes(indicator)) {
-    if (value > 25) {
+  // VIX/OVX/GVZ（波动率指数）：琥珀色系
+  if (['VIX', 'OVX', 'GVZ'].includes(indicator)) {
+    if (value != null && value > 25) {
       return {
         border: 'border-l-red-500',
         valueText: 'text-red-700',
@@ -135,19 +171,19 @@ function getIndicatorColor(indicator: string, value: number | null): {
         badgeText: 'text-red-600',
       }
     }
-    if (value < 15) {
+    if (value != null && value < 15) {
       return {
-        border: 'border-l-emerald-500',
-        valueText: 'text-emerald-700',
-        badge: 'bg-emerald-50',
-        badgeText: 'text-emerald-600',
+        border: 'border-l-green-500',
+        valueText: 'text-green-700',
+        badge: 'bg-green-50',
+        badgeText: 'text-green-600',
       }
     }
     return {
-      border: 'border-l-zinc-400',
-      valueText: 'text-zinc-700',
-      badge: 'bg-zinc-50',
-      badgeText: 'text-zinc-500',
+      border: 'border-l-amber-500',
+      valueText: 'text-amber-700',
+      badge: 'bg-amber-50',
+      badgeText: 'text-amber-600',
     }
   }
 
@@ -172,7 +208,7 @@ function getSentimentLabel(indicator: string, value: number | null): string | nu
     return '中性'
   }
 
-  if (['VIX', 'OVX', 'GVZ', 'iVIX'].includes(indicator)) {
+  if (['VIX', 'OVX', 'GVZ', 'QVIX'].includes(indicator)) {
     if (value > 25) return '高波动'
     if (value < 15) return '低波动'
     return '正常'
@@ -394,52 +430,9 @@ export default function MacroData() {
             <div>
               <div className="mb-3 text-sm font-medium text-zinc-700">全球市场指标</div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {globalIndicators.map((it) => {
-                  // FearGreed 卡片合并 composite 数据
-                  if (it.indicator === 'FearGreed' && macro?.composite) {
-                    const raw = it.value
-                    const display = formatIndicatorValue(it.indicator, raw)
-                    const colors = getIndicatorColor(it.indicator, raw)
-                    const sentimentLabel = getSentimentLabel(it.indicator, raw)
-                    const label = it.name || INDICATOR_LABELS[it.indicator] || it.indicator
-                    return (
-                      <Card
-                        key={it.indicator}
-                        className={cn('border-l-4 cursor-pointer hover:shadow-md transition-shadow', colors.border)}
-                        onClick={() => handleCardClick(it.indicator)}
-                      >
-                        <CardBody>
-                          <div className={cn('text-2xl font-bold', colors.valueText)}>
-                            {display}
-                            {sentimentLabel && (
-                              <span className={cn('ml-2 inline-block rounded px-1.5 py-0.5 text-xs font-medium', colors.badge, colors.badgeText)}>
-                                {sentimentLabel}
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-1 text-sm text-zinc-600">{label}</div>
-                          <div className="mt-1 text-xs text-zinc-400">
-                            {it.date || '--'}
-                            {it.source ? ` · ${it.source}` : ''}
-                          </div>
-                          <div className="mt-3 border-t border-zinc-100 pt-2">
-                            <div className="text-xs text-zinc-600">
-                              整体情绪：<span className="font-medium text-zinc-800">{macro.composite.overall_sentiment || '--'}</span>
-                              <span className="mx-1.5 text-zinc-300">|</span>
-                              建议：<span className="font-medium text-zinc-800">{macro.composite.action_suggestion || '--'}</span>
-                            </div>
-                            <div className="mt-1 text-[11px] text-zinc-400">
-                              更新于 {macro.composite.timestamp ? macro.composite.timestamp.slice(0, 16).replace('T', ' ') : '--'}
-                            </div>
-                          </div>
-                        </CardBody>
-                      </Card>
-                    )
-                  }
-                  return (
-                    <IndicatorCard key={it.indicator} it={it} onClick={() => handleCardClick(it.indicator)} />
-                  )
-                })}
+                {globalIndicators.map((it) => (
+                  <IndicatorCard key={it.indicator} it={it} onClick={() => handleCardClick(it.indicator)} />
+                ))}
               </div>
             </div>
           )}

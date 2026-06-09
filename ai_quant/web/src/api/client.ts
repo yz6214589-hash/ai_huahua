@@ -44,9 +44,21 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
 
   // 解析响应 JSON 数据，检查业务层错误状态
   const data = (await res.json()) as any
-  if (data && typeof data === 'object' && 'ok' in data && data.ok === false) {
-    const msg = typeof data.message === 'string' && data.message.trim() ? data.message : typeof data.detail === 'string' ? data.detail : '操作失败'
-    throw new Error(msg)
+  if (data && typeof data === 'object') {
+    // 检查后端统一包装格式：{"success": boolean, "code": number, "message": string, "data": ...}
+    if ('success' in data && 'code' in data && 'message' in data && 'data' in data) {
+      if (!data.success) {
+        const msg = typeof data.message === 'string' && data.message.trim() ? data.message : typeof data.detail === 'string' ? data.detail : '操作失败'
+        throw new Error(msg)
+      }
+      // 返回包装内的实际数据
+      return data.data as T
+    }
+    // 检查旧格式：{"ok": boolean, ...}
+    if ('ok' in data && data.ok === false) {
+      const msg = typeof data.message === 'string' && data.message.trim() ? data.message : typeof data.detail === 'string' ? data.detail : '操作失败'
+      throw new Error(msg)
+    }
   }
   return data as T
 }

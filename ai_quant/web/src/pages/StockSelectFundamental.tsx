@@ -22,6 +22,14 @@ interface StockResult {
   org_id?: string
 }
 
+interface ExcludedStock {
+  code: string
+  name: string
+  sector_level1: string
+  missing_indicators: string[]
+  reason: string
+}
+
 const SW_INDUSTRIES = [
   '农林牧渔', '基础化工', '钢铁', '有色金属', '电子', '家用电器',
   '食品饮料', '纺织服饰', '轻工制造', '医药生物', '公用事业',
@@ -549,6 +557,8 @@ function RangeSlider({
 export default function StockSelectFundamental() {
   const [results, setResults] = useState<StockResult[]>([])
   const [totalCount, setTotalCount] = useState(0)
+  const [excludedStocks, setExcludedStocks] = useState<ExcludedStock[]>([])
+  const [showExcluded, setShowExcluded] = useState(false)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState(false)
@@ -589,7 +599,7 @@ export default function StockSelectFundamental() {
     setHasQueried(true)
     try {
       const currentPage = targetPage ?? page
-      const params: Record<string, any> = { page: currentPage, page_size: PAGE_SIZE }
+      const params: Record<string, any> = { page: currentPage, page_size: PAGE_SIZE, include_excluded: true }
       if (selectedIndustries.length > 0) {
         params.industries = selectedIndustries
       }
@@ -604,12 +614,25 @@ export default function StockSelectFundamental() {
         if (val.min !== cfg.defaultMin && !boundaries.min) params[key + '_min'] = val.min
         if (val.max !== cfg.defaultMax && !boundaries.max) params[key + '_max'] = val.max
       }
-      const data = await postJson<{ items: Record<string, any>[]; total: number }>('/api/v1/stock-select/query', params)
+      const data = await postJson<{ items: Record<string, any>[]; total: number; excluded?: { total: number; items: Record<string, any>[] } }>('/api/v1/stock-select/query', params)
       setResults((data.items || []).map(mapRow))
       setTotalCount(data.total || 0)
+      // 解析被剔除的股票数据
+      if (data.excluded && data.excluded.items) {
+        setExcludedStocks(data.excluded.items.map((row: Record<string, any>) => ({
+          code: row.stock_code || '',
+          name: row.stock_name || '',
+          sector_level1: row.sector_level1 || '',
+          missing_indicators: row.missing_indicators || [],
+          reason: row.reason || '',
+        })))
+      } else {
+        setExcludedStocks([])
+      }
     } catch {
       setResults([])
       setTotalCount(0)
+      setExcludedStocks([])
     } finally {
       setLoading(false)
     }
@@ -1048,6 +1071,63 @@ export default function StockSelectFundamental() {
                 </div>
               </div>
             </>
+          )}
+
+          {/* 不满足筛选条件的股票（默认折叠） */}
+          {hasQueried && excludedStocks.length > 0 && (
+            <div className="border-t border-zinc-200">
+              <button
+                onClick={() => setShowExcluded(!showExcluded)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-zinc-50 transition-colors"
+              >
+                <span className="text-sm font-medium text-zinc-600">
+                  不满足筛选条件的股票（{excludedStocks.length} 只）
+                </span>
+                <svg
+                  className={`h-4 w-4 text-zinc-400 transition-transform ${showExcluded ? 'rotate-180' : ''}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showExcluded && (
+                <div className="overflow-auto border-t border-zinc-100">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-zinc-50 text-xs text-zinc-500">
+                      <tr>
+                        <th className="px-3 py-2">股票代码</th>
+                        <th className="px-3 py-2">股票名称</th>
+                        <th className="px-3 py-2">一级行业</th>
+                        <th className="px-3 py-2">缺失指标</th>
+                        <th className="px-3 py-2">剔除原因</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {excludedStocks.map((s, idx) => (
+                        <tr key={`${s.code}-${idx}`} className="border-t border-zinc-100 hover:bg-zinc-50">
+                          <td className="px-3 py-2 text-sm text-zinc-700">{s.code}</td>
+                          <td className="px-3 py-2 text-sm text-zinc-700">{s.name || '--'}</td>
+                          <td className="px-3 py-2"><span className="text-xs text-zinc-500">{s.sector_level1 || '--'}</span></td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-wrap gap-1">
+                              {s.missing_indicators.map((ind, i) => (
+                                <span key={i} className="inline-block rounded-full bg-red-50 px-2 py-0.5 text-xs text-red-600 border border-red-200">
+                                  {ind}
+                                </span>
+                              ))}
+                              {s.missing_indicators.length === 0 && (
+                                <span className="text-xs text-zinc-400">-</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-zinc-500">{s.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           )}
         </CardBody>
       </Card>
