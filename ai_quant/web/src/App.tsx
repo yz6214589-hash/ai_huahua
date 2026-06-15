@@ -54,6 +54,7 @@ import PerformanceReportDetail from '@/pages/PerformanceReportDetail'
 import MainForceIdentification from '@/pages/MainForceIdentification'
 import SimAccount from '@/pages/SimAccount'
 import NotFound from '@/pages/NotFound'
+import AgentChat from '@/pages/AgentChat'
 
 // 管理后台
 import AdminLayout from '@/components/admin/AdminLayout'
@@ -74,6 +75,9 @@ export default function App() {
   return (
     <Router>
       <Routes>
+        {/* AI投资助手独立路由 - 不与 AppShell 集成 */}
+        <Route path="/ai-chat" element={<AgentChat />} />
+
         {/* 管理后台独立路由 - 不与 AppShell 集成，仅通过 URL 访问 */}
         <Route path="/ai-admin" element={<AdminLayout />}>
           <Route index element={<Navigate to="conversations" replace />} />

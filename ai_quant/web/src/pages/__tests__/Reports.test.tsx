@@ -11,6 +11,9 @@ vi.mock('@/api/client', () => {
   }
 })
 
+// bytemd Viewer 基于 Svelte，在 jsdom 环境中无法渲染，故 mock 为纯文本 div
+vi.mock('@/components/ReportViewer')
+
 import { fetchJson, postJson, fetchText } from '@/api/client'
 import Reports from '@/pages/Reports'
 
@@ -48,15 +51,14 @@ function setup(fetchImpl: (url: string, init?: RequestInit) => unknown) {
 
 test('reports 页面可创建任务', async () => {
   setup((url) => {
-    if (url.startsWith('/api/reports/tasks')) return { tasks: [] }
+    if (url.startsWith('/api/v1/reports/tasks')) return { tasks: [] }
     if (url.includes('/api/stocks')) return { items: [{ code: '600000.SH', name: '浦发银行' }] }
     return {}
   })
 
   expect(await screen.findByText('智能研报')).toBeInTheDocument()
 
-  await userEvent.click(screen.getByText('搜索股票代码或名称'))
-  const searchInput = await screen.findByPlaceholderText('输入股票代码或名称')
+  const searchInput = await screen.findByPlaceholderText('搜索股票代码或名称')
   await userEvent.type(searchInput, '600')
   await waitFor(() => expect(screen.findByText('600000.SH')).toBeTruthy())
   await userEvent.click(screen.getByText('添加'))
@@ -70,7 +72,7 @@ test('reports：失败/运行中任务点击查看用 toast 提示且不打开�
   const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
   setup((url) => {
-    if (url.startsWith('/api/reports/tasks')) {
+    if (url.startsWith('/api/v1/reports/tasks')) {
       return {
         tasks: [
           {
@@ -109,7 +111,7 @@ test('reports：失败/运行中任务点击查看用 toast 提示且不打开�
 
 test('reports：成功任务点击查看在页面内渲染 markdown', async () => {
   setup((url) => {
-    if (url.startsWith('/api/reports/tasks')) {
+    if (url.startsWith('/api/v1/reports/tasks')) {
       return {
         tasks: [
           {
@@ -128,5 +130,5 @@ test('reports：成功任务点击查看在页面内渲染 markdown', async () =
   })
 
   await userEvent.click(await screen.findByText('查看'))
-  expect(await screen.findByText('标题')).toBeInTheDocument()
+  expect(await screen.findByText(/标题/)).toBeInTheDocument()
 })

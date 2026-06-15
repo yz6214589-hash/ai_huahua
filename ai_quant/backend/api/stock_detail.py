@@ -261,6 +261,51 @@ def _calc_kdj(highs: list[float | None], lows: list[float | None], closes: list[
     return k_list, d_list, j_list
 
 
+def _calc_atr_list(
+    highs: list[float | None],
+    lows: list[float | None],
+    closes: list[float | None],
+    period: int = 14,
+) -> list[float | None]:
+    """批量计算 ATR 指标列表。
+
+    Args:
+        highs: 最高价列表
+        lows: 最低价列表
+        closes: 收盘价列表
+        period: ATR 周期，默认为 14
+
+    Returns:
+        ATR 值列表，前 period-1 个值为 None
+    """
+    n = len(closes)
+    atr: list[float | None] = [None] * n
+    for i in range(period - 1, n):
+        tr_values: list[float] = []
+        for j in range(i - period + 1, i + 1):
+            h = highs[j]
+            lo = lows[j]
+            c = closes[j]
+            if h is None or lo is None:
+                if j > 0 and c is not None:
+                    pc = closes[j - 1]
+                    if pc is not None:
+                        tr_values.append(abs(c - pc))
+                continue
+            if j > 0:
+                pc = closes[j - 1]
+                if pc is None:
+                    tr = h - lo
+                else:
+                    tr = max(h - lo, abs(h - pc), abs(lo - pc))
+            else:
+                tr = h - lo
+            tr_values.append(tr)
+        if len(tr_values) >= period:
+            atr[i] = round(sum(tr_values) / len(tr_values), 4)
+    return atr
+
+
 def _compute_all_indicators(
     rows: list[dict[str, Any]],
     ma_period: int = 20,
@@ -312,32 +357,9 @@ def _compute_all_indicators(
     # ---- KDJ ----
     kdj_k, kdj_d, kdj_j = _calc_kdj(highs, lows, closes, kdj_n, kdj_m1, kdj_m2)
 
-    # ---- ATR ----
-    atr: list[float | None] = [None] * n
-    for i in range(atr_period - 1, n):
-        tr_values: list[float] = []
-        for j in range(i - atr_period + 1, i + 1):
-            h = highs[j]
-            lo = lows[j]
-            c = closes[j]
-            # 如果当前行 high/low 有一个为 None，尝试用 close 差值作为近似 TR
-            if h is None or lo is None:
-                if j > 0 and c is not None:
-                    pc = closes[j - 1]
-                    if pc is not None:
-                        tr_values.append(abs(c - pc))
-                continue
-            if j > 0:
-                pc = closes[j - 1]
-                if pc is None:
-                    tr = h - lo
-                else:
-                    tr = max(h - lo, abs(h - pc), abs(lo - pc))
-            else:
-                tr = h - lo
-            tr_values.append(tr)
-        if len(tr_values) >= atr_period:
-            atr[i] = round(sum(tr_values) / len(tr_values), 4)
+    # ---- ATR（标准14日 + 自定义周期）----
+    atr14_list = _calc_atr_list(highs, lows, closes, 14)
+    atr_custom_list = _calc_atr_list(highs, lows, closes, atr_period)
 
     # ---- 组装每行结果 ----
     result: list[dict[str, Any]] = []
@@ -359,8 +381,8 @@ def _compute_all_indicators(
             "kdj_k": kdj_k[i],
             "kdj_d": kdj_d[i],
             "kdj_j": kdj_j[i],
-            "atr14": None,
-            "atr_custom": atr[i],
+            "atr14": atr14_list[i],
+            "atr_custom": atr_custom_list[i],
             "ma_custom": ma_custom[i],
             "macd_dif_custom": dif_custom[i],
             "macd_dea_custom": dea_custom[i],
@@ -423,7 +445,6 @@ def _build_tech_indicator_dict(
         result.update(base_data)
     for field in _TECHNICAL_INDICATOR_FIELDS:
         result[field] = computed.get(field)
-    result["atr14"] = None
     return result
 
 
@@ -467,7 +488,7 @@ def _calc_tech_row(
                       "boll_upper", "boll_mid", "boll_lower",
                       "kdj_k", "kdj_d", "kdj_j"):
             computed_from_db[field] = _safe_float(row.get(field))
-        computed_from_db["atr14"] = None
+        computed_from_db["atr14"] = _calc_atr(row, prev_rows, 14) if prev_rows else None
         computed_from_db["atr_custom"] = atr_val
         computed_from_db["ma_custom"] = _safe_float(row.get("ma20"))
         computed_from_db["macd_dif_custom"] = _safe_float(row.get("macd_dif"))

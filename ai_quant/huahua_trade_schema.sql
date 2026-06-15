@@ -87,17 +87,24 @@ CREATE TABLE `trade_macro_indicator` (
 ) ENGINE=InnoDB AUTO_INCREMENT=121 DEFAULT CHARSET=utf8mb4 COMMENT='月度宏观指标';
 
 -- 表: trade_rate_daily
+-- 数据来源: AkShare（债券收益率）、Alternative.me（恐惧贪婪指数）、Yahoo Finance（VIX/OVX/GVZ）、AkShare/Tushare（iVIX中国波指）
+-- 更新频率: 每个交易日采集一次（通过 rate_daily 定时任务）
 DROP TABLE IF EXISTS `trade_rate_daily`;
 CREATE TABLE `trade_rate_daily` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `rate_date` date NOT NULL COMMENT '日期',
   `cn_bond_10y` decimal(8,4) DEFAULT NULL COMMENT '中国10年期国债收益率(%)',
   `us_bond_10y` decimal(8,4) DEFAULT NULL COMMENT '美国10年期国债收益率(%)',
+  `fear_greed` decimal(6,2) DEFAULT NULL COMMENT '恐惧贪婪指数(0-100，>60贪婪/<40恐慌)',
+  `vix` decimal(8,2) DEFAULT NULL COMMENT 'VIX标普500波动率指数(>25高波动/<15低波动)',
+  `ovx` decimal(8,2) DEFAULT NULL COMMENT 'OVX原油波动率指数',
+  `gvz` decimal(8,2) DEFAULT NULL COMMENT 'GVZ黄金波动率指数',
+  `ivix` decimal(8,2) DEFAULT NULL COMMENT 'iVIX中国波动率指数（多级降级：akshare QVix → Tushare历史波动率）',
   `data_source` varchar(20) DEFAULT 'akshare',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_rate_date` (`rate_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=9252 DEFAULT CHARSET=utf8mb4 COMMENT='日频利率指标';
+) ENGINE=InnoDB AUTO_INCREMENT=9252 DEFAULT CHARSET=utf8mb4 COMMENT='日频利率与市场情绪指标';
 
 -- 表: trade_report_consensus
 DROP TABLE IF EXISTS `trade_report_consensus`;

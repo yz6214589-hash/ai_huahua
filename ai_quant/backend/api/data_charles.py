@@ -401,7 +401,7 @@ def macro_latest() -> dict[str, Any]:
             ('PPI', 'trade_macro_indicator', 'ppi_yoy', 'indicator_date', 'PPI（生产价格指数）', 'AkShare'),
             ('PMI', 'trade_macro_indicator', 'pmi', 'indicator_date', 'PMI（采购经理指数）', 'AkShare'),
             ('M2', 'trade_macro_indicator', 'm2_yoy', 'indicator_date', 'M2（广义货币供应量同比）', 'AkShare'),
-            ('社融', 'trade_macro_indicator', 'shrzgm', 'indicator_date', '社会融资规模（亿元）', 'AkShare'),
+            ('社融', 'trade_macro_indicator', 'shrzgm', 'indicator_date', '社融（社会融资规模）', 'AkShare'),
             ('LPR', 'trade_macro_indicator', 'lpr_1y', 'indicator_date', 'LPR（1年期贷款市场报价利率）', 'AkShare'),
             ('LPR5Y', 'trade_macro_indicator', 'lpr_5y', 'indicator_date', 'LPR（5年期贷款市场报价利率）', 'AkShare'),
         ]
@@ -424,14 +424,15 @@ def macro_latest() -> dict[str, Any]:
                     'source': source
                 })
         
-        # 查询国债收益率数据（从 trade_rate_daily 表）
+        # 查询国债收益率和市场情绪指标（从 trade_rate_daily 表）
         bond_indicators = [
-            ('CN10Y', 'trade_rate_daily', 'cn_bond_10y', 'rate_date', '中国10年期国债收益率', 'Wind'),
-            ('US10Y', 'trade_rate_daily', 'us_bond_10y', 'rate_date', '美国10年期国债收益率', 'Yahoo Finance'),
-            ('FearGreed', 'trade_rate_daily', 'fear_greed', 'rate_date', '恐惧贪婪指数', 'Alternative.me'),
-            ('VIX', 'trade_rate_daily', 'vix', 'rate_date', 'VIX波动率指数', 'Yahoo Finance'),
-            ('OVX', 'trade_rate_daily', 'ovx', 'rate_date', 'OVX原油波动率指数', 'Yahoo Finance'),
-            ('GVZ', 'trade_rate_daily', 'gvz', 'rate_date', 'GVZ黄金波动率指数', 'Yahoo Finance'),
+            ('CN10Y', 'trade_rate_daily', 'cn_bond_10y', 'rate_date', 'CN10Y（中国10年期国债收益率）', 'Wind'),
+            ('US10Y', 'trade_rate_daily', 'us_bond_10y', 'rate_date', 'US10Y（美国10年期国债收益率）', 'AkShare'),
+            ('FearGreed', 'trade_rate_daily', 'fear_greed', 'rate_date', 'FearGreed（恐惧贪婪指数）', 'Alternative.me'),
+            ('VIX', 'trade_rate_daily', 'vix', 'rate_date', 'VIX（标普500波动率指数）', '多级降级-Yahoo/FRED/AkShare(ETF代理)'),
+            ('OVX', 'trade_rate_daily', 'ovx', 'rate_date', 'OVX（原油波动率指数）', '多级降级-Yahoo/FRED/AkShare(原油期货代理)'),
+            ('GVZ', 'trade_rate_daily', 'gvz', 'rate_date', 'GVZ（黄金波动率指数）', '多级降级-Yahoo/FRED/AkShare(黄金期货代理)'),
+            ('iVIX', 'trade_rate_daily', 'ivix', 'rate_date', 'iVIX（中国波动率指数）', 'AkShare/Tushare'),
         ]
         for key, table, col, date_col, name, source in bond_indicators:
             cur.execute(f"""
@@ -463,7 +464,7 @@ def macro_latest() -> dict[str, Any]:
         if row and row['val'] is not None:
             indicators.append({
                 'indicator': 'QVIX',
-                'name': '中国期权波动率指数（50ETF）',
+                'name': 'QVIX（中国期权波动率指数）',
                 'value': float(row['val']),
                 'date': str(row['dt']),
                 'source': 'AkShare'
@@ -538,6 +539,7 @@ def macro_history(indicator: str, days: int = 90) -> dict[str, Any]:
             'VIX': ('trade_rate_daily', 'vix', 'rate_date'),
             'OVX': ('trade_rate_daily', 'ovx', 'rate_date'),
             'GVZ': ('trade_rate_daily', 'gvz', 'rate_date'),
+            'iVIX': ('trade_rate_daily', 'ivix', 'rate_date'),
             'QVIX': ('trade_qvix_daily', 'qvix_50etf', 'trade_date'),
         }
         
@@ -571,16 +573,17 @@ def macro_history(indicator: str, days: int = 90) -> dict[str, Any]:
             'PPI': 'PPI（生产价格指数）',
             'PMI': 'PMI（采购经理指数）',
             'M2': 'M2（广义货币供应量同比）',
-            '社融': '社会融资规模（亿元）',
+            '社融': '社融（社会融资规模）',
             'LPR': 'LPR（1年期贷款市场报价利率）',
             'LPR5Y': 'LPR（5年期贷款市场报价利率）',
-            'CN10Y': '中国10年期国债收益率',
-            'US10Y': '美国10年期国债收益率',
-            'FearGreed': '恐惧贪婪指数',
-            'VIX': 'VIX波动率指数',
-            'OVX': 'OVX原油波动率指数',
-            'GVZ': 'GVZ黄金波动率指数',
-            'QVIX': '中国期权波动率指数（50ETF）',
+            'CN10Y': 'CN10Y（中国10年期国债收益率）',
+            'US10Y': 'US10Y（美国10年期国债收益率）',
+            'FearGreed': 'FearGreed（恐惧贪婪指数）',
+            'VIX': 'VIX（标普500波动率指数）',
+            'OVX': 'OVX（原油波动率指数）',
+            'GVZ': 'GVZ（黄金波动率指数）',
+            'iVIX': 'iVIX（中国波动率指数）',
+            'QVIX': 'QVIX（中国期权波动率指数）',
         }
         
         return {

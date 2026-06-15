@@ -11,10 +11,9 @@ import { Badge } from '@/components/Badge'
 import { Loading } from '@/components/Loading'
 import { StockPicker } from '@/components/StockPicker'
 import type { StockSearchItem } from '@/api/types'
-import { ExternalLink, Plus, RefreshCcw, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { ExternalLink, Maximize2, Minimize2, Plus, RefreshCcw, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import ReportViewer from '@/components/ReportViewer'
 
 // 格式化日期时间字符串，处理 ISO 格式为可读格式
 function fmtDateTime(v: string | null | undefined) {
@@ -57,6 +56,15 @@ export default function Reports() {
   const [viewerTask, setViewerTask] = useState<ReportTask | null>(null)   // 当前查看的任务
   const [viewerMd, setViewerMd] = useState('')                    // 报告 Markdown 内容
   const [viewerLoading, setViewerLoading] = useState(false)      // 报告是否正在加载
+  const [viewerFullscreen, setViewerFullscreen] = useState(false) // 是否全屏查看
+  const viewerRef = useRef<HTMLDivElement>(null)
+
+  // 监听全屏状态变化
+  useEffect(() => {
+    const handler = () => setViewerFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', handler)
+    return () => document.removeEventListener('fullscreenchange', handler)
+  }, [])
 
   // 显示提示消息，自动 2.2 秒后消失
   const showToast = useCallback((msg: string) => {
@@ -364,33 +372,55 @@ export default function Reports() {
       {/* 报告查看模态框 */}
       {viewerTask ? (
         <div className="fixed inset-0 z-40 bg-black/30 p-4">
-          <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow">
+          <div
+            ref={viewerRef}
+            className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow"
+          >
             {/* 模态框头部 */}
             <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-zinc-900">研报查看</div>
                 <div className="mt-0.5 truncate text-xs text-zinc-500">{(viewerTask.stock_codes || []).join('，')}</div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setViewerTask(null)
-                  setViewerMd('')
-                }}
-                className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50"
-              >
-                <X className="h-3.5 w-3.5" />
-                关闭
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!viewerRef.current) return
+                    if (!document.fullscreenElement) {
+                      viewerRef.current.requestFullscreen().catch(() => {})
+                    } else {
+                      document.exitFullscreen().catch(() => {})
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50"
+                >
+                  {viewerFullscreen ? (
+                    <Minimize2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  )}
+                  {viewerFullscreen ? '退出全屏' : '全屏'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewerTask(null)
+                    setViewerMd('')
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  关闭
+                </button>
+              </div>
             </div>
-            {/* 模态框内容：Markdown 渲染 */}
-            <div className="flex-1 overflow-auto px-4 py-4">
+            {/* 模态框内容：Markdown 渲染 (bytemd + 左侧 TOC) */}
+            <div className="flex-1 overflow-hidden">
               {viewerLoading ? (
                 <Loading size="sm" className="py-4" />
               ) : (
-                <div className="prose prose-zinc max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{viewerMd || ''}</ReactMarkdown>
-                </div>
+                <ReportViewer content={viewerMd || ''} className="h-full" />
               )}
             </div>
           </div>

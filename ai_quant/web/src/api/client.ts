@@ -14,53 +14,70 @@ function _resolveUrl(url: string): string {
 // 通用 JSON 请求函数，支持泛型返回类型
 // 从环境变量或全局对象中获取 API 密钥，并将其添加到请求头中
 // 如果响应状态码不是 2xx，会尝试解析错误详情并抛出异常
-export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+// 支持通过 init.signal 传入 AbortSignal，也支持通过环境变量 VITE_AI_QUANT_FETCH_TIMEOUT_MS 配置全局超时（默认 15s）
+export async function fetchJson<T>(url: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   // 优先从 Vite 环境变量获取 API 密钥，回退到全局变量
   const apiKey = ((import.meta as any)?.env?.VITE_AI_QUANT_API_KEY as string | undefined) || ((globalThis as any).VITE_AI_QUANT_API_KEY as string | undefined)
-  const res = await fetch(_resolveUrl(url), {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(apiKey ? { 'X-API-Key': String(apiKey) } : {}),
-      ...(init?.headers || {}),
-    },
-  })
+  // 默认 15s 超时：避免后端接口卡死时页面停留在无限 Loading 状态
+  const envTimeout = Number(((import.meta as any)?.env?.VITE_AI_QUANT_FETCH_TIMEOUT_MS as string | undefined)) || 0
+  const timeoutMs = init?.timeoutMs ?? (envTimeout > 0 ? envTimeout : 15000)
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(_resolveUrl(url), {
+      ...init,
+      signal: init?.signal ?? controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { 'X-API-Key': String(apiKey) } : {}),
+        ...(init?.headers || {}),
+      },
+    })
 
-  // 检查 HTTP 响应状态码，非 2xx 状态码时解析错误信息
-  if (!res.ok) {
-    let detail = ''
-    try {
-      const data = await res.json()
-      detail = typeof data?.detail === 'string' ? data.detail : JSON.stringify(data)
-    } catch {
+    // 检查 HTTP 响应状态码，非 2xx 状态码时解析错误信息
+    if (!res.ok) {
+      let detail = ''
       try {
-        detail = await res.text()
+        const data = await res.json()
+        detail = typeof data?.detail === 'string' ? data.detail : JSON.stringify(data)
       } catch {
-        detail = ''
+        try {
+          detail = await res.text()
+        } catch {
+          detail = ''
+        }
       }
+      throw new Error(translateApiError(detail) || `HTTP ${res.status}`)
     }
-    throw new Error(translateApiError(detail) || `HTTP ${res.status}`)
-  }
 
-  // 解析响应 JSON 数据，检查业务层错误状态
-  const data = (await res.json()) as any
-  if (data && typeof data === 'object') {
-    // 检查后端统一包装格式：{"success": boolean, "code": number, "message": string, "data": ...}
-    if ('success' in data && 'code' in data && 'message' in data && 'data' in data) {
-      if (!data.success) {
+    // 解析响应 JSON 数据，检查业务层错误状态
+    const data = (await res.json()) as any
+    if (data && typeof data === 'object') {
+      // 检查后端统一包装格式：{"success": boolean, "code": number, "message": string, "data": ...}
+      if ('success' in data && 'code' in data && 'message' in data && 'data' in data) {
+        if (!data.success) {
+          const msg = typeof data.message === 'string' && data.message.trim() ? data.message : typeof data.detail === 'string' ? data.detail : '操作失败'
+          throw new Error(msg)
+        }
+        // 返回包装内的实际数据
+        return data.data as T
+      }
+      // 检查旧格式：{"ok": boolean, ...}
+      if ('ok' in data && data.ok === false) {
         const msg = typeof data.message === 'string' && data.message.trim() ? data.message : typeof data.detail === 'string' ? data.detail : '操作失败'
         throw new Error(msg)
       }
-      // 返回包装内的实际数据
-      return data.data as T
     }
-    // 检查旧格式：{"ok": boolean, ...}
-    if ('ok' in data && data.ok === false) {
-      const msg = typeof data.message === 'string' && data.message.trim() ? data.message : typeof data.detail === 'string' ? data.detail : '操作失败'
-      throw new Error(msg)
+    return data as T
+  } catch (err) {
+    // 超时（AbortController 触发）转换为友好错误信息
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error(`请求超时（${Math.round(timeoutMs / 1000)}s）：${url}`)
     }
+    throw err
+  } finally {
+    window.clearTimeout(timer)
   }
-  return data as T
 }
 
 // POST 请求包装函数，将 body 对象序列化为 JSON 后发送

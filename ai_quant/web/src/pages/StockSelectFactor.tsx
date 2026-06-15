@@ -1,9 +1,8 @@
 import { Loading } from '@/components/Loading'
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchJson, postJson } from '@/api/client'
+import { useState, useCallback } from 'react'
+import { postJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
-import { Badge } from '@/components/Badge'
-import { Search, RefreshCcw } from 'lucide-react'
+import { RefreshCcw } from 'lucide-react'
 
 interface Factor {
   key: string
@@ -37,6 +36,8 @@ export default function StockSelectFactor() {
   const [stocks, setStocks] = useState<StockScore[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 是否已执行过评分（控制初始状态：未评分时显示引导提示，不显示排名表格）
+  const [hasScored, setHasScored] = useState(false)
 
   const toggleFactor = (key: string) => {
     setActiveFactors((prev) => {
@@ -50,6 +51,7 @@ export default function StockSelectFactor() {
   const loadScores = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setHasScored(true)
     try {
       const activeFactorList = factors.filter((f) => activeFactors.has(f.key))
       const body = {
@@ -68,10 +70,6 @@ export default function StockSelectFactor() {
       setLoading(false)
     }
   }, [factors, activeFactors])
-
-  useEffect(() => {
-    loadScores()
-  }, [])
 
   const sorted = [...stocks].sort((a, b) => b.total_score - a.total_score)
   const topScore = sorted[0]?.total_score || 1
@@ -142,16 +140,25 @@ export default function StockSelectFactor() {
               className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
             >
               <RefreshCcw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-              重新评分
+              {hasScored ? '重新评分' : '评分'}
             </button>
           </div>
         </CardBody>
       </Card>
 
       <Card>
-        <CardHeader title={`多因子评分排名（${sorted.length} 只）`} />
+        <CardHeader title={`多因子评分排名${hasScored ? `（${sorted.length} 只）` : ''}`} />
         <CardBody className="p-0">
-          {loading && sorted.length === 0 ? (
+          {!hasScored ? (
+            /* 未评分时显示引导提示 */
+            <div className="flex flex-col items-center justify-center px-4 py-16">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
+                <RefreshCcw className="h-7 w-7 text-blue-500" />
+              </div>
+              <p className="text-sm font-medium text-zinc-700">请设置全权重和各个因子，然后点击"评分"按钮生成排名</p>
+              <p className="mt-1 text-xs text-zinc-400">调整上方因子权重后，点击评分按钮即可查看排名结果</p>
+            </div>
+          ) : loading && sorted.length === 0 ? (
             <Loading className="py-8" />
           ) : error && sorted.length === 0 ? (
             <div className="flex flex-col items-center px-4 py-8">
@@ -166,6 +173,72 @@ export default function StockSelectFactor() {
             </div>
           ) : sorted.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-zinc-500">暂无评分数据</div>
+          ) : loading ? (
+            /* 已有数据但正在重新评分时，显示加载遮罩 */
+            <div className="relative">
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
+                <div className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 shadow-md">
+                  <RefreshCcw className="h-4 w-4 animate-spin text-blue-500" />
+                  <span className="text-sm text-zinc-600">正在重新评分...</span>
+                </div>
+              </div>
+              <div className="overflow-auto opacity-50">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-zinc-50 text-xs text-zinc-500">
+                    <tr>
+                      <th className="px-3 py-2 w-8">#</th>
+                      <th className="px-3 py-2">股票</th>
+                      <th className="px-3 py-2 text-center">综合评分</th>
+                      {factors.filter((f) => activeFactors.has(f.key)).map((f) => (
+                        <th key={f.key} className="px-3 py-2 text-right">{f.label}</th>
+                      ))}
+                      <th className="px-3 py-2">因子贡献</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sorted.map((s, i) => {
+                      const pct = topScore > 0 ? (s.total_score / topScore) * 100 : 0
+                      const activeFactorKeys = factors.filter((f) => activeFactors.has(f.key)).map((f) => f.key)
+                      return (
+                        <tr key={s.code} className="border-t border-zinc-100">
+                          <td className="px-3 py-2 text-center text-zinc-400">{i + 1}</td>
+                          <td className="px-3 py-2">
+                            <div className="text-sm font-medium text-zinc-900">{s.code}</div>
+                            <div className="text-xs text-zinc-500">{s.name}</div>
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <div className="flex items-center gap-2">
+                              <div className="h-2 w-24 overflow-hidden rounded-full bg-zinc-100">
+                                <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: pct >= 80 ? '#4ade80' : pct >= 50 ? '#fbbf24' : '#d1d5db' }} />
+                              </div>
+                              <span className="text-sm font-bold text-zinc-900">{s.total_score.toFixed(1)}</span>
+                            </div>
+                          </td>
+                          {activeFactorKeys.map((key) => {
+                            const val = s.factors[key]
+                            const factorDef = factors.find((f) => f.key === key)
+                            const isUp = factorDef?.direction === 'up'
+                            const displayVal = val !== undefined ? val : 0
+                            return (
+                              <td key={key} className={`px-3 py-2 text-right ${isUp && displayVal > 0 ? 'text-red-600 font-medium' : displayVal < 0 ? 'text-green-600' : 'text-zinc-700'}`}>
+                                {typeof displayVal === 'number' ? displayVal.toFixed(1) : displayVal}
+                              </td>
+                            )
+                          })}
+                          <td className="px-3 py-2">
+                            <div className="flex gap-1">
+                              {activeFactorKeys.map((key) => (
+                                <span key={key} className="h-1.5 w-6 rounded-full bg-blue-400" />
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : (
             <div className="overflow-auto">
               <table className="w-full text-left text-sm">

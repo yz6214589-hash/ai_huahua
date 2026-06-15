@@ -6,26 +6,28 @@ import { cn } from '@/lib/utils'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { ExternalLink, RefreshCcw } from 'lucide-react'
 
-// 指标中文名称映射（后端返回 name 时优先使用后端的）
+// 指标名称映射（英文（中文）格式），后端返回 name 时优先使用后端的
 const INDICATOR_LABELS: Record<string, string> = {
   CPI: 'CPI（居民消费价格指数）',
   PPI: 'PPI（生产价格指数）',
   PMI: 'PMI（采购经理指数）',
   M2: 'M2（广义货币供应量同比）',
-  社融: '社会融资规模（亿元）',
+  社融: '社融（社会融资规模）',
   LPR: 'LPR（1年期贷款市场报价利率）',
   LPR5Y: 'LPR（5年期贷款市场报价利率）',
-  CN10Y: '中国10年期国债收益率',
-  US10Y: '美国10年期国债收益率',
-  FearGreed: '恐惧贪婪指数',
-  VIX: 'VIX波动率指数',
-  OVX: 'OVX原油波动率指数',
-  GVZ: 'GVZ黄金波动率指数',
-  QVIX: '中国期权波动率指数（50ETF）',
+  CN10Y: 'CN10Y（中国10年期国债收益率）',
+  US10Y: 'US10Y（美国10年期国债收益率）',
+  FearGreed: 'FearGreed（恐惧贪婪指数）',
+  VIX: 'VIX（标普500波动率指数）',
+  OVX: 'OVX（原油波动率指数）',
+  GVZ: 'GVZ（黄金波动率指数）',
+  QVIX: 'QVIX（中国期权波动率指数）',
+  iVIX: 'iVIX（中国波动率指数）',
 }
 
 // 指标分组定义
-const CHINA_MARKET_INDICATORS = ['CPI', 'PPI', 'PMI', 'M2', '社融', 'LPR', 'LPR5Y', 'CN10Y', 'QVIX']
+// iVIX（中国波指）：反映中国A股市场投资者情绪和预期波动率的关键指标
+const CHINA_MARKET_INDICATORS = ['CPI', 'PPI', 'PMI', 'M2', '社融', 'LPR', 'LPR5Y', 'CN10Y', 'QVIX', 'iVIX']
 const GLOBAL_MARKET_INDICATORS = ['FearGreed', 'VIX', 'OVX', 'GVZ', 'US10Y']
 
 /**
@@ -67,6 +69,7 @@ function formatIndicatorValue(indicator: string, raw: number | null): string {
     case 'GVZ':
       return raw.toFixed(2)
     case 'QVIX':
+    case 'iVIX':
       return raw.toFixed(2)
     default:
       return String(raw)
@@ -125,8 +128,8 @@ function getIndicatorColor(indicator: string, value: number | null): {
     }
   }
 
-  // QVIX（中国波动率指数）：粉色系
-  if (indicator === 'QVIX') {
+  // QVIX/iVIX（中国波动率指数）：粉色系
+  if (indicator === 'QVIX' || indicator === 'iVIX') {
     return {
       border: 'border-l-pink-500',
       valueText: 'text-pink-700',
@@ -208,7 +211,7 @@ function getSentimentLabel(indicator: string, value: number | null): string | nu
     return '中性'
   }
 
-  if (['VIX', 'OVX', 'GVZ', 'QVIX'].includes(indicator)) {
+  if (['VIX', 'OVX', 'GVZ', 'QVIX', 'iVIX'].includes(indicator)) {
     if (value > 25) return '高波动'
     if (value < 15) return '低波动'
     return '正常'

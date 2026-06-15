@@ -145,8 +145,12 @@ def conversation_stats():
 
 
 @router.get("/{conv_id}")
-def get_conversation_detail(conv_id: str):
-    """获取会话详情，包含消息列表"""
+def get_conversation_detail(
+    conv_id: str,
+    page: int = Query(1, ge=1, description="消息页码"),
+    page_size: int = Query(50, ge=1, le=200, description="每页消息数"),
+):
+    """获取会话详情，包含分页消息列表"""
     conn = _get_conv_db()
     with _lock:
         try:
@@ -164,11 +168,19 @@ def get_conversation_detail(conv_id: str):
             conv = dict(row)
             conv["source"] = _infer_source(conv["id"], conv["title"])
 
-            # 获取消息列表
+            # 获取消息总数
+            cur.execute(
+                "SELECT COUNT(*) FROM messages WHERE conversation_id = ?",
+                (conv_id,),
+            )
+            total_messages = cur.fetchone()[0]
+
+            # 获取分页消息列表
+            offset = (page - 1) * page_size
             cur.execute(
                 "SELECT id, role, content, metadata, created_at FROM messages "
-                "WHERE conversation_id = ? ORDER BY created_at ASC",
-                (conv_id,),
+                "WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?",
+                (conv_id, page_size, offset),
             )
             messages = []
             for m in cur.fetchall():
@@ -180,6 +192,41 @@ def get_conversation_detail(conv_id: str):
                 messages.append(m_dict)
 
             conv["messages"] = messages
+            conv["messages_total"] = total_messages
+            conv["messages_page"] = page
+            conv["messages_page_size"] = page_size
             return {"ok": True, "data": conv}
+        finally:
+            conn.close()
+
+
+@router.put("/{conv_id}/title")
+def update_conversation_title(conv_id: str, payload: dict):
+    """更新会话标题"""
+    new_title = (payload.get("title") or "").strip()
+    if not new_title:
+        return {"ok": False, "error": "标题不能为空"}
+    if len(new_title) > 200:
+        return {"ok": False, "error": "标题不能超过200个字符"}
+
+    from datetime import datetime
+    now = datetime.now().isoformat()
+
+    conn = _get_conv_db()
+    with _lock:
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id FROM conversations WHERE id = ?", (conv_id,)
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "会话不存在"}
+
+            cur.execute(
+                "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
+                (new_title, now, conv_id),
+            )
+            conn.commit()
+            return {"ok": True, "data": {"id": conv_id, "title": new_title}}
         finally:
             conn.close()
