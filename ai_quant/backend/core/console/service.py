@@ -11,7 +11,7 @@ from core.risk import status as get_risk_status
 from infra.storage.job_store import list_runs
 
 _OVERVIEW_CACHE_KEY = "console_overview"
-_OVERVIEW_CACHE_TTL = 30
+_OVERVIEW_CACHE_TTL = 300
 _overview_cache: dict[str, Any] = {"data": None, "ts": 0.0}
 
 

@@ -81,6 +81,15 @@ monitor_*.py
 _test_*.py
 _diag_*.py
 
+# 日志目录
+logs/
+
+# 缓存目录
+*.cache/
+
+# 生成的CSV/JSON数据
+*.csv
+
 # 运行时验证报告
 *_validation_report_*.txt
 
