@@ -132,14 +132,34 @@ def _infer_exchange(code_num: str) -> str:
     return "SZ"
 
 
+def _is_a_share_stock(code: str) -> bool:
+    """判断是否为真正的A股（排除指数、ETF/LOF/REITs等非个股品种）
+
+    真正A股的代码规则：
+    - 上海(SH): 600xxx, 601xxx, 603xxx, 605xxx, 688xxx（科创板）
+    - 深圳(SZ): 000xxx, 001xxx, 002xxx, 003xxx, 300xxx, 301xxx（创业板）
+    """
+    parts = code.split(".")
+    if len(parts) != 2:
+        return False
+    num = parts[0]
+    exchange = parts[1].upper()
+
+    if exchange == "SH":
+        return num.startswith(("600", "601", "603", "605", "688"))
+    elif exchange == "SZ":
+        return num.startswith(("000", "001", "002", "003", "300", "301"))
+    return False
+
+
 def _get_stock_list_from_db(cfg: MySQLConfig, max_stocks: int) -> list[str]:
     """
     从数据库获取已有数据的股票列表
-    
+
     Args:
         cfg: 数据库配置
         max_stocks: 最大股票数量（0表示无限制）
-        
+
     Returns:
         list[str]: 股票代码列表
     """
@@ -153,7 +173,7 @@ def _get_stock_list_from_db(cfg: MySQLConfig, max_stocks: int) -> list[str]:
                 sql = "SELECT DISTINCT stock_code FROM trade_stock_financial ORDER BY stock_code"
                 params = ()
             rows = query_dict(conn, sql, params)
-            return [r["stock_code"] for r in rows]
+            return [r["stock_code"] for r in rows if _is_a_share_stock(r["stock_code"])]
         finally:
             conn.close()
     except Exception as e:
@@ -199,8 +219,13 @@ def _get_stock_list_qmt_or_akshare(test_mode: bool, test_stock: str, max_stocks:
                 s = normalize_stock_code(c)
                 if s:
                     norm_codes.append(s)
-        _log(f"获取到 {len(all_codes)} 只股票，取前 {len(norm_codes)} 只")
-        return norm_codes
+        # 过滤非A股品种（指数、ETF/LOF等）
+        a_share_codes = [c for c in norm_codes if _is_a_share_stock(c)]
+        filtered = len(norm_codes) - len(a_share_codes)
+        if filtered > 0:
+            _log(f"过滤掉 {filtered} 只非A股品种（指数、ETF等）")
+        _log(f"获取到 {len(all_codes)} 只股票，取前 {len(a_share_codes)} 只")
+        return a_share_codes
     except Exception as e:
         _log(f"QMT Gateway 获取股票列表失败: {type(e).__name__}: {e}")
         return []
@@ -896,15 +921,16 @@ def run_stock_financial_collection(
             message="没有股票列表",
         )
 
-    # 断点续传：跳过已有完整PB数据的股票
+    # 断点续传：跳过已有完整财务数据的股票（roe为判断依据，而非pb）
+    # 因为pb来自行情数据（QMT Gateway），行情源可能不可达但财务数据已就绪
     if resume and not test_mode:
-        _log("断点续传模式: 查询已有完整PB数据的股票...")
+        _log("断点续传模式: 查询已有完整财务数据的股票...")
         try:
             conn_check = connect(cfg)
             try:
                 existing_rows = query_dict(conn_check,
                     "SELECT stock_code FROM trade_stock_financial "
-                    "WHERE pb IS NOT NULL "
+                    "WHERE roe IS NOT NULL "
                     "GROUP BY stock_code HAVING COUNT(*) >= %s",
                     (max_rows_per_stock,))
                 existing_codes = {r["stock_code"] for r in existing_rows}
@@ -912,7 +938,7 @@ def run_stock_financial_collection(
                     before = len(codes)
                     codes = [c for c in codes if c not in existing_codes]
                     skipped = before - len(codes)
-                    _log(f"断点续传: 跳过 {skipped} 只已有完整PB数据的股票, 待处理 {len(codes)} 只")
+                    _log(f"断点续传: 跳过 {skipped} 只已有完整财务数据的股票, 待处理 {len(codes)} 只")
             finally:
                 conn_check.close()
         except Exception as e:
@@ -925,6 +951,14 @@ def run_stock_financial_collection(
             data_source_final="qmt", fallback_chain=["qmt"],
             message="所有股票已有完整PB数据，跳过",
         )
+
+    # 优先处理上海股票（防止任务中断导致上海股票缺失）
+    # 上海股票（601/603/605/688等）目前几乎没有财务数据
+    sh_count = sum(1 for c in codes if c.upper().endswith(".SH"))
+    sz_count = len(codes) - sh_count
+    if sh_count > 0:
+        codes.sort(key=lambda c: (0, c) if c.upper().endswith(".SH") else (1, c))
+        _log(f"优先处理上海股票: SH={sh_count} 只优先, SZ={sz_count} 只随后")
 
     processed = 0
     rows_written = 0

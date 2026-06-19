@@ -2,7 +2,7 @@ import { Loading } from '@/components/Loading'
 import { useState, useCallback } from 'react'
 import { postJson } from '@/api/client'
 import { Card, CardBody, CardHeader } from '@/components/Card'
-import { RefreshCcw } from 'lucide-react'
+import { RefreshCcw, ChevronDown } from 'lucide-react'
 
 interface Factor {
   key: string
@@ -20,12 +20,19 @@ interface StockScore {
   rank: number
 }
 
+interface MissingStock {
+  stock_code: string
+  stock_name: string
+  sector_level1: string
+  missing_indicators: string[]
+}
+
 const DEFAULT_FACTORS: Factor[] = [
   { key: 'pe', label: 'PE（市盈率）', weight: 15, direction: 'down', desc: '越低估值越合理' },
   { key: 'pb', label: 'PB（市净率）', weight: 10, direction: 'down', desc: '越低资产质量越好' },
   { key: 'roe', label: 'ROE', weight: 20, direction: 'up', desc: '越高盈利能力越强' },
-  { key: 'gross', label: '毛利率', weight: 10, direction: 'up', desc: '越高定价能力越强' },
-  { key: 'rev_growth', label: '营收增速', weight: 15, direction: 'up', desc: '越高成长性越好' },
+  { key: 'gross_margin', label: '毛利率', weight: 10, direction: 'up', desc: '越高定价能力越强' },
+  { key: 'revenue_growth', label: '营收增速', weight: 15, direction: 'up', desc: '越高成长性越好' },
   { key: 'profit_growth', label: '利润增速', weight: 20, direction: 'up', desc: '越高盈利质量越好' },
   { key: 'debt_ratio', label: '资产负债率', weight: 5, direction: 'down', desc: '越低财务越健康' },
 ]
@@ -38,6 +45,9 @@ export default function StockSelectFactor() {
   const [error, setError] = useState<string | null>(null)
   // 是否已执行过评分（控制初始状态：未评分时显示引导提示，不显示排名表格）
   const [hasScored, setHasScored] = useState(false)
+  // 因子指标缺失的股票
+  const [missingStocks, setMissingStocks] = useState<MissingStock[]>([])
+  const [showMissing, setShowMissing] = useState(false)
 
   const toggleFactor = (key: string) => {
     setActiveFactors((prev) => {
@@ -63,6 +73,15 @@ export default function StockSelectFactor() {
       }
       const r = await postJson<{ items: StockScore[]; total: number }>('/api/v1/stock-select/score', body)
       setStocks((r.items || []).sort((a, b) => b.total_score - a.total_score))
+
+      // 同时查询因子指标缺失的股票
+      try {
+        const missingBody = { factors: activeFactorList.map((f) => ({ key: f.key, weight: f.weight, direction: f.direction })) }
+        const missingData = await postJson<{ total: number; items: MissingStock[] }>('/api/v1/stock-select/score-missing', missingBody)
+        setMissingStocks(missingData.items || [])
+      } catch {
+        setMissingStocks([])
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '数据加载失败')
       setStocks([])
@@ -77,6 +96,17 @@ export default function StockSelectFactor() {
   const updateFactorWeight = (key: string, weight: number) => {
     setFactors((prev) => prev.map((f) => (f.key === key ? { ...f, weight: Math.max(1, Math.min(100, weight)) } : f)))
   }
+
+  const PAGE_SIZE = 50
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
+  const pageItems = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  // 切换到新页时同时重置页码
+  const handleScore = useCallback(() => {
+    setPage(1)
+    loadScores()
+  }, [loadScores])
 
   return (
     <div className="space-y-4">
@@ -135,7 +165,7 @@ export default function StockSelectFactor() {
               <span>有效权重：{Array.from(activeFactors).reduce((s, k) => s + (factors.find((f) => f.key === k)?.weight || 0), 0)}%</span>
             </div>
             <button
-              onClick={loadScores}
+              onClick={handleScore}
               disabled={loading}
               className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60"
             >
@@ -192,16 +222,16 @@ export default function StockSelectFactor() {
                       {factors.filter((f) => activeFactors.has(f.key)).map((f) => (
                         <th key={f.key} className="px-3 py-2 text-right">{f.label}</th>
                       ))}
-                      <th className="px-3 py-2">因子贡献</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sorted.map((s, i) => {
+                    {pageItems.map((s, i) => {
+                      const rank = (page - 1) * PAGE_SIZE + i + 1
                       const pct = topScore > 0 ? (s.total_score / topScore) * 100 : 0
                       const activeFactorKeys = factors.filter((f) => activeFactors.has(f.key)).map((f) => f.key)
                       return (
                         <tr key={s.code} className="border-t border-zinc-100">
-                          <td className="px-3 py-2 text-center text-zinc-400">{i + 1}</td>
+                          <td className="px-3 py-2 text-center text-zinc-400">{rank}</td>
                           <td className="px-3 py-2">
                             <div className="text-sm font-medium text-zinc-900">{s.code}</div>
                             <div className="text-xs text-zinc-500">{s.name}</div>
@@ -225,13 +255,6 @@ export default function StockSelectFactor() {
                               </td>
                             )
                           })}
-                          <td className="px-3 py-2">
-                            <div className="flex gap-1">
-                              {activeFactorKeys.map((key) => (
-                                <span key={key} className="h-1.5 w-6 rounded-full bg-blue-400" />
-                              ))}
-                            </div>
-                          </td>
                         </tr>
                       )
                     })}
@@ -250,16 +273,16 @@ export default function StockSelectFactor() {
                     {factors.filter((f) => activeFactors.has(f.key)).map((f) => (
                       <th key={f.key} className="px-3 py-2 text-right">{f.label}</th>
                     ))}
-                    <th className="px-3 py-2">因子贡献</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((s, i) => {
+                  {pageItems.map((s, i) => {
+                    const rank = (page - 1) * PAGE_SIZE + i + 1
                     const pct = topScore > 0 ? (s.total_score / topScore) * 100 : 0
                     const activeFactorKeys = factors.filter((f) => activeFactors.has(f.key)).map((f) => f.key)
                     return (
                       <tr key={s.code} className="border-t border-zinc-100 hover:bg-zinc-50">
-                        <td className="px-3 py-2 text-center text-zinc-400">{i + 1}</td>
+                        <td className="px-3 py-2 text-center text-zinc-400">{rank}</td>
                         <td className="px-3 py-2">
                           <div className="text-sm font-medium text-zinc-900">{s.code}</div>
                           <div className="text-xs text-zinc-500">{s.name}</div>
@@ -283,13 +306,6 @@ export default function StockSelectFactor() {
                             </td>
                           )
                         })}
-                        <td className="px-3 py-2">
-                          <div className="flex gap-1">
-                            {activeFactorKeys.map((key) => (
-                              <span key={key} className="h-1.5 w-6 rounded-full bg-blue-400" />
-                            ))}
-                          </div>
-                        </td>
                       </tr>
                     )
                   })}
@@ -297,8 +313,91 @@ export default function StockSelectFactor() {
               </table>
             </div>
           )}
+          {/* 分页控件 */}
+          {hasScored && totalPages > 1 && (
+            <div className="flex items-center justify-center gap-1 border-t border-zinc-100 px-3 py-3">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="rounded-md px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                上一页
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+                .map((p, idx, arr) => (
+                  <span key={p} className="flex items-center gap-0">
+                    {idx > 0 && arr[idx - 1] !== p - 1 && <span className="px-1 text-xs text-zinc-300">...</span>}
+                    <button
+                      onClick={() => setPage(p)}
+                      className={`min-w-[28px] rounded-md px-2 py-1 text-xs ${
+                        p === page ? 'bg-blue-500 text-white' : 'text-zinc-600 hover:bg-zinc-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  </span>
+                ))}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="rounded-md px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                下一页
+              </button>
+            </div>
+          )}
         </CardBody>
       </Card>
+
+      {/* 所选指标缺失的股票列表（默认折叠） */}
+      {hasScored && missingStocks.length > 0 && (
+        <Card>
+          <div className="border-t border-zinc-200">
+            <button
+              onClick={() => setShowMissing(!showMissing)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-zinc-50 transition-colors"
+            >
+              <span className="text-sm font-medium text-zinc-600">
+                所选指标缺失的股票列表（{missingStocks.length} 只）
+              </span>
+              <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${showMissing ? 'rotate-180' : ''}`} />
+            </button>
+            {showMissing && (
+              <div className="overflow-auto border-t border-zinc-100">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-zinc-50 text-xs text-zinc-500">
+                    <tr>
+                      <th className="px-3 py-2">股票代码</th>
+                      <th className="px-3 py-2">股票名称</th>
+                      <th className="px-3 py-2">一级行业</th>
+                      <th className="px-3 py-2">缺失指标</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {missingStocks.map((s, idx) => (
+                      <tr key={`${s.stock_code}-${idx}`} className="border-t border-zinc-100 hover:bg-zinc-50">
+                        <td className="px-3 py-2 text-sm text-zinc-700">{s.stock_code}</td>
+                        <td className="px-3 py-2 text-sm text-zinc-700">{s.stock_name || '--'}</td>
+                        <td className="px-3 py-2"><span className="text-xs text-zinc-500">{s.sector_level1 || '--'}</span></td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            {s.missing_indicators.map((ind, i) => (
+                              <span key={i} className="inline-block rounded-full bg-red-50 px-2 py-0.5 text-xs text-red-600 border border-red-200">
+                                {ind}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
     </div>
   )
 }

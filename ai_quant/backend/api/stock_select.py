@@ -228,11 +228,11 @@ _FILTER_LABEL_MAP: dict[str, str] = {
 def _query_excluded_stocks(
     conn, active_filters: list[str], params: dict[str, Any]
 ) -> dict[str, Any]:
-    """查询因指标缺失或不在范围内而被剔除的股票
+    """查询所选指标缺失的股票
 
     逻辑：
-    1. 查询满足行业/排除条件但不满足指标筛选条件的所有股票
-    2. 为每只被剔除的股票标注具体缺失/不满足的指标
+    1. 查询满足行业/排除条件但所选指标缺失（NULL）的所有股票
+    2. 为每只被剔除的股票标注具体缺失的指标
     """
     # 构建仅包含行业和排除条件的WHERE（不包含指标筛选）
     base_conditions: list[str] = []
@@ -264,29 +264,19 @@ def _query_excluded_stocks(
 
     base_where = " AND ".join(base_conditions) if base_conditions else "1=1"
 
-    # 查询满足基础条件但不满足指标条件的股票
-    # 构建 NOT EXISTS 子查询，找出不在已筛选结果中的股票
+    # 查询满足基础条件但所选指标缺失的股票
+    # 只检查指标是否为NULL（缺失），不关注指标值是否在范围内
     indicator_conditions: list[str] = []
-    indicator_values: list[Any] = []
     for prefix in active_filters:
         db_column = FILTER_FIELD_MAPPING[prefix]
-        min_val = params.get(f"{prefix}_min")
-        max_val = params.get(f"{prefix}_max")
-        # 指标缺失（NULL）或不在范围内
-        null_or_outside = [f"f.{db_column} IS NULL"]
-        if min_val is not None:
-            null_or_outside.append(f"f.{db_column} < %s")
-            indicator_values.append(min_val)
-        if max_val is not None:
-            null_or_outside.append(f"f.{db_column} > %s")
-            indicator_values.append(max_val)
-        indicator_conditions.append("(" + " OR ".join(null_or_outside) + ")")
+        # 仅检查指标是否为NULL（缺失）
+        indicator_conditions.append(f"f.{db_column} IS NULL")
 
     excluded_where = base_where
     if indicator_conditions:
         excluded_where += " AND (" + " OR ".join(indicator_conditions) + ")"
 
-    all_values = base_values + indicator_values
+    all_values = base_values
 
     excluded_sql = f"""
         SELECT
@@ -298,12 +288,11 @@ def _query_excluded_stocks(
         LEFT JOIN trade_stock_master m ON f.stock_code = m.stock_code
         WHERE {excluded_where}
         ORDER BY f.stock_code
-        LIMIT 500
     """
 
     excluded_rows = query_dict(conn, excluded_sql, tuple(all_values))
 
-    # 为每只被剔除的股票标注缺失/不满足的指标
+    # 为每只被剔除的股票标注缺失的指标
     items = []
     for row in excluded_rows:
         missing: list[str] = []
@@ -316,7 +305,7 @@ def _query_excluded_stocks(
             "stock_name": row.get("stock_name", ""),
             "sector_level1": row.get("sector_level1", ""),
             "missing_indicators": missing,
-            "reason": "指标缺失" if missing else "指标不满足筛选条件",
+            "reason": "指标缺失",
         })
 
     return {"total": len(items), "items": items}
@@ -784,6 +773,13 @@ def factor_score(body: FactorScoreRequest) -> dict[str, Any]:
             factor_stats[key] = {"min": min_v, "range": range_v}
 
         # 计算每只股票的得分
+        # 统计用户选择了多少个因子（含映射匹配检查）
+        valid_factor_keys = [
+            f.key for f in body.factors
+            if FACTOR_FIELD_MAPPING.get(f.key) is not None
+        ]
+        required_factor_count = len(valid_factor_keys)
+
         scored_items: list[dict] = []
         for row in rows:
             stock_code = row.get("stock_code", "")
@@ -792,6 +788,7 @@ def factor_score(body: FactorScoreRequest) -> dict[str, Any]:
             factor_scores: dict[str, float] = {}
             total_score = 0.0
             total_weight = 0.0
+            valid_count = 0
 
             for factor in body.factors:
                 db_field = FACTOR_FIELD_MAPPING.get(factor.key)
@@ -820,6 +817,11 @@ def factor_score(body: FactorScoreRequest) -> dict[str, Any]:
                 factor_scores[factor.key] = round(normalized, 4)
                 total_score += score
                 total_weight += factor.weight
+                valid_count += 1
+
+            # 如果有任一因子数据缺失，则不参与排名
+            if valid_count < required_factor_count:
+                continue
 
             if total_weight > 0:
                 total_score = total_score / total_weight * 100  # 转为百分制
@@ -851,6 +853,94 @@ def factor_score(body: FactorScoreRequest) -> dict[str, Any]:
     except Exception as e:
         logger.error("因子评分计算失败", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail=f"因子评分计算失败: {str(e)}")
+    finally:
+        conn.close()
+
+
+@router.post("/score-missing")
+def factor_score_missing(body: FactorScoreRequest) -> dict[str, Any]:
+    """查询因子对应指标缺失的股票
+
+    返回所选因子对应的指标在数据库中为NULL的股票列表，
+    这些股票因为缺少因子数据而无法参与评分。
+
+    Args:
+        body: 包含因子配置的请求体
+
+    Returns:
+        dict: 包含 total（总数）和 items（缺失指标股票列表）
+    """
+    if not body.factors:
+        raise HTTPException(status_code=400, detail="至少需要提供一个因子")
+
+    try:
+        cfg = load_mysql_config()
+        conn = _create_direct_connection(cfg)
+    except Exception as e:
+        logger.error("数据库连接失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail="数据库连接失败")
+
+    try:
+        # 构建缺失条件：每个因子对应的数据库字段 IS NULL
+        indicator_conditions: list[str] = []
+        factor_keys: list[str] = []
+        for factor in body.factors:
+            db_field = FACTOR_FIELD_MAPPING.get(factor.key)
+            if db_field:
+                indicator_conditions.append(f"f.{db_field} IS NULL")
+                factor_keys.append(factor.key)
+
+        if not indicator_conditions:
+            return {"total": 0, "items": []}
+
+        missing_where = " OR ".join(indicator_conditions)
+
+        # 如果指定了股票代码，加入筛选
+        params: list[Any] = []
+        if body.stock_codes:
+            placeholders = ",".join(["%s"] * len(body.stock_codes))
+            missing_where = f"({missing_where}) AND f.stock_code IN ({placeholders})"
+            params.extend(body.stock_codes)
+
+        # 查询因子指标缺失的股票
+        select_fields = ["f.stock_code", "m.stock_name", "m.sector_level1"]
+        for factor in body.factors:
+            db_field = FACTOR_FIELD_MAPPING.get(factor.key)
+            if db_field:
+                select_fields.append(f"f.{db_field}")
+
+        select_str = ", ".join(select_fields)
+        sql = f"""
+            SELECT {select_str}
+            FROM ({_LATEST_REPORT_SUBQUERY}) f
+            LEFT JOIN trade_stock_master m ON f.stock_code = m.stock_code
+            WHERE {missing_where}
+            ORDER BY f.stock_code
+        """
+
+        rows = query_dict(conn, sql, tuple(params))
+
+        # 为每只股票标注缺失的因子指标
+        items = []
+        for row in rows:
+            missing: list[str] = []
+            for factor in body.factors:
+                db_field = FACTOR_FIELD_MAPPING.get(factor.key)
+                if db_field and row.get(db_field) is None:
+                    missing.append(_FILTER_LABEL_MAP.get(factor.key, factor.key))
+            items.append({
+                "stock_code": row.get("stock_code", ""),
+                "stock_name": row.get("stock_name", ""),
+                "sector_level1": row.get("sector_level1", ""),
+                "missing_indicators": missing,
+            })
+
+        logger.info("查询因子指标缺失股票完成", extra={"total": len(items)})
+
+        return {"total": len(items), "items": items}
+    except Exception as e:
+        logger.error("查询因子指标缺失股票失败", extra={"error": str(e)})
+        raise HTTPException(status_code=500, detail=f"查询因子指标缺失股票失败: {str(e)}")
     finally:
         conn.close()
 

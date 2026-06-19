@@ -1073,7 +1073,7 @@ export default function StockSelectFundamental() {
             </>
           )}
 
-          {/* 不满足筛选条件的股票（默认折叠） */}
+          {/* 所选指标缺失的股票列表（默认折叠） */}
           {hasQueried && excludedStocks.length > 0 && (
             <div className="border-t border-zinc-200">
               <button
@@ -1081,7 +1081,7 @@ export default function StockSelectFundamental() {
                 className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-zinc-50 transition-colors"
               >
                 <span className="text-sm font-medium text-zinc-600">
-                  不满足筛选条件的股票（{excludedStocks.length} 只）
+                  所选指标缺失的股票列表（{excludedStocks.length} 只）
                 </span>
                 <svg
                   className={`h-4 w-4 text-zinc-400 transition-transform ${showExcluded ? 'rotate-180' : ''}`}

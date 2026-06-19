@@ -93,12 +93,12 @@ def _tushare_call_with_retry(pro, fn_name, max_retries=5, base_sleep=2, **kwargs
         except Exception as e:
             err_msg = str(e)
             last_error = e
-            # 限流类错误：指数退避
-            if "请求速度过快" in err_msg or "限流" in err_msg or "rate limit" in err_msg.lower() or "frequency" in err_msg.lower():
+            # 限流类错误或网络连接错误：指数退避
+            if "请求速度过快" in err_msg or "限流" in err_msg or "rate limit" in err_msg.lower() or "frequency" in err_msg.lower() or "Connection" in type(e).__name__ or "ConnectionReset" in err_msg or "Connection aborted" in err_msg:
                 wait_sec = base_sleep * (2 ** attempt)
                 if wait_sec > 60:
                     wait_sec = 60
-                _log(f"    [限流] {fn_name} {kwargs.get('ts_code','')} 等待 {wait_sec}s 后重试 ({attempt+1}/{max_retries})")
+                _log(f"    [重试] {fn_name} {kwargs.get('ts_code','')} 等待 {wait_sec}s ({attempt+1}/{max_retries}) {type(e).__name__}")
                 time.sleep(wait_sec)
             else:
                 # 其他错误直接抛出
@@ -115,8 +115,28 @@ def _log(msg: str) -> None:
 
 # ============== 数据采集函数 ==============
 
+def _is_a_share_stock(code: str) -> bool:
+    """判断是否为真正的A股（排除指数、ETF/LOF/REITs等非个股品种）
+
+    真正A股的代码规则：
+    - 上海(SH): 600xxx, 601xxx, 603xxx, 605xxx, 688xxx（科创板）
+    - 深圳(SZ): 000xxx, 001xxx, 002xxx, 003xxx, 300xxx, 301xxx（创业板）
+    """
+    parts = code.split(".")
+    if len(parts) != 2:
+        return False
+    num = parts[0]
+    exchange = parts[1].upper()
+
+    if exchange == "SH":
+        return num.startswith(("600", "601", "603", "605", "688"))
+    elif exchange == "SZ":
+        return num.startswith(("000", "001", "002", "003", "300", "301"))
+    return False
+
+
 def _get_stock_list(cfg) -> list[str]:
-    """从数据库 trade_stock_master 获取所有股票代码"""
+    """从数据库 trade_stock_master 获取所有股票代码并过滤非A股"""
     conn = pymysql.connect(
         host=cfg.host, port=cfg.port, user=cfg.user,
         password=cfg.password, database=cfg.database,
@@ -126,11 +146,15 @@ def _get_stock_list(cfg) -> list[str]:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT DISTINCT stock_code FROM trade_stock_master
-                WHERE stock_code NOT LIKE 'SWL%%'
-                  AND stock_code NOT LIKE '000%%.SH'
                 ORDER BY stock_code
             """)
-            return [r['stock_code'] for r in cur.fetchall()]
+            all_codes = [r['stock_code'] for r in cur.fetchall()]
+            # 过滤非A股品种（指数、ETF/LOF等）
+            a_share_codes = [c for c in all_codes if _is_a_share_stock(c)]
+            filtered = len(all_codes) - len(a_share_codes)
+            if filtered > 0:
+                _log(f"过滤掉 {filtered} 只非A股品种（指数、ETF等），保留 {len(a_share_codes)} 只")
+            return a_share_codes
     finally:
         conn.close()
 
@@ -169,6 +193,7 @@ def _get_fina_indicator(pro, ts_code: str, start_date: str, end_date: str) -> li
                 'debt_ratio': _safe_float(row.get('debt_to_assets')),
                 'total_asset_turnover': _safe_float(row.get('assets_turn')),
                 'yoy_net_profit': _safe_float(row.get('netprofit_yoy')),
+                'yoy_revenue': _safe_float(row.get('or_yoy')),
                 'yoy_equity': _safe_float(row.get('eqt_yoy')),
             })
         return results
@@ -340,7 +365,7 @@ def _process_one_stock(pro, ts_code: str, start_date: str, end_date: str) -> lis
                 market_data.get('market_cap'),
                 market_data.get('float_market_cap'),
                 fina.get('yoy_net_profit'),
-                income.get('yoy_revenue'),
+                fina.get('yoy_revenue') if fina.get('yoy_revenue') is not None else income.get('yoy_revenue'),
                 fina.get('ebitda'),
                 fina.get('quick_ratio'),
                 fina.get('total_asset_turnover'),
