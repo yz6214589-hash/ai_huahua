@@ -2,9 +2,8 @@
 股票代码与名称准确性验证工具 - 独立版
 对比数据源: 数据库(trade_stock_master), AKShare, TuShare
 使用方法:
-  cd /Users/apple/Desktop/ai_huahua/ai_quant
-  source venv/bin/activate
-  WUCAI_SQL_HOST="bj-cdb-6zjqetya.sql.tencentcdb.com" WUCAI_SQL_PORT="25341" WUCAI_SQL_USERNAME="root" WUCAI_SQL_PASSWORD="huahua1688" WUCAI_SQL_DB="huahua_trade" python3 backend/scripts/validate_stock_standalone.py
+  cd ai_quant
+  python backend/scripts/validate_stock_standalone.py
 """
 import os
 import sys

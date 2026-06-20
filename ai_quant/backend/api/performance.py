@@ -20,7 +20,6 @@ from core.db import connect, execute, load_mysql_config, query_dict
 from core.strategy.metrics_calculator import calc_quantstats_metrics
 from core.strategy.report_engine import (
     generate_chinese_report,
-    nav_to_returns,
     diagnose_market_regime,
     analyze_trading_costs,
     analyze_stock_pnl,

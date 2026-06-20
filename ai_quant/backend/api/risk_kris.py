@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from core.db import connect, execute, load_mysql_config, query_dict
 from core.risk import approve, audit, status
-from core.risk.service import RiskManager, _get_manager, _now_iso
+from core.risk.service import _get_manager, _now_iso
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("risk")

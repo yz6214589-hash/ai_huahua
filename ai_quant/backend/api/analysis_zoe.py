@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 import uuid
 from datetime import date, datetime as dt, timedelta
@@ -16,8 +15,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from fastapi import Body, FastAPI, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import Body, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.db import connect, load_mysql_config, query_dict
@@ -135,34 +133,36 @@ def _load_daily(stock_code: str, start: str, end: str) -> pd.DataFrame:
 
 # ============== 请求模型 ==============
 
+class TradingCostParams(BaseModel):
+    """交易成本参数基类，包含佣金、滑点、印花税、过户费等配置"""
+
+    commission_buy: float = Field(default=0.00015, description="买入佣金率")
+    commission_sell: float = Field(default=0.00015, description="卖出佣金率")
+    slippage_pct: float = Field(default=0.0, description="滑点百分比")
+    slippage_fixed: float = Field(default=0.0, description="固定滑点")
+    min_commission: float = Field(default=5.0, description="最低手续费")
+    stamp_duty: float = Field(default=0.001, ge=0.0, le=0.01, description="印花税费率，卖出时收取，默认千分之一")
+    transfer_fee_buy: float = Field(default=0.00001, ge=0.0, le=0.001, description="买入过户费率，默认十万分之一")
+    transfer_fee_sell: float = Field(default=0.00001, ge=0.0, le=0.001, description="卖出过户费率，默认十万分之一")
+
+
 class InstanceCreateReq(BaseModel):
     strategy_id: str
     name: str
     params: dict[str, Any] = Field(default_factory=dict)
 
 
-class BacktestReq(BaseModel):
+class BacktestReq(TradingCostParams):
+    """单股回测请求"""
+
     stock_code: str
     start: str
     end: str
     strategy_id: str
     params: dict[str, Any] = Field(default_factory=dict)
     initial_cash: float = 1000000.0
-    # 新增：佣金与滑点参数
-    commission_buy: float = Field(default=0.00015, description="买入佣金率")
-    commission_sell: float = Field(default=0.00015, description="卖出佣金率")
-    slippage_pct: float = Field(default=0.0, description="滑点百分比")
-    slippage_fixed: float = Field(default=0.0, description="固定滑点")
-    min_commission: float = Field(default=5.0, description="最低手续费")
-    # 新增：仓位比例
     position_pct: float = Field(default=0.95, ge=0.01, le=1.0, description="仓位比例")
-    # 新增：印花税和过户费
-    stamp_duty: float = Field(default=0.001, ge=0.0, le=0.01, description="印花税费率，卖出时收取，默认千分之一")
-    transfer_fee_buy: float = Field(default=0.00001, ge=0.0, le=0.001, description="买入过户费率，默认十万分之一")
-    transfer_fee_sell: float = Field(default=0.00001, ge=0.0, le=0.001, description="卖出过户费率，默认十万分之一")
-    # 新增：基准代码
     benchmark_code: str | None = Field(default=None, description="基准指数代码，如 000300.SH")
-    # 新增：区间模式
     interval_mode: str | None = Field(default=None, description="区间模式：train_val_test")
     train_ratio: float = Field(default=0.6, description="训练集比例")
     val_ratio: float = Field(default=0.2, description="验证集比例")
@@ -170,7 +170,9 @@ class BacktestReq(BaseModel):
     custom_intervals: list[dict[str, str]] | None = Field(default=None, description="自定义区间列表")
 
 
-class BatchBacktestReq(BaseModel):
+class BatchBacktestReq(TradingCostParams):
+    """批量回测请求"""
+
     selection_type: str = Field(default="list", description="选择类型：list（直接列表）或 group（分组）")
     stock_codes: list[str] = Field(default_factory=list, description="股票代码列表")
     group_id: int | None = Field(default=None, description="分组ID（selection_type为group时必填）")
@@ -180,21 +182,12 @@ class BatchBacktestReq(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     initial_cash: float = 1000000.0
     max_workers: int = Field(default=4, ge=1, le=16, description="最大并发数")
-    # 新增：佣金与滑点参数（与单股回测保持一致）
-    commission_buy: float = Field(default=0.00015, description="买入佣金率")
-    commission_sell: float = Field(default=0.00015, description="卖出佣金率")
-    slippage_pct: float = Field(default=0.0, description="滑点百分比")
-    slippage_fixed: float = Field(default=0.0, description="固定滑点")
-    min_commission: float = Field(default=5.0, description="最低手续费")
-    # 新增：仓位比例
     position_pct: float = Field(default=0.95, ge=0.01, le=1.0, description="仓位比例")
-    # 新增：印花税和过户费
-    stamp_duty: float = Field(default=0.001, ge=0.0, le=0.01, description="印花税费率，卖出时收取，默认千分之一")
-    transfer_fee_buy: float = Field(default=0.00001, ge=0.0, le=0.001, description="买入过户费率，默认十万分之一")
-    transfer_fee_sell: float = Field(default=0.00001, ge=0.0, le=0.001, description="卖出过户费率，默认十万分之一")
 
 
-class WalkForwardReq(BaseModel):
+class WalkForwardReq(TradingCostParams):
+    """Walk-Forward 分析请求"""
+
     stock_code: str
     start: str
     end: str
@@ -205,35 +198,17 @@ class WalkForwardReq(BaseModel):
     test_years: int = Field(default=1, description="测试窗口年数")
     step_years: int = Field(default=1, description="步进年数")
     mode: str = Field(default="rolling", description="窗口模式：rolling 或 anchored")
-    # 佣金与滑点
-    commission_buy: float = Field(default=0.00015, description="买入佣金率")
-    commission_sell: float = Field(default=0.00015, description="卖出佣金率")
-    slippage_pct: float = Field(default=0.0, description="滑点百分比")
-    slippage_fixed: float = Field(default=0.0, description="固定滑点")
-    min_commission: float = Field(default=5.0, description="最低手续费")
-    # 印花税和过户费
-    stamp_duty: float = Field(default=0.001, ge=0.0, le=0.01, description="印花税费率，卖出时收取，默认千分之一")
-    transfer_fee_buy: float = Field(default=0.00001, ge=0.0, le=0.001, description="买入过户费率，默认十万分之一")
-    transfer_fee_sell: float = Field(default=0.00001, ge=0.0, le=0.001, description="卖出过户费率，默认十万分之一")
 
 
-class ParamSearchReq(BaseModel):
+class ParamSearchReq(TradingCostParams):
+    """参数搜索请求"""
+
     stock_code: str
     start: str
     end: str
     strategy_id: str
     param_grid: dict[str, Any] = Field(default_factory=dict, description="参数网格，如 {\"fast\": [5,10,15], \"slow\": [20,30]}")
     initial_cash: float = 1000000.0
-    # 佣金与滑点
-    commission_buy: float = Field(default=0.00015, description="买入佣金率")
-    commission_sell: float = Field(default=0.00015, description="卖出佣金率")
-    slippage_pct: float = Field(default=0.0, description="滑点百分比")
-    slippage_fixed: float = Field(default=0.0, description="固定滑点")
-    min_commission: float = Field(default=5.0, description="最低手续费")
-    # 印花税和过户费
-    stamp_duty: float = Field(default=0.001, ge=0.0, le=0.01, description="印花税费率，卖出时收取，默认千分之一")
-    transfer_fee_buy: float = Field(default=0.00001, ge=0.0, le=0.001, description="买入过户费率，默认十万分之一")
-    transfer_fee_sell: float = Field(default=0.00001, ge=0.0, le=0.001, description="卖出过户费率，默认十万分之一")
 
 
 class CompareReq(BaseModel):

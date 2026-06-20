@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-import json
 import os
 import pickle
 import threading
@@ -15,7 +14,7 @@ from uuid import uuid4
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Body, Query, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Body, Query, HTTPException
 from pydantic import BaseModel, Field
 
 from core.db import connect, load_mysql_config, query_dict, execute

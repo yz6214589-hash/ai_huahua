@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """QMT Gateway HTTP 客户端模块
 
-提供与部署在腾讯云上的 QMT Gateway 服务进行 HTTP 通信的功能。
+提供与本地 QMT Gateway 服务进行 HTTP 通信的功能。
 支持多账户切换，通过 X-Account-Type 请求头区分不同 QMT 实例。
 """
 from __future__ import annotations

@@ -5,7 +5,7 @@
  */
 
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Brain, ChartCandlestick, ChevronLeft, ChevronRight, Download, ExternalLink, Gauge, GitBranch, Settings, Shield, Star, Target, Workflow, Zap } from 'lucide-react'
+import { Brain, ChartCandlestick, ChevronLeft, ChevronRight, Download, ExternalLink, Gauge, GitBranch, Shield, Star, Target, Workflow, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { AssistantDrawer } from '@/components/AssistantDrawer'
@@ -148,8 +148,6 @@ const Topbar = memo(function Topbar() {
   // 跳转到股票详情页
   const handleViewStock = useCallback(() => {
     if (selectedStock) {
-      console.log('[AppShell][Search] 跳转到个股详情页:', selectedStock.code, 'from:', location.pathname)
-      console.log('[AppShell][Search] navigate 前 window.history.length =', window.history.length)
       sessionStorage.setItem('stock_detail_from', location.pathname)
       navigate(`/stock/${selectedStock.code}`)
     }

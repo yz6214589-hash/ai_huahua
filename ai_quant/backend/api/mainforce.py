@@ -4,7 +4,6 @@
 """
 
 from fastapi import APIRouter, HTTPException
-from typing import Any
 
 from core.mainforce.engine import MainForceEngine, TIME_RANGE_PRESETS
 from infra.storage.logging_service import get_logger

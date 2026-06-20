@@ -62,7 +62,6 @@ const SortableRow = memo(function SortableRow({
         isDragging ? 'opacity-70' : 'hover:border-zinc-400 cursor-pointer'
       )}
       onClick={() => {
-        console.log('[Watchlist] 点击股票跳转详情页:', item.stock_code, 'from:', window.location.pathname)
         sessionStorage.setItem('stock_detail_from', window.location.pathname)
         navigate(`/stock/${encodeURIComponent(item.stock_code)}`)
       }}

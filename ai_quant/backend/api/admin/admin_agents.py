@@ -17,7 +17,6 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..admin_db import get_admin_db
-from ...llm.prompt_manager import PromptManager
 
 router = APIRouter(prefix="/api/v1/admin/agents", tags=["admin-agents"])
 

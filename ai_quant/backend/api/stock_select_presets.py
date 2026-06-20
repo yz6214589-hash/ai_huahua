@@ -12,7 +12,7 @@ import pymysql
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.db import connect, load_mysql_config, query_dict, execute
+from core.db import load_mysql_config, query_dict, execute
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("stock_select_presets")

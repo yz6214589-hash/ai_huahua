@@ -228,15 +228,10 @@ export default function StockDetail() {
           <button
             type="button"
             onClick={() => {
-              console.log('[BackBtn] 返回按钮被点击')
-              console.log('[BackBtn] current pathname =', window.location.pathname)
               const fromPath = sessionStorage.getItem('stock_detail_from')
-              console.log('[BackBtn] sessionStorage stock_detail_from =', fromPath)
               if (fromPath && fromPath !== window.location.pathname) {
-                console.log('[BackBtn] 从 sessionStorage 恢复导航路径:', fromPath)
                 navigate(fromPath)
               } else {
-                console.log('[BackBtn] sessionStorage 无有效路径，跳转到 /home')
                 navigate('/home')
               }
             }}

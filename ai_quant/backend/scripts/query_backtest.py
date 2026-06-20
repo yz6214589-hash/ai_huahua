@@ -4,7 +4,7 @@
 import pymysql, json
 
 conn = pymysql.connect(
-    host="bj-cdb-6zjqetya.sql.tencentcdb.com", port=25341,
+    host="127.0.0.1", port=3306,
     user="root", password="huahua1688", database="huahua_trade",
     charset="utf8mb4", connect_timeout=10,
 )

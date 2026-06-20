@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """QMT 交易终端 API 路由模块
 
-提供交易终端的 RESTful 接口，通过 QMT Gateway 客户端与腾讯云上的 MiniQMT 交互。
+提供交易终端的 RESTful 接口，通过 QMT Gateway 客户端与本地 MiniQMT 交互。
 支持多账户切换，通过 account_type 查询参数指定目标账户。
 """
 from __future__ import annotations

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import Any, Optional
 from datetime import datetime
-from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field

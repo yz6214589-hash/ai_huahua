@@ -15,19 +15,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import random
 import subprocess
-import tempfile
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from core.data import get_watchlist
-from core.db import MySQLConfig, connect, execute, executemany, query_dict
-from core.jobs.common import safe_float, to_ymd
+from core.db import MySQLConfig, connect, execute, query_dict
 
 logger = logging.getLogger("sentiment_api")
 
