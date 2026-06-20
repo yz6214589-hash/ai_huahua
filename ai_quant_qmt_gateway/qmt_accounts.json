@@ -1,0 +1,10 @@
+{
+  "国金模拟": {
+    "qmt_path": "D:\\国金QMT交易端模拟\\userdata_mini",
+    "account_id": "62125728"
+  },
+  "光大实盘": {
+    "qmt_path": "D:\\光大证券金阳光QMT实盘\\userdata_mini",
+    "account_id": "40249332"
+  }
+}
