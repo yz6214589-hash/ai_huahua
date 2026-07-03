@@ -111,3 +111,6 @@ strategy_test_results.json
 # 鎵撳寘浜х墿
 *.tar.gz
 outputs/
+
+# 迁移备份文件
+_migration_backup/
