@@ -5,6 +5,7 @@ export function JobStatusBadge({ status }: { status: JobStatus }) {
   if (status === 'success') return <Badge tone="green">成功</Badge>
   if (status === 'partial') return <Badge tone="amber">部分完成</Badge>
   if (status === 'failed') return <Badge tone="red">失败</Badge>
+  if (status === 'stopped') return <Badge tone="default">已停止</Badge>
   return <Badge tone="blue">运行中</Badge>
 }
 

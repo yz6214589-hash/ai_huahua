@@ -216,6 +216,9 @@ class MiniQMTTrader:
             except Exception:
                 pass
 
+        # 每次重连使用新的 session_id，避免 xtquant 的 session 冲突
+        self.session_id = int(time.time())
+
         # 创建交易者实例并注册回调
         self._trader = self._XtQuantTrader(self.qmt_path, self.session_id)
         self._trader.register_callback(_Cb())

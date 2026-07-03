@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -333,7 +334,7 @@ def sentiment_run(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"采集脚本不存在: {script}")
 
     args = [
-        "python3",
+        sys.executable,
         script,
         "--run_id", run_id,
         "--stock_codes", ",".join(stock_codes),

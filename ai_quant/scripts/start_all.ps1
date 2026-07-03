@@ -1,4 +1,4 @@
-﻿#==============================================================================
+﻿﻿#==============================================================================
 # AI Quant 一键启动脚本 (Windows PowerShell)
 #
 # 功能: 同时启动后端API、前端应用、AI对话机器人、飞书机器人四个服务
@@ -424,11 +424,11 @@ function Check-Dependencies {
     }
 
     # 检查 npm
-    if (Test-Command "npm") {
+    if (Test-Command "cmd.exe") {
         $ver = npm --version 2>&1
         Write-Log "DONE" "npm 已安装 (版本: $ver)"
     } else {
-        $missing += "npm"
+        $missing += "cmd.exe"
     }
 
     if ($missing.Count -gt 0) {
@@ -489,7 +489,7 @@ function Stop-AllServices {
 function Start-Backend {
     Write-Log "START" "启动后端API服务..."
 
-    $env:PYTHONPATH = $BackendDir
+    $env:PYTHONPATH = $ProjectRoot  # 设为项目根目录，确保 backend 包能被正确导入
 
     $uvicornArgs = @(
         "-m", "uvicorn", "backend.app:app",
@@ -504,6 +504,7 @@ function Start-Backend {
     if ($Bg) {
         $proc = Start-Process -FilePath $VenPython `
             -ArgumentList $uvicornArgs `
+            -WorkingDirectory $ProjectRoot `
             -NoNewWindow `
             -PassThru `
             -RedirectStandardOutput (Join-Path $LogDir "backend.log") `
@@ -511,11 +512,18 @@ function Start-Backend {
     } else {
         $proc = Start-Process -FilePath $VenPython `
             -ArgumentList $uvicornArgs `
+            -WorkingDirectory $ProjectRoot `
             -NoNewWindow `
             -PassThru
     }
 
-    Start-Sleep -Seconds 5
+    # 等待后端启动（最多 30 秒）
+    $waited = 0
+    $maxWait = 30
+    while (-not (Test-Port $PortBackend) -and $waited -lt $maxWait -and (-not $proc.HasExited)) {
+        Start-Sleep -Seconds 1
+        $waited++
+    }
 
     if (Test-Port $PortBackend) {
         $actualPid = Get-PidByPort $PortBackend
@@ -538,22 +546,28 @@ function Start-Frontend {
     }
 
     if ($Bg) {
-        $proc = Start-Process -FilePath "npm" `
-            -ArgumentList "run", "dev" `
+        $proc = Start-Process -FilePath "cmd.exe" `
+            -ArgumentList "/c", "npm", "run", "dev" `
             -WorkingDirectory $FrontendDir `
             -NoNewWindow `
             -PassThru `
             -RedirectStandardOutput (Join-Path $LogDir "frontend.log") `
             -RedirectStandardError (Join-Path $LogDir "frontend_err.log")
     } else {
-        $proc = Start-Process -FilePath "npm" `
-            -ArgumentList "run", "dev" `
+        $proc = Start-Process -FilePath "cmd.exe" `
+            -ArgumentList "/c", "npm", "run", "dev" `
             -WorkingDirectory $FrontendDir `
             -NoNewWindow `
             -PassThru
     }
 
-    Start-Sleep -Seconds 8
+    # 等待前端启动（最多 60 秒，Vite 启动可能较慢）
+    $waited = 0
+    $maxWait = 60
+    while (-not (Test-Port $PortFrontend) -and $waited -lt $maxWait -and (-not $proc.HasExited)) {
+        Start-Sleep -Seconds 1
+        $waited++
+    }
 
     if (Test-Port $PortFrontend) {
         $actualPid = Get-PidByPort $PortFrontend

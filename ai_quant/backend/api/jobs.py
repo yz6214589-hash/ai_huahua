@@ -16,8 +16,9 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from core.db import connect, execute, executemany, load_mysql_config, query_dict
 
-from core.data import list_job_runs, write_job_run
+from core.data import list_job_runs, read_job_run, write_job_run
 from core.jobs import run_domain
+from core.jobs.ctrl import JobCancelledError, register_run, unregister_run, request_stop
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("jobs")
@@ -337,9 +338,17 @@ def _run_job_impl(*, run_id: str, started_at: str, domain: str, mode: str | None
         "started_at": started_at
     })
 
-    # 构建进度回调函数，定期更新 itemsProcessed
+    # 注册停止信号监听
+    stop_event = register_run(run_id)
+    job_params_clean = dict(params or {})
+    job_params_clean["_run_id"] = run_id
+
+    # 构建进度回调函数，定期更新 itemsProcessed，同时检测停止信号
     def _progress_callback(items_processed: int, **extra: Any) -> None:
         try:
+            # 检查是否被请求停止
+            if stop_event.is_set():
+                raise JobCancelledError("用户请求停止任务")
             payload: dict[str, Any] = {
                 "runId": run_id,
                 "domain": domain,
@@ -351,7 +360,15 @@ def _run_job_impl(*, run_id: str, started_at: str, domain: str, mode: str | None
             # 支持传递 itemsTotal 等额外进度信息
             if "itemsTotal" in extra:
                 payload["itemsTotal"] = extra["itemsTotal"]
+            if "dateRange" in extra:
+                payload["dateRange"] = extra["dateRange"]
+            if "percentage" in extra:
+                payload["percentage"] = extra["percentage"]
+            if "etaSeconds" in extra:
+                payload["etaSeconds"] = extra["etaSeconds"]
             write_job_run(domain=domain, payload=payload)
+        except JobCancelledError:
+            raise
         except Exception:
             pass  # 进度更新失败不影响主流程
 
@@ -388,6 +405,28 @@ def _run_job_impl(*, run_id: str, started_at: str, domain: str, mode: str | None
             "items_processed": int(stats.items_processed or 0),
             "failed_items": len(stats.failed_items or [])
         })
+    except JobCancelledError:
+        logger.info("任务被用户停止", extra={
+            "run_id": run_id,
+            "domain": domain
+        })
+        write_job_run(
+            domain=domain,
+            payload={
+                "runId": run_id,
+                "domain": domain,
+                "startedAt": started_at,
+                "finishedAt": _now_iso(),
+                "status": "stopped",
+                "dataSourceFinal": "unknown",
+                "fallbackChain": [],
+                "rowsWritten": 0,
+                "itemsProcessed": 0,
+                "failedItems": [],
+                "message": "用户手动停止任务",
+                "params": params,
+            },
+        )
     except Exception as e:
         logger.error("任务执行失败", extra={
             "run_id": run_id,
@@ -412,6 +451,8 @@ def _run_job_impl(*, run_id: str, started_at: str, domain: str, mode: str | None
                 "params": params,
             },
         )
+    finally:
+        unregister_run(run_id)
 
 
 @router.get("/runs")
@@ -499,6 +540,43 @@ def get_run(run_id: str) -> dict[str, Any]:
     if not obj:
         raise HTTPException(status_code=404, detail="run not found")
     return obj
+
+
+@router.post("/runs/{run_id}/stop")
+def stop_run(run_id: str) -> dict[str, Any]:
+    """
+    停止正在运行的任务
+    
+    向指定 run_id 的任务发送停止信号，任务会在下一次进度检查点时终止。
+    如果任务已经结束或不存 'running' 状态，返回 409 冲突。
+    
+    Args:
+        run_id: 要停止的任务运行ID
+        
+    Returns:
+        {"ok": bool, "message": str}
+        
+    Raises:
+        HTTPException: 任务不存在(404) 或任务不在运行中(409)
+    """
+    rid = str(run_id or "").strip()
+    if not rid:
+        raise HTTPException(status_code=400, detail="run_id required")
+    
+    # 先检查任务记录是否存在且状态为 running
+    obj = read_job_run(rid)
+    if not obj:
+        raise HTTPException(status_code=404, detail="run not found")
+    if str(obj.get("status") or "") != "running":
+        raise HTTPException(status_code=409, detail="任务当前状态不允许停止（非运行中）")
+    
+    ok = request_stop(rid)
+    if ok:
+        logger.info("已发送停止信号", extra={"run_id": rid})
+        return {"ok": True, "message": "停止信号已发送"}
+    else:
+        # 任务已结束（极短时间内完成）
+        return {"ok": True, "message": "任务已结束，无需停止"}
 
 
 @router.post("/runs")

@@ -60,10 +60,9 @@ def request_json(
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
         logger.warning("QMT Gateway HTTP %s %s", e.code, url)
-        try:
-            return json.loads(body)
-        except json.JSONDecodeError:
-            raise ConnectionError(f"QMT Gateway {e.code}: {body[:200]}")
+        # HTTP 错误（4xx/5xx）应作为连接异常抛出，而非将错误响应当作正常数据返回
+        # 否则会导致后端将错误信息（如 {"detail":"QMT未连接"}）透传给前端
+        raise ConnectionError(f"QMT Gateway {e.code}: {body[:200]}")
     except urllib.error.URLError as e:
         logger.error("QMT Gateway 不可达 %s: %s", url, e)
         raise ConnectionError(f"QMT Gateway 不可达: {e}")

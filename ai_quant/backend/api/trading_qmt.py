@@ -61,7 +61,7 @@ def handle_qmt_connection_error(func):
 
 
 def _filter_by_date(items: list[dict[str, Any]], time_field: str, start_date: str = "", end_date: str = "") -> list[dict[str, Any]]:
-    """按日期范围过滤列表数据（在本地执行，无需修改远程 Gateway）"""
+    """按日期范围过滤列表数据（在本地执行，无需修改 Gateway）"""
     if not start_date and not end_date:
         return items
     sd = start_date.replace("-", "") if start_date else ""

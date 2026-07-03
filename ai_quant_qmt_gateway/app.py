@@ -18,6 +18,15 @@ from typing import Any
 from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
+# 在 uvicorn 启动前预加载 xtquant 及其子模块，避免异步事件循环冲突
+try:
+    import xtquant  # noqa: F401
+    from xtquant.xttrader import XtQuantTrader, XtQuantTraderCallback  # noqa: F401
+    from xtquant.xttype import StockAccount  # noqa: F401
+    from xtquant import xtconstant  # noqa: F401
+except ImportError:
+    pass
+
 from miniqmt_trader import MiniQMTTrader
 
 logger = logging.getLogger("qmt_gateway")

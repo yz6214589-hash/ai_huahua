@@ -181,6 +181,41 @@ def _get_stock_list_from_db(cfg: MySQLConfig, max_stocks: int) -> list[str]:
         return []
 
 
+def _get_missing_financial_stocks(cfg: MySQLConfig) -> list[str]:
+    """
+    获取 trade_stock_master 中存在但 trade_stock_financial 中缺少财务数据的股票。
+
+    用于补充数据采集任务的股票列表，确保 trade_stock_master 中的所有A股
+    都能获得财务数据覆盖，避免选股查询遗漏无财务数据的股票。
+
+    Args:
+        cfg: 数据库配置
+
+    Returns:
+        list[str]: 缺少财务数据的A股股票代码列表
+    """
+    try:
+        conn = connect(cfg)
+        try:
+            rows = query_dict(conn, """
+                SELECT DISTINCT m.stock_code
+                FROM trade_stock_master m
+                WHERE (m.asset_type = 'stock' OR m.asset_type IS NULL)
+                  AND m.stock_code NOT IN (
+                    SELECT DISTINCT stock_code FROM trade_stock_financial
+                  )
+                ORDER BY m.stock_code
+            """)
+            codes = [r["stock_code"] for r in rows]
+            # 过滤非A股（排除指数、ETF等）
+            return [c for c in codes if _is_a_share_stock(c)]
+        finally:
+            conn.close()
+    except Exception as e:
+        _log(f"查询缺少财务数据的股票失败: {e}")
+        return []
+
+
 def _get_stock_list_qmt_or_akshare(test_mode: bool, test_stock: str, max_stocks: int) -> list[str]:
     """
     获取股票列表
@@ -595,9 +630,9 @@ def _clean_nan(v):
 
 def _get_financial_data_qmt(stock_code: str, max_rows: int = 12) -> Optional[list[dict[str, Any]]]:
     """
-    通过 QMT Gateway 远程获取股票的综合财务数据
+    通过 QMT Gateway 获取股票的综合财务数据
 
-    QMT Gateway 部署在 Windows 服务器上，通过 xtquant 从 PershareIndex、
+    QMT Gateway 运行在本地 Windows 系统上，通过 xtquant 从 PershareIndex、
     Income、Balance、CashFlow 四张报表中提取财务指标，包含：
     - 盈利能力：ROE、毛利率、净利率、营收、净利润
     - 偿债能力：资产负债率、流动比率
@@ -910,6 +945,17 @@ def run_stock_financial_collection(
         _log("无法从外部源获取股票列表，从数据库读取...")
         codes = _get_stock_list_from_db(cfg, max_stocks)
 
+    # 补充 trade_stock_master 中缺少财务数据的A股股票
+    # 确保选股页面能覆盖全市场A股，避免因数据采集不完整导致候选股票过少
+    if not test_mode:
+        missing_codes = _get_missing_financial_stocks(cfg)
+        if missing_codes:
+            existing_set = set(codes)
+            new_added = [c for c in missing_codes if c not in existing_set]
+            if new_added:
+                codes = list(codes) + sorted(new_added)
+                _log(f"从 trade_stock_master 补充 {len(new_added)} 只缺少财务数据的股票，总计 {len(codes)} 只")
+
     if not codes:
         _log("没有股票需要处理")
         return JobStats(
@@ -975,7 +1021,7 @@ def run_stock_financial_collection(
 
     _log(f"开始全量采集: 共 {total_count} 只股票, 每只最多 {max_rows_per_stock} 条, "
          f"{max_workers} 线程, 中间提交阈值={intermediate_batch_size}")
-    _log(f"数据源: QMT Gateway (Windows服务器), 数据库回退: 启用")
+    _log(f"数据源: QMT Gateway (本地 Windows), 数据库回退: 启用")
 
     # 批量获取AkShare全市场行情数据，作为PE/PB/市值兜底
     akshare_market_map = _get_market_data_map(codes)

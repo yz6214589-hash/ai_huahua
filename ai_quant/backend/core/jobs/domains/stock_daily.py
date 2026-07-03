@@ -17,6 +17,7 @@ import pandas as pd
 from core.db import MySQLConfig, connect, executemany, query_dict
 from core.jobs.checkpoint import delete_checkpoint, save_checkpoint
 from core.jobs.common import JobStats, safe_float
+from core.jobs.ctrl import JobCancelledError
 from infra.storage.logging_service import get_logger
 
 logger = get_logger("stock_daily")
@@ -769,6 +770,19 @@ def run_stock_daily(cfg: MySQLConfig, mode: str | None, params: dict[str, Any] |
         total_count = len(stock_list)
         _log(f"\n开始并发处理 (共 {total_count} 只股票, {max_workers} 线程)...")
 
+        # 记录任务开始时间，用于估算剩余时间
+        _task_start_time = _time_mod.time()
+
+        # 立即上报 itemsTotal 及日期范围，让前端在任务开始后第一时间就能显示进度条
+        if progress_callback:
+            try:
+                progress_callback(resume_skip_count, itemsTotal=total_count + resume_skip_count,
+                                  dateRange=f"{data_start}~{today_str}",
+                                  percentage=0.0,
+                                  etaSeconds=0)
+            except Exception:
+                pass
+
         progress_lock = Lock()
         processed_ref = [resume_skip_count]
         processed_codes: list[str] = []
@@ -821,10 +835,23 @@ def run_stock_daily(cfg: MySQLConfig, mode: str | None, params: dict[str, Any] |
                 if src not in fallback_chain:
                     fallback_chain.append(src)
 
-                # Bug A: 每100只股票更新一次任务进度（itemsProcessed）
+                # 更新任务进度（itemsProcessed）
                 if progress_callback and stock_done_count % 100 == 0:
                     try:
-                        progress_callback(processed_ref[0], itemsTotal=total_count + resume_skip_count)
+                        # 计算已完成比例和估算剩余时间
+                        processed = processed_ref[0]
+                        total = total_count + resume_skip_count
+                        ratio = processed / total if total > 0 else 0
+                        pct = round(ratio * 100, 1)
+                        elapsed = _time_mod.time() - _task_start_time
+                        remaining = total - processed
+                        eta_sec = int(remaining / (processed / elapsed)) if processed > 0 and elapsed > 0 else 0
+                        progress_callback(processed, itemsTotal=total,
+                                          dateRange=f"{data_start}~{today_str}",
+                                          percentage=pct,
+                                          etaSeconds=eta_sec)
+                    except JobCancelledError:
+                        raise
                     except Exception:
                         pass
 

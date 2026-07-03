@@ -18,7 +18,7 @@ export type JobDomain =
   | 'catalyst'           // 催化剂事件数据
 
 // 任务执行状态枚举
-export type JobStatus = 'running' | 'success' | 'failed' | 'partial'
+export type JobStatus = 'running' | 'success' | 'failed' | 'partial' | 'stopped'
 
 export interface JobDomainInfo {
   domain: JobDomain
@@ -39,6 +39,9 @@ export interface JobRunResult {
   rowsWritten: number        // 写入的数据行数
   itemsProcessed: number      // 处理的数据项总数
   itemsTotal?: number | null  // 计划处理的数据项总数（用于进度显示）
+  dateRange?: string          // 数据采集的日期范围（如 "20230101~20260620"）
+  percentage?: number         // 完成百分比（如 45.5 表示 45.5%）
+  etaSeconds?: number         // 预计剩余秒数
   failedItems: string[]      // 处理失败的数据项列表
   message?: string           // 任务执行消息
   userMessage?: string       // 给用户的提示消息
