@@ -1,7 +1,0 @@
-=== 前端验证 ===
-Playwright未安装，使用HTTP请求验证
-HTTP 200, 615 bytes
-main.tsx: HTTP 200, 3540 bytes (OK)
-DataStatusContext.tsx: HTTP 200, 8039 bytes (OK)
-
-验证完成
