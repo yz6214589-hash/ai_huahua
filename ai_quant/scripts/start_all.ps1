@@ -25,14 +25,14 @@ param(
 )
 
 # 全局配置
-$ScriptDir = "d:\BaiduNetdiskDownload\ai_huahua\ai_huahua\ai_quant\scripts"
-$ProjectRoot = "d:\BaiduNetdiskDownload\ai_huahua\ai_huahua\ai_quant"
+$ScriptDir = "d:\ai_huahua\ai_quant\ai_quant\scripts"
+$ProjectRoot = "d:\ai_huahua\ai_quant\ai_quant"
 $BackendDir = "$ProjectRoot\backend"
 $FrontendDir = "$ProjectRoot\web"
 $StreamlitDir = "$ProjectRoot\streamlit_chat"
-$GatewayDir = "d:\BaiduNetdiskDownload\ai_huahua\ai_huahua\ai_quant_qmt_gateway"
+$GatewayDir = "d:\ai_huahua\ai_quant\ai_quant_qmt_gateway"
 $LogDir = "$ProjectRoot\.ai_quant\logs"
-$VenvPython = "$ProjectRoot\venv\Scripts\python.exe"
+$VenvPython = "d:\ai_huahua\ai_quant\venv\Scripts\python.exe"
 $VenPython = $VenvPython
 
 # 服务端口配置
@@ -52,7 +52,7 @@ $UrlAdmin = "$UrlFrontend/ai-admin"
 $Mode = "dev"
 
 # QMT Gateway 服务配置
-$GatewayScript = Join-Path $GatewayDir "run_server.py"
+$GatewayScript = Join-Path $GatewayDir "app.py"
 $GatewayPidFile = Join-Path $LogDir "gateway.pid"
 $GatewayLog = Join-Path $LogDir "gateway.log"
 $GatewayToken = "h4Yx2nKpQ9vL7sT3mR8cW1zJ6uE0aD5gB2fH9jN4qS7tV3yX8kP1rM6wZ0cL2nQ7"

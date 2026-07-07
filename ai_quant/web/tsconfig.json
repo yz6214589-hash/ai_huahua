@@ -19,7 +19,7 @@
     "types": [
       "vitest/globals"
     ],
-    "strict": false,
+    "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": false,

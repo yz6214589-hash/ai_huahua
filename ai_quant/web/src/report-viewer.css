@@ -1,0 +1,155 @@
+/**
+ * 研报查看器排版增强样式
+ *
+ * 解决问题：
+ * 1. Tailwind preflight 会重置 h1-h6 的 font-size 为 inherit，导致 bytemd
+ *    自带的标题样式失效；这里用高优先级选择器覆盖。
+ * 2. bytemd 默认的 .markdown-body 没有针对中文研报做行距/段距调优。
+ * 3. bytemd 自动给标题加 id="user-content-..."（与 GitHub 一致），TOC
+ *    点击和 IntersectionObserver 应绑定到该 id。
+ *
+ * 所有规则都限定在 .report-content 容器内，避免污染其他页面。
+ */
+
+.report-content {
+  /* 中文研报优化的基础排版变量 */
+  --report-line-height: 1.85;
+  --report-paragraph-spacing: 1.25em;
+  --report-heading-color: #18181b; /* zinc-900 */
+  --report-text-color: #3f3f46;    /* zinc-700 */
+  --report-muted-color: #71717a;   /* zinc-500 */
+  --report-border-color: #e4e4e7;  /* zinc-200 */
+  --report-accent: #2563eb;        /* blue-600 */
+}
+
+/* 标题层级 —— 显式覆盖 Tailwind preflight reset */
+.report-content .markdown-body h1,
+.report-content .markdown-body h2,
+.report-content .markdown-body h3,
+.report-content .markdown-body h4,
+.report-content .markdown-body h5,
+.report-content .markdown-body h6 {
+  font-weight: 600;
+  color: var(--report-heading-color);
+  line-height: 1.3;
+  scroll-margin-top: 24px; /* 点击目录跳转时距顶部留白 */
+}
+
+.report-content .markdown-body h1 {
+  font-size: 2rem;       /* 32px */
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--report-border-color);
+}
+.report-content .markdown-body h2 {
+  font-size: 1.5rem;     /* 24px */
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--report-border-color);
+}
+.report-content .markdown-body h3 {
+  font-size: 1.25rem;    /* 20px */
+  margin-top: 1.5rem;
+  margin-bottom: 0.6rem;
+}
+.report-content .markdown-body h4 {
+  font-size: 1.125rem;   /* 18px */
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.report-content .markdown-body h5 {
+  font-size: 1rem;       /* 16px */
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+}
+.report-content .markdown-body h6 {
+  font-size: 0.875rem;   /* 14px */
+  margin-top: 0.875rem;
+  margin-bottom: 0.3rem;
+  color: var(--report-muted-color);
+}
+
+/* 段落 —— 增大行距与段距 */
+.report-content .markdown-body p {
+  font-size: 0.9375rem;   /* 15px */
+  line-height: var(--report-line-height);
+  color: var(--report-text-color);
+  margin-top: 0;
+  margin-bottom: var(--report-paragraph-spacing);
+}
+
+/* 列表 —— 段内紧凑、段外留白 */
+.report-content .markdown-body ul,
+.report-content .markdown-body ol {
+  margin-top: 0;
+  margin-bottom: var(--report-paragraph-spacing);
+  padding-left: 1.5rem;
+  line-height: var(--report-line-height);
+  color: var(--report-text-color);
+}
+.report-content .markdown-body li {
+  margin-bottom: 0.4em;
+}
+.report-content .markdown-body li > ul,
+.report-content .markdown-body li > ol {
+  margin-top: 0.4em;
+  margin-bottom: 0.4em;
+}
+
+/* 引用 */
+.report-content .markdown-body blockquote {
+  margin: 0 0 var(--report-paragraph-spacing) 0;
+  padding: 0.5rem 1rem;
+  border-left: 4px solid var(--report-border-color);
+  color: var(--report-muted-color);
+  background-color: #fafafa;
+}
+
+/* 行内代码 / 粗体 / 斜体 / 链接 */
+.report-content .markdown-body code {
+  font-size: 0.85em;
+  background-color: #f4f4f5;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  color: #be185d;
+}
+.report-content .markdown-body strong {
+  font-weight: 600;
+  color: var(--report-heading-color);
+}
+.report-content .markdown-body em {
+  font-style: italic;
+}
+.report-content .markdown-body a {
+  color: var(--report-accent);
+  text-decoration: none;
+}
+.report-content .markdown-body a:hover {
+  text-decoration: underline;
+}
+
+/* 表格 */
+.report-content .markdown-body table {
+  border-collapse: collapse;
+  margin-bottom: var(--report-paragraph-spacing);
+  width: 100%;
+}
+.report-content .markdown-body th,
+.report-content .markdown-body td {
+  border: 1px solid var(--report-border-color);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.report-content .markdown-body th {
+  background-color: #fafafa;
+  font-weight: 600;
+}
+
+/* 分割线 */
+.report-content .markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--report-border-color);
+  margin: 2rem 0;
+}

@@ -4,7 +4,7 @@ import { fetchJson, postJson, translateApiError } from '@/api/client'
 import { toast } from '@/components/Toast'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { Badge } from '@/components/Badge'
-import { Play, TrendingUp, TrendingDown, XCircle, CheckCircle2, ChevronDown, ChevronRight, History, BarChart3 } from 'lucide-react'
+import { Play, RefreshCcw, TrendingUp, TrendingDown, XCircle, CheckCircle2, ChevronDown, ChevronRight, History, BarChart3 } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
 import BacktestCharts from '@/components/BacktestCharts'
 import { StockPicker } from '@/components/StockPicker'
@@ -694,9 +694,20 @@ export default function StrategyBacktest() {
     const payload = buildEnhancedPayload()
     payload.stock_code = stockCode?.code || ''
 
+    const traceLabel = `回测-${payload.stock_code}-${Date.now()}`
+    console.time(traceLabel)
+    console.log(`[回测请求开始] 股票=${payload.stock_code} 策略=${payload.strategy_id} 区间=${payload.interval_mode} 基准=${payload.benchmark_code || '无'}`)
+    console.log(`[回测请求参数] 开始=${payload.start} 结束=${payload.end} 参数=${JSON.stringify(payload.params)}`)
+
     try {
       const r = await postJson<SingleBacktestResult>('/api/v1/analysis/backtest/run', payload)
+      console.timeEnd(traceLabel)
       const metrics = r.metrics
+      if (metrics) {
+        console.log(`[回测完成] 总收益率=${metrics.total_return} 夏普=${metrics.sharpe} 最大回撤=${metrics.max_drawdown} 交易次数=${r.trades?.length || 0}`)
+      } else {
+        console.log(`[回测完成] 区间模式结果 interval_results=${r.interval_results?.length || 0}`)
+      }
 
       setSingleResult(r)
       setBatchResult(null)
@@ -708,6 +719,7 @@ export default function StrategyBacktest() {
       }
       window.dispatchEvent(new Event('backtest-completed'))
     } catch (e) {
+      console.timeEnd(traceLabel)
       const errorMsg = e instanceof Error ? e.message : String(e)
       console.error(`[回测失败] ${errorMsg}`)
       setBacktestError(errorMsg)

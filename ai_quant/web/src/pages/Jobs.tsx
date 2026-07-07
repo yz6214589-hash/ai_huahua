@@ -4,7 +4,7 @@ import { fetchJson, postJson } from '@/api/client'
 import type { JobDomain, JobDomainInfo, JobRunResult, JobSchedule } from '@/api/types'
 import { Card, CardBody, CardHeader } from '@/components/Card'
 import { DataSourceBadge, JobStatusBadge } from '@/components/StatusBadge'
-import { Play, RefreshCcw, Save, Settings, X, Eye, BarChart3, Square } from 'lucide-react'
+import { Play, RefreshCcw, Save, Settings, X, Eye, BarChart3 } from 'lucide-react'
 import { Loading } from '@/components/Loading'
 import StockScopeSelector from '@/components/StockScopeSelector'
 
@@ -143,19 +143,6 @@ export default function Jobs() {
         }
       }
       await postJson<{ result: JobRunResult }>('/api/v1/jobs/run', { domain, mode: mode0, params })
-      await load()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    }
-  }
-
-  const stopJob = async (domain: JobDomain) => {
-    setErr(null)
-    try {
-      // 找到该 domain 正在运行的 run_id
-      const running = runs.find((r) => r.domain === domain && r.status === 'running')
-      if (!running || !running.runId) return
-      await postJson(`/api/v1/jobs/runs/${running.runId}/stop`, {})
       await load()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -305,14 +292,13 @@ export default function Jobs() {
                         {last ? <span className="text-xs text-zinc-500">上次：{formatDate(last.startedAt)}</span> : null}
                       </div>
                       {last && last.status === 'running' && last.itemsTotal ? (
-                        <div className="mt-3 w-full max-w-sm space-y-2">
-                          {/* 进度条 */}
+                        <div className="mt-3 w-full max-w-xs">
                           <div className="flex items-center gap-1.5 text-xs text-zinc-600">
                             <BarChart3 className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" />
                             <span className="font-medium tabular-nums">
                               {last.itemsProcessed.toLocaleString()}
                             </span>
-                            <span className="text-zinc-300">/</span>
+                            <span className="text-zinc-300">-</span>
                             <span className="tabular-nums text-zinc-500">
                               {last.itemsTotal.toLocaleString()}
                             </span>
@@ -320,69 +306,36 @@ export default function Jobs() {
                               className="ml-0.5 font-semibold"
                               style={{
                                 color: last.itemsTotal > 0
-                                  ? `hsl(${Math.round(Math.min(1, ((last.percentage ?? (last.itemsProcessed || 0) / last.itemsTotal * 100)) / 100) * 120)}, 65%, 40%)`
+                                  ? `hsl(${Math.round(Math.min(1, (last.itemsProcessed || 0) / last.itemsTotal) * 120)}, 65%, 40%)`
                                   : '#a1a1aa',
                               }}
                             >
-                              （{last.percentage ?? Math.round(Math.min(100, ((last.itemsProcessed || 0) / last.itemsTotal) * 100))}%）
+                              （{Math.round(Math.min(100, ((last.itemsProcessed || 0) / last.itemsTotal) * 100))}%）
                             </span>
                           </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
+                          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
                             <div
                               className="h-full rounded-full transition-all duration-700 ease-out"
                               style={{
-                                width: `${last.itemsTotal > 0 ? Math.min(100, Math.round((last.percentage ?? ((last.itemsProcessed || 0) / last.itemsTotal * 100)))) : 0}%`,
+                                width: `${last.itemsTotal > 0 ? Math.min(100, Math.round(((last.itemsProcessed || 0) / last.itemsTotal) * 100)) : 0}%`,
                                 backgroundColor: last.itemsTotal > 0
-                                  ? `hsl(${Math.round(Math.min(1, ((last.percentage ?? ((last.itemsProcessed || 0) / last.itemsTotal) * 100)) / 100) * 120)}, 55%, 45%)`
+                                  ? `hsl(${Math.round(Math.min(1, (last.itemsProcessed || 0) / last.itemsTotal) * 120)}, 55%, 45%)`
                                   : '#d4d4d8',
                               }}
                             />
-                          </div>
-                          {/* 增强信息：日期范围 + 剩余时间 */}
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
-                            {last.dateRange ? (
-                              <span className="flex items-center gap-1">
-                                <span>日期范围:</span>
-                                <span className="tabular-nums">{last.dateRange.replace('~', ' ~ ')}</span>
-                              </span>
-                            ) : null}
-                            {last.etaSeconds != null && last.etaSeconds > 0 ? (
-                              <span className="flex items-center gap-1">
-                                <span>预计剩余:</span>
-                                <span className="tabular-nums font-medium text-zinc-600">
-                                  {last.etaSeconds >= 3600
-                                    ? `${Math.floor(last.etaSeconds / 3600)}小时${Math.round((last.etaSeconds % 3600) / 60)}分`
-                                    : last.etaSeconds >= 60
-                                      ? `${Math.floor(last.etaSeconds / 60)}分${last.etaSeconds % 60}秒`
-                                      : `${last.etaSeconds}秒`}
-                                </span>
-                              </span>
-                            ) : last.etaSeconds === 0 ? (
-                              <span className="text-zinc-400">计算中...</span>
-                            ) : null}
                           </div>
                         </div>
                       ) : null}
                     </div>
                     <div className="flex flex-col gap-2">
-                      {last && last.status === 'running' ? (
-                        <button
-                          onClick={() => stopJob(j.domain)}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-red-700"
-                        >
-                          <Square className="h-3.5 w-3.5" />
-                          停止
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => runJob(j.domain, j.defaultMode)}
-                          disabled={hasRunningTask}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <Play className="h-3.5 w-3.5" />
-                          运行
-                        </button>
-                      )}
+                      <button
+                        onClick={() => runJob(j.domain, j.defaultMode)}
+                        disabled={hasRunningTask}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                        运行
+                      </button>
                       <button
                         onClick={() => navigate(`/info-access/data-collection/detail?domain=${encodeURIComponent(j.domain)}&name=${encodeURIComponent(j.title)}`)}
                         className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-700 transition hover:bg-zinc-50"

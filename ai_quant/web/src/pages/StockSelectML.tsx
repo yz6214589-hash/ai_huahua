@@ -581,8 +581,8 @@ export default function StockSelectML() {
         <CardBody>
           <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 text-sm text-zinc-600">
             <p>本模块使用 LightGBM / XGBoost 机器学习模型对股票进行走势预测。</p>
-            <p className="mt-2"><strong>训练流程</strong>：特征提取（19个技术指标） {'->'} 训练样本构建（未来5日涨幅{'>'}2%为正例） {'->'} 模型训练。</p>
-            <p className="mt-2"><strong>预测流程</strong>：选择已训练模型 {'->'} 选择股票范围 {'->'} 运行预测。训练好的模型会持久化保存，可反复使用。</p>
+            <p className="mt-2"><strong>{'训练流程'}</strong>：{'特征提取（19个技术指标） -> 训练样本构建（未来5日涨幅>2%为正例） -> 模型训练。'}</p>
+            <p className="mt-2"><strong>{'预测流程'}</strong>：{'选择已训练模型 -> 选择股票范围 -> 运行预测。训练好的模型会持久化保存，可反复使用。'}</p>
             <p className="mt-2">预测结果仅供参考，不构成投资建议。</p>
           </div>
         </CardBody>
